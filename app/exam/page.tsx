@@ -1,0 +1,1325 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  addDoc,
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  doc,
+  orderBy,
+} from "firebase/firestore";
+import { firestore } from "@/lib/firebase/client";
+import { normalizeFullName, normalizePersonNamePart } from "@/lib/text/normalize";
+import { IconButton } from "@/app/admin/ui/icon-button";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Award,
+  BadgeCheck,
+  CheckCircle2,
+  LayoutGrid,
+  LockKeyhole,
+  OctagonAlert,
+  Save,
+  ShieldCheck,
+  Smartphone,
+  Timer,
+  XCircle,
+} from "lucide-react";
+
+type PublishedExam = {
+  id: string;
+  templateId: string;
+  name: string;
+  accessCode: string;
+  status: string;
+  questionCount: number;
+  timeLimitMinutes: number;
+};
+
+type SnapshotQuestion = {
+  id: string;
+  questionId: string;
+  order: number;
+  type: string;
+  statement: string;
+  points: number;
+  options?: Array<{ id: string; text: string; isCorrect?: boolean }>;
+  partialCredit?: boolean;
+  answerRules?: {
+    maxWords?: number;
+    keywords?: Array<{ term: string; weight: number }>;
+    passThreshold?: number;
+  };
+  puzzle?: Record<string, unknown>;
+};
+
+type Step = "code" | "student" | "rules" | "exam" | "result";
+
+const FRAUD_PENALTY_PER_EVENT_0TO5 = 0.2;
+const FRAUD_FAIL_TOTAL_EVENTS = 11;
+
+function toString(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function toNumber(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function formatRemaining(ms: number) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function OTPInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const digits = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, i) => {
+        const char = value[i];
+        return /\d/.test(char ?? "") ? char : "";
+      }),
+    [value],
+  );
+
+  function setDigit(index: number, digit: string) {
+    const next = digits.map((d, i) => (i === index ? digit : d)).join("").replace(/\D/g, "").slice(0, 6);
+    onChange(next);
+  }
+
+  function focusIndex(index: number) {
+    const el = document.getElementById(`otp-${index}`) as HTMLInputElement | null;
+    el?.focus();
+    el?.select();
+  }
+
+  return (
+    <div className="flex justify-center gap-2">
+      {digits.map((d, i) => (
+        <input
+          key={i}
+          id={`otp-${i}`}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          value={d}
+          onChange={(e) => {
+            const nextDigit = e.target.value.replace(/\D/g, "").slice(-1);
+            setDigit(i, nextDigit);
+            if (nextDigit && i < 5) focusIndex(i + 1);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Backspace" && !digits[i] && i > 0) {
+              focusIndex(i - 1);
+            }
+            if (e.key === "ArrowLeft" && i > 0) focusIndex(i - 1);
+            if (e.key === "ArrowRight" && i < 5) focusIndex(i + 1);
+          }}
+          onPaste={(e) => {
+            const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+            if (!pasted) return;
+            onChange(pasted);
+            const nextIndex = Math.min(5, pasted.length - 1);
+            setTimeout(() => focusIndex(nextIndex), 0);
+            e.preventDefault();
+          }}
+          className="h-12 w-10 rounded-2xl border border-indigo-200 bg-indigo-50 text-center text-lg font-semibold tracking-tight text-indigo-900 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-200/50"
+          maxLength={1}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function ExamPublicPage() {
+  const [step, setStep] = useState<Step>("code");
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [exam, setExam] = useState<PublishedExam | null>(null);
+  const [questions, setQuestions] = useState<SnapshotQuestion[]>([]);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [rulesAccepted, setRulesAccepted] = useState(false);
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [documentId, setDocumentId] = useState("");
+  const [email, setEmail] = useState("");
+
+  const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const answersRef = useRef<Record<string, unknown>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [remainingMs, setRemainingMs] = useState(0);
+  const [endAtMs, setEndAtMs] = useState<number | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [showExamSummary, setShowExamSummary] = useState(false);
+  const [showQuestionMap, setShowQuestionMap] = useState(false);
+  const [finalSubmitAccepted, setFinalSubmitAccepted] = useState(false);
+  const [result, setResult] = useState<{
+    score5: number;
+    score50: number;
+    score5Raw: number;
+    score50Raw: number;
+    earned: number;
+    total: number;
+    fraudTabSwitches: number;
+    fraudClipboardAttempts: number;
+    fraudPenalty0to5: number;
+    fraudForcedFail: boolean;
+  } | null>(null);
+  const [annulled, setAnnulled] = useState(false);
+  const [annulReason, setAnnulReason] = useState<string | null>(null);
+  const [adminMessage, setAdminMessage] = useState<string | null>(null);
+
+  const [fraudTabSwitches, setFraudTabSwitches] = useState(0);
+  const [fraudClipboardAttempts, setFraudClipboardAttempts] = useState(0);
+  const fraudCountsRef = useRef({ tab: 0, clip: 0 });
+  const fraudRuntimeRef = useRef({
+    lastSyncAt: 0,
+    lastClipboardCountAt: 0,
+    lastTabCountAt: 0,
+    isVisible: true,
+    submittedFraudFail: false,
+  });
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    fraudCountsRef.current = { tab: fraudTabSwitches, clip: fraudClipboardAttempts };
+  }, [fraudTabSwitches, fraudClipboardAttempts]);
+
+  async function loadExamByCode() {
+    setLoading(true);
+    setError(null);
+    try {
+      const c = code.trim();
+      if (!/^\d{6}$/.test(c)) {
+        setError("El codigo debe tener 6 digitos.");
+        return;
+      }
+
+      const snap = await getDocs(query(collection(firestore, "publishedExams"), where("accessCode", "==", c), limit(5)));
+      const found = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
+        .find((row) => {
+          const r = row as Record<string, unknown>;
+          return toString(r.status, "published") === "published";
+        });
+
+      if (!found) {
+        setError("No se encontro un examen publicado con ese codigo.");
+        return;
+      }
+      const foundRow = found as Record<string, unknown> & { id: string };
+
+      setExam({
+        id: foundRow.id,
+        templateId: toString(foundRow.templateId, ""),
+        name: toString(foundRow.name, "Examen"),
+        accessCode: toString(foundRow.accessCode),
+        status: toString(foundRow.status, "published"),
+        questionCount: toNumber(foundRow.questionCount, 0),
+        timeLimitMinutes: toNumber(foundRow.timeLimitMinutes, 60),
+      });
+
+      const qSnap = await getDocs(
+        query(collection(firestore, "publishedExams", foundRow.id, "questions"), orderBy("order", "asc"), limit(300)),
+      );
+      setQuestions(
+        qSnap.docs.map((d) => {
+          const row = d.data() as Record<string, unknown>;
+          return {
+            id: d.id,
+            questionId: toString(row.questionId, d.id),
+            order: toNumber(row.order, 0),
+            type: toString(row.type, "single_choice"),
+            statement: toString(row.statement, ""),
+            points: toNumber(row.points, 1),
+            options: Array.isArray(row.options) ? (row.options as SnapshotQuestion["options"]) : undefined,
+            partialCredit: Boolean(row.partialCredit),
+            answerRules: (row.answerRules as SnapshotQuestion["answerRules"]) ?? undefined,
+            puzzle: (row.puzzle as Record<string, unknown>) ?? undefined,
+          };
+        }),
+      );
+
+      setRulesAccepted(false);
+      setFraudTabSwitches(0);
+      setFraudClipboardAttempts(0);
+      fraudCountsRef.current = { tab: 0, clip: 0 };
+      fraudRuntimeRef.current.submittedFraudFail = false;
+      setStep("student");
+    } catch {
+      setError("No fue posible cargar el examen.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startAttempt() {
+    if (!exam) return;
+    setError(null);
+
+    const n1 = normalizePersonNamePart(firstName);
+    if (!n1.ok) {
+      setError(`Nombre: ${n1.error}`);
+      return;
+    }
+    const n2 = normalizePersonNamePart(lastName);
+    if (!n2.ok) {
+      setError(`Apellido: ${n2.error}`);
+      return;
+    }
+    const full = normalizeFullName(firstName, lastName);
+    if (!full.ok) {
+      setError(full.error);
+      return;
+    }
+    if (!documentId.trim()) {
+      setError("Documento es obligatorio.");
+      return;
+    }
+    if (!email.trim() || !email.includes("@")) {
+      setError("Correo invalido.");
+      return;
+    }
+
+    const emailNorm = email.trim().toLowerCase();
+    const docNorm = documentId.trim();
+    try {
+      const [byEmail, byDoc] = await Promise.all([
+        getDocs(
+          query(
+            collection(firestore, "attempts"),
+            where("publishedExamId", "==", exam.id),
+            where("email", "==", emailNorm),
+            limit(1),
+          ),
+        ),
+        getDocs(
+          query(
+            collection(firestore, "attempts"),
+            where("publishedExamId", "==", exam.id),
+            where("documentId", "==", docNorm),
+            limit(1),
+          ),
+        ),
+      ]);
+
+      if (!byEmail.empty || !byDoc.empty) {
+        setError("Ya existe un intento registrado con ese correo o documento. Solo se permite un intento.");
+        return;
+      }
+    } catch {
+      setError("No fue posible validar el intento unico. Intenta de nuevo.");
+      return;
+    }
+
+    const now = Date.now();
+    const ends = now + exam.timeLimitMinutes * 60 * 1000;
+
+    const ref = await addDoc(collection(firestore, "attempts"), {
+      publishedExamId: exam.id,
+      examTemplateId: exam.templateId || null,
+      templateId: exam.templateId || null,
+      examName: exam.name,
+      studentFirstName: n1.value,
+      studentLastName: n2.value,
+      studentFullName: full.value,
+      documentId: docNorm,
+      email: emailNorm,
+      status: "in_progress",
+      questionCount: questions.length,
+      startedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    setAttemptId(ref.id);
+    setEndAtMs(ends);
+    setRemainingMs(ends - now);
+    setCurrentQuestionIndex(0);
+    setShowExamSummary(false);
+    setShowQuestionMap(false);
+    setFinalSubmitAccepted(false);
+    fraudRuntimeRef.current.isVisible = document.visibilityState === "visible";
+    setStep("exam");
+  }
+
+  useEffect(() => {
+    if (step !== "exam" || !endAtMs || submitted) return;
+    const timer = setInterval(() => {
+      const left = endAtMs - Date.now();
+      setRemainingMs(left);
+      if (left <= 0) {
+        clearInterval(timer);
+        void submitAttempt(true);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [step, endAtMs, submitted]);
+
+  useEffect(() => {
+    if (!exam) return;
+    const unsub = onSnapshot(doc(firestore, "publishedExams", exam.id), (snap) => {
+      if (!snap.exists()) return;
+      const row = snap.data() as Record<string, unknown>;
+      const status = toString(row.status, "published");
+      if (status === "closed" && (step === "rules" || step === "student")) {
+        setError("Este examen ya esta cerrado.");
+        setStep("code");
+        setExam(null);
+      }
+    });
+    return () => unsub();
+  }, [exam, attemptId, step, submitted]);
+
+  useEffect(() => {
+    if (!attemptId) return;
+    const unsub = onSnapshot(doc(firestore, "attempts", attemptId), (snap) => {
+      if (!snap.exists()) return;
+      const row = snap.data() as Record<string, unknown>;
+      const status = toString(row.status, "in_progress");
+      const msg = toString(row.adminMessage, "") || null;
+      setAdminMessage(msg);
+
+      if (status === "annulled" && step !== "result") {
+        setAnnulled(true);
+        setAnnulReason(
+          toString(
+            row.annulReason,
+            "Tu intento fue anulado por el docente. Nota asignada: 0.00, sin posibilidad de recuperacion.",
+          ),
+        );
+        const total = toNumber(row.totalPoints, questions.reduce((acc, q) => acc + q.points, 0));
+        const fraudTab = toNumber(row.fraudTabSwitches, 0);
+        const fraudClip = toNumber(row.fraudClipboardAttempts, 0);
+        const fraudPenalty0to5 = toNumber(
+          row.fraudPenalty0to5,
+          Number(((fraudTab + fraudClip) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)),
+        );
+        setResult({
+          score5: 0,
+          score50: 0,
+          score5Raw: 0,
+          score50Raw: 0,
+          earned: 0,
+          total: Number(total.toFixed(2)),
+          fraudTabSwitches: fraudTab,
+          fraudClipboardAttempts: fraudClip,
+          fraudPenalty0to5,
+          fraudForcedFail: Boolean(row.fraudForcedFail),
+        });
+        setSubmitted(true);
+        setStep("result");
+      }
+    });
+    return () => unsub();
+  }, [attemptId, step, questions]);
+
+  function setAnswer(questionId: string, value: unknown) {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  }
+
+  function hasAnswer(q: SnapshotQuestion) {
+    const val = answers[q.questionId];
+    if (q.type === "single_choice") return typeof val === "string" && val.trim().length > 0;
+    if (q.type === "multiple_choice") return Array.isArray(val) && val.length > 0;
+    if (q.type === "open_concept") return toString(val, "").trim().length > 0;
+    if (!val || typeof val !== "object") return false;
+    return Object.keys(val as Record<string, unknown>).length > 0;
+  }
+
+  function renderQuestionInput(q: SnapshotQuestion) {
+    if (q.type === "single_choice") {
+      const selected = toString(answers[q.questionId], "");
+      return (
+        <div className="space-y-3">
+          {(q.options ?? []).map((o) => (
+            <label
+              key={o.id}
+              className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                selected === o.id ? "border-indigo-200 bg-indigo-50" : "border-zinc-200 bg-white hover:bg-zinc-50"
+              }`}
+            >
+              <input
+                type="radio"
+                name={q.questionId}
+                checked={selected === o.id}
+                onChange={() => setAnswer(q.questionId, o.id)}
+                className="mt-1 h-4 w-4 accent-indigo-600"
+              />
+              <span className="text-base font-medium leading-relaxed text-zinc-900 sm:text-lg">{o.text}</span>
+            </label>
+          ))}
+        </div>
+      );
+    }
+
+    if (q.type === "multiple_choice") {
+      const current = Array.isArray(answers[q.questionId]) ? (answers[q.questionId] as string[]) : [];
+      return (
+        <div className="space-y-3">
+          {(q.options ?? []).map((o) => {
+            const checked = current.includes(o.id);
+            return (
+              <label
+                key={o.id}
+                className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                  checked ? "border-indigo-200 bg-indigo-50" : "border-zinc-200 bg-white hover:bg-zinc-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    const next = e.target.checked ? [...current, o.id] : current.filter((x) => x !== o.id);
+                    setAnswer(q.questionId, next);
+                  }}
+                  className="mt-1 h-4 w-4 accent-indigo-600"
+                />
+                <span className="text-base font-medium leading-relaxed text-zinc-900 sm:text-lg">{o.text}</span>
+              </label>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (q.type === "open_concept") {
+      return (
+        <textarea
+          value={toString(answers[q.questionId], "")}
+          onChange={(e) => setAnswer(q.questionId, e.target.value)}
+          className="min-h-36 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-base leading-relaxed text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
+          placeholder="Escribe tu respuesta"
+        />
+      );
+    }
+
+    if (q.type === "puzzle_order") {
+      return (
+        <div className="space-y-3">
+          {(((q.puzzle?.items as Array<Record<string, unknown>>) ?? [])).map((it) => {
+            const map = (answers[q.questionId] as Record<string, number>) ?? {};
+            const n = (((q.puzzle?.items as Array<Record<string, unknown>>) ?? [])).length;
+            return (
+              <div key={toString(it.id)} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]">
+                <div className="rounded-xl bg-zinc-50 px-3 py-2 text-base font-medium text-zinc-900">
+                  {toString(it.text)}
+                </div>
+                <select
+                  value={String(map[toString(it.id)] ?? "")}
+                  onChange={(e) =>
+                    setAnswer(q.questionId, {
+                      ...map,
+                      [toString(it.id)]: Number(e.target.value || 0),
+                    })
+                  }
+                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-base text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
+                >
+                  <option value="">Pos.</option>
+                  {Array.from({ length: n }, (_, i) => i + 1).map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (q.type === "puzzle_match") {
+      return (
+        <div className="space-y-3">
+          {(((q.puzzle?.leftItems as Array<Record<string, unknown>>) ?? [])).map((left) => {
+            const ans = (answers[q.questionId] as Record<string, string>) ?? {};
+            const rightItems = ((q.puzzle?.rightItems as Array<Record<string, unknown>>) ?? []);
+            return (
+              <div key={toString(left.id)} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr]">
+                <div className="rounded-xl bg-zinc-50 px-3 py-2 text-base font-medium text-zinc-900">
+                  {toString(left.text)}
+                </div>
+                <select
+                  value={ans[toString(left.id)] ?? ""}
+                  onChange={(e) => setAnswer(q.questionId, { ...ans, [toString(left.id)]: e.target.value })}
+                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-base text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
+                >
+                  <option value="">Selecciona</option>
+                  {rightItems.map((ri) => (
+                    <option key={toString(ri.id)} value={toString(ri.id)}>
+                      {toString(ri.text)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {(((q.puzzle?.slots as Array<Record<string, unknown>>) ?? [])).map((slot) => {
+          const ans = (answers[q.questionId] as Record<string, string>) ?? {};
+          const options = ((slot.options as Array<Record<string, unknown>>) ?? []);
+          return (
+            <div key={toString(slot.slotId)} className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr]">
+              <div className="rounded-xl bg-zinc-50 px-3 py-2 text-base font-medium text-zinc-900">
+                {toString(slot.slotId)}
+              </div>
+              <select
+                value={ans[toString(slot.slotId)] ?? ""}
+                onChange={(e) =>
+                  setAnswer(q.questionId, {
+                    ...ans,
+                    [toString(slot.slotId)]: e.target.value,
+                  })
+                }
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-base text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
+              >
+                <option value="">Selecciona</option>
+                {options.map((o) => (
+                  <option key={toString(o.id)} value={toString(o.id)}>
+                    {toString(o.text)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function evaluateQuestion(q: SnapshotQuestion, answer: unknown) {
+    if (q.type === "single_choice") {
+      const correct = q.options?.find((o) => o.isCorrect)?.id;
+      return answer === correct ? q.points : 0;
+    }
+
+    if (q.type === "multiple_choice") {
+      const selected = Array.isArray(answer) ? (answer as string[]) : [];
+      const correct = (q.options ?? []).filter((o) => o.isCorrect).map((o) => o.id);
+      const same = selected.length === correct.length && selected.every((x) => correct.includes(x));
+      if (same) return q.points;
+
+      if (!q.partialCredit) return 0;
+      const correctSet = new Set(correct);
+      const selectedSet = new Set(selected);
+      const correctCount = correct.length || 1;
+      let correctSelected = 0;
+      let wrongSelected = 0;
+      selectedSet.forEach((id) => {
+        if (correctSet.has(id)) correctSelected += 1;
+        else wrongSelected += 1;
+      });
+      const ratio = Math.max(0, (correctSelected - wrongSelected) / correctCount);
+      return q.points * Math.min(1, ratio);
+    }
+
+    if (q.type === "open_concept") {
+      const text = toString(answer, "").toLowerCase();
+      const keywords = q.answerRules?.keywords ?? [];
+      const maxWords = q.answerRules?.maxWords ?? 120;
+      const words = text.split(/\s+/).filter(Boolean);
+      if (words.length > maxWords) return 0;
+      const totalWeight = keywords.reduce((acc, x) => acc + (x.weight || 0), 0);
+      if (!totalWeight) return 0;
+      let scoreWeight = 0;
+      keywords.forEach((k) => {
+        if (text.includes(k.term.toLowerCase())) scoreWeight += k.weight;
+      });
+      const ratio = Math.min(1, scoreWeight / totalWeight);
+      const threshold = typeof q.answerRules?.passThreshold === "number" ? q.answerRules.passThreshold : 0;
+      if (ratio < threshold) return 0;
+      return q.points * ratio;
+    }
+
+    if (q.type === "puzzle_order") {
+      const positions = (answer as Record<string, number>) || {};
+      const items = ((q.puzzle?.items as Array<Record<string, unknown>>) ?? []);
+      if (!items.length) return 0;
+      const ok = items.every((it) => positions[toString(it.id)] === toNumber(it.correctPosition, -1));
+      return ok ? q.points : 0;
+    }
+
+    if (q.type === "puzzle_match") {
+      const pairs = ((q.puzzle?.pairs as Array<Record<string, unknown>>) ?? []);
+      const ans = (answer as Record<string, string>) || {};
+      if (!pairs.length) return 0;
+      const ok = pairs.every((p) => ans[toString(p.leftId)] === toString(p.rightId));
+      return ok ? q.points : 0;
+    }
+
+    if (q.type === "puzzle_cloze") {
+      const slots = ((q.puzzle?.slots as Array<Record<string, unknown>>) ?? []);
+      const ans = (answer as Record<string, string>) || {};
+      if (!slots.length) return 0;
+      const ok = slots.every((s) => ans[toString(s.slotId)] === toString(s.correctOptionId));
+      return ok ? q.points : 0;
+    }
+
+    return 0;
+  }
+
+  async function submitAttempt(
+    expired = false,
+    opts?: { forcedStatus?: "submitted" | "submitted_expired" | "submitted_fraud"; forceZero?: boolean },
+  ) {
+    if (!attemptId || submitted || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const total = questions.reduce((acc, q) => acc + q.points, 0);
+      const earnedRaw = questions.reduce((acc, q) => acc + evaluateQuestion(q, answers[q.questionId]), 0);
+      const earned = opts?.forceZero ? 0 : earnedRaw;
+      const score5Raw = total > 0 ? (earnedRaw / total) * 5 : 0;
+      const score50Raw = total > 0 ? (earnedRaw / total) * 50 : 0;
+
+      const fraudTab = fraudCountsRef.current.tab;
+      const fraudClip = fraudCountsRef.current.clip;
+      const fraudTotal = fraudTab + fraudClip;
+      const fraudPenalty0to5 = Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+
+      const adjusted5 = opts?.forceZero ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
+      const adjusted50 = opts?.forceZero ? 0 : (adjusted5 / 5) * 50;
+      const score5 = Number(adjusted5.toFixed(2));
+      const score50 = Number(adjusted50.toFixed(2));
+
+      await updateDoc(doc(firestore, "attempts", attemptId), {
+        status: opts?.forcedStatus ?? (expired ? "submitted_expired" : "submitted"),
+        answers,
+        earnedPoints: Number(earned.toFixed(2)),
+        totalPoints: Number(total.toFixed(2)),
+        grade0to5Raw: Number(score5Raw.toFixed(2)),
+        grade0to50Raw: Number(score50Raw.toFixed(2)),
+        grade0to5: score5,
+        grade0to50: score50,
+        fraudTabSwitches: fraudTab,
+        fraudClipboardAttempts: fraudClip,
+        fraudPenalty0to5,
+        fraudForcedFail: Boolean(opts?.forceZero),
+        submittedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setResult({
+        score5,
+        score50,
+        score5Raw: Number(score5Raw.toFixed(2)),
+        score50Raw: Number(score50Raw.toFixed(2)),
+        earned: Number(earned.toFixed(2)),
+        total: Number(total.toFixed(2)),
+        fraudTabSwitches: fraudTab,
+        fraudClipboardAttempts: fraudClip,
+        fraudPenalty0to5,
+        fraudForcedFail: Boolean(opts?.forceZero),
+      });
+      setSubmitted(true);
+      setStep("result");
+    } catch {
+      setError("No fue posible enviar el examen.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (step !== "exam" || !attemptId || submitted) return;
+    const id = attemptId;
+
+    async function syncFraud(nextTab: number, nextClip: number, force = false) {
+      const now = Date.now();
+      if (!force && now - fraudRuntimeRef.current.lastSyncAt < 1500) return;
+      fraudRuntimeRef.current.lastSyncAt = now;
+      const total = nextTab + nextClip;
+      const penalty = Number((total * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+      try {
+        await updateDoc(doc(firestore, "attempts", id), {
+          fraudTabSwitches: nextTab,
+          fraudClipboardAttempts: nextClip,
+          fraudPenalty0to5: penalty,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        return;
+      }
+    }
+
+    function applyTabSwitch() {
+      const now = Date.now();
+      if (now - fraudRuntimeRef.current.lastTabCountAt < 500) return;
+      fraudRuntimeRef.current.lastTabCountAt = now;
+
+      const nextTab = fraudCountsRef.current.tab + 1;
+      const nextClip = fraudCountsRef.current.clip;
+      fraudCountsRef.current = { tab: nextTab, clip: nextClip };
+      setFraudTabSwitches(nextTab);
+      void syncFraud(nextTab, nextClip);
+
+      if (nextTab + nextClip >= FRAUD_FAIL_TOTAL_EVENTS && !fraudRuntimeRef.current.submittedFraudFail) {
+        fraudRuntimeRef.current.submittedFraudFail = true;
+        void syncFraud(nextTab, nextClip, true);
+        void submitAttempt(false, { forcedStatus: "submitted_fraud", forceZero: true });
+      }
+    }
+
+    function applyClipboardAttempt() {
+      const now = Date.now();
+      if (now - fraudRuntimeRef.current.lastClipboardCountAt < 250) return;
+      fraudRuntimeRef.current.lastClipboardCountAt = now;
+
+      const nextTab = fraudCountsRef.current.tab;
+      const nextClip = fraudCountsRef.current.clip + 1;
+      fraudCountsRef.current = { tab: nextTab, clip: nextClip };
+      setFraudClipboardAttempts(nextClip);
+      void syncFraud(nextTab, nextClip);
+
+      if (nextTab + nextClip >= FRAUD_FAIL_TOTAL_EVENTS && !fraudRuntimeRef.current.submittedFraudFail) {
+        fraudRuntimeRef.current.submittedFraudFail = true;
+        void syncFraud(nextTab, nextClip, true);
+        void submitAttempt(false, { forcedStatus: "submitted_fraud", forceZero: true });
+      }
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "c" || k === "v") {
+        applyClipboardAttempt();
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+
+    function onCopy(e: ClipboardEvent) {
+      applyClipboardAttempt();
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function onPaste(e: ClipboardEvent) {
+      applyClipboardAttempt();
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function onVisibilityChange() {
+      const visible = document.visibilityState === "visible";
+      if (!visible && fraudRuntimeRef.current.isVisible) {
+        fraudRuntimeRef.current.isVisible = false;
+        applyTabSwitch();
+        return;
+      }
+      if (visible) fraudRuntimeRef.current.isVisible = true;
+    }
+
+    function onWindowBlur() {
+      if (fraudRuntimeRef.current.isVisible) {
+        fraudRuntimeRef.current.isVisible = false;
+        applyTabSwitch();
+      }
+    }
+
+    function onWindowFocus() {
+      fraudRuntimeRef.current.isVisible = true;
+    }
+
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    }
+
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    document.addEventListener("copy", onCopy, { capture: true });
+    document.addEventListener("paste", onPaste, { capture: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("copy", onCopy, true);
+      document.removeEventListener("paste", onPaste, true);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [step, attemptId, submitted]);
+
+  useEffect(() => {
+    if (step !== "exam" || showExamSummary || showQuestionMap) return;
+
+    function isTypingTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName.toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return;
+      if (!e.altKey) return;
+      if (e.key === "ArrowLeft") {
+        setCurrentQuestionIndex((i) => Math.max(0, i - 1));
+      }
+      if (e.key === "ArrowRight") {
+        setCurrentQuestionIndex((i) => Math.min(Math.max(0, questions.length - 1), i + 1));
+      }
+      if (e.key.toLowerCase() === "m") {
+        setShowQuestionMap(true);
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [step, showExamSummary, showQuestionMap, questions.length]);
+
+  const centeredEntryStep = step === "code" || step === "student" || step === "rules";
+  const centeredExamStep = step === "exam";
+  const totalQuestions = questions.length;
+  const safeQuestionIndex = Math.min(Math.max(currentQuestionIndex, 0), Math.max(0, totalQuestions - 1));
+  const currentQuestion = totalQuestions > 0 ? questions[safeQuestionIndex] : null;
+  const answeredCount = questions.filter((q) => hasAnswer(q)).length;
+  const unansweredCount = Math.max(0, totalQuestions - answeredCount);
+  const progressPct = totalQuestions > 0 ? Math.round(((safeQuestionIndex + 1) / totalQuestions) * 100) : 0;
+  const fraudTotalEvents = fraudTabSwitches + fraudClipboardAttempts;
+  const fraudPenaltyPreview0to5 = Number((fraudTotalEvents * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+  const fraudTone =
+    fraudTotalEvents >= FRAUD_FAIL_TOTAL_EVENTS
+      ? "red"
+      : fraudTotalEvents >= 6
+        ? "orange"
+        : fraudTotalEvents >= 3
+          ? "yellow"
+          : "green";
+  const fraudPill =
+    fraudTone === "red"
+      ? "border-rose-200 bg-rose-50 text-rose-800"
+      : fraudTone === "orange"
+        ? "border-orange-200 bg-orange-50 text-orange-800"
+        : fraudTone === "yellow"
+          ? "border-amber-200 bg-amber-50 text-amber-800"
+          : "border-emerald-200 bg-emerald-50 text-emerald-800";
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-zinc-50 to-white px-4 py-6 sm:px-6">
+      <div
+        className={`mx-auto w-full ${
+          centeredEntryStep
+            ? "relative max-w-3xl min-h-[calc(100vh-3rem)] flex flex-col items-center justify-center gap-4"
+            : centeredExamStep
+              ? "max-w-6xl min-h-[calc(100vh-3rem)] flex flex-col justify-center gap-4"
+              : "max-w-4xl space-y-4"
+        }`}
+      >
+        <header
+          className={`flex w-full justify-end ${centeredEntryStep ? "absolute right-0 top-0 max-w-2xl" : ""}`}
+        >
+          <IconButton
+            onClick={() => {
+              if (step === "exam") return;
+              if (step === "student") setStep("code");
+              else if (step === "rules") setStep("student");
+            }}
+            className="h-10 w-10"
+            aria-label="Volver"
+            title="Volver"
+            disabled={step === "code" || step === "exam" || step === "result"}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </IconButton>
+        </header>
+
+
+        {error ? (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {error}
+          </div>
+        ) : null}
+        {annulReason ? (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {annulReason}
+          </div>
+        ) : null}
+
+        {step === "code" ? (
+          <section className="mx-auto w-full max-w-md rounded-3xl border border-indigo-200 bg-white p-6 shadow-sm">
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
+                <Smartphone className="h-7 w-7" />
+              </div>
+              <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
+                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-950 text-[10px] font-semibold text-white">
+                  ZS
+                </div>
+                <span className="text-xs font-semibold text-indigo-800">Z-Suite Eval</span>
+              </div>
+              <h2 className="mt-4 text-xl font-semibold tracking-tight text-zinc-950">Verificacion OTP</h2>
+              <p className="mt-2 text-sm text-zinc-600">
+                Ingresa el codigo de 6 digitos compartido por tu docente.
+              </p>
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                <LockKeyhole className="h-3.5 w-3.5" />
+                Examen individual y de un solo intento
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <OTPInput value={code} onChange={setCode} />
+            </div>
+
+            <div className="mt-6 flex justify-center">
+              <IconButton
+                variant="primary"
+                onClick={loadExamByCode}
+                className="h-11 w-11"
+                aria-label="Continuar"
+                title={loading ? "Cargando..." : "Continuar"}
+                disabled={loading || code.trim().length !== 6}
+              >
+                <ArrowRight className="h-5 w-5" />
+              </IconButton>
+            </div>
+          </section>
+        ) : null}
+
+        {step === "rules" && exam ? (
+          <section className="mx-auto w-full max-w-2xl rounded-3xl border border-indigo-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold tracking-tight text-zinc-950">
+                  {exam.name}
+                </h2>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Antes de iniciar, lee y acepta las reglas del examen.
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">
+                <Timer className="h-3.5 w-3.5" />
+                {exam.timeLimitMinutes} min
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3 text-sm text-zinc-700">
+              <div className="rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Reglas del examen</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Tiempo limite: <strong>{exam.timeLimitMinutes} minutos</strong>.</li>
+                  <li>Al llegar a 0, el examen se <strong>cierra automaticamente</strong> y se envia lo registrado.</li>
+                  <li><strong>Solo un intento</strong> por estudiante: se valida por correo y documento.</li>
+                  <li>El examen es <strong>individual</strong>.</li>
+                  <li>Al finalizar, solo veras tu <strong>nota</strong>. Las preguntas y respuestas se habilitan despues.</li>
+                  <li>Recuperacion solo si la nota final esta entre <strong>2.0 y 2.9</strong>.</li>
+                  <li>Si obtienes <strong>3.0 o superior</strong>, esa es tu nota definitiva.</li>
+                  <li>
+                    El docente puede <strong>anular tu intento</strong> de forma remota si detecta copia. En ese caso la nota sera <strong>0</strong> sin recuperacion.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <ShieldCheck className="mt-0.5 h-5 w-5 text-zinc-700" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-zinc-900">Consentimiento</p>
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Al continuar confirmas que entiendes el tiempo del examen y aceptas que no se habilitara una segunda oportunidad.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setRulesAccepted((v) => !v)}
+                className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left ${
+                  rulesAccepted ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-zinc-900">He leido y acepto las reglas</p>
+                  <p className="truncate text-xs text-zinc-600">Incluye intento unico, tiempo limite y politica de nota.</p>
+                </div>
+                <CheckCircle2 className={`h-5 w-5 ${rulesAccepted ? "text-emerald-600" : "text-zinc-300"}`} />
+              </button>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <IconButton
+                variant="primary"
+                onClick={startAttempt}
+                className="h-11 w-11"
+                aria-label="Aceptar e iniciar"
+                title="Aceptar e iniciar"
+                disabled={!rulesAccepted || submitting}
+              >
+                <ArrowRight className="h-5 w-5" />
+              </IconButton>
+            </div>
+          </section>
+        ) : null}
+
+        {step === "student" && exam ? (
+          <section className="mx-auto w-full max-w-md rounded-3xl border border-indigo-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-semibold text-zinc-900">{exam.name}</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {questions.length} preguntas • {exam.timeLimitMinutes} min
+            </p>
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Nombre</span>
+                <input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
+                  placeholder="Ej: Jaime"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Apellido</span>
+                <input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
+                  placeholder="Ej: Zapata"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Documento</span>
+                <input
+                  value={documentId}
+                  onChange={(e) => setDocumentId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
+                  placeholder="Solo numeros o alfanumerico"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Correo</span>
+                <input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
+                  placeholder="correo@ejemplo.com"
+                />
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <IconButton
+                variant="primary"
+                onClick={() => setStep("rules")}
+                className="h-10 w-10"
+                aria-label="Continuar"
+                title="Continuar a confirmacion"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </IconButton>
+            </div>
+          </section>
+        ) : null}
+
+        {step === "exam" && exam ? (
+          <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-4">
+            <div className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="truncate text-sm font-semibold text-zinc-900">{exam.name}</p>
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${fraudPill}`}
+                    title={`Fraude total: ${fraudTotalEvents} (Cambio de pestaña: ${fraudTabSwitches}, Copiar/Pegar: ${fraudClipboardAttempts}). Penalización: ${fraudPenaltyPreview0to5.toFixed(
+                      2,
+                    )} en escala 0-5.`}
+                  >
+                    Fraude total {fraudTotalEvents}
+                  </div>
+                  <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                    Pestaña {fraudTabSwitches}
+                  </div>
+                  <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                    Copiar/Pegar {fraudClipboardAttempts}
+                  </div>
+                  <div className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                    <Timer className="h-3.5 w-3.5" />
+                    {formatRemaining(remainingMs)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {adminMessage ? (
+              <div className="mx-auto w-full max-w-4xl rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Mensaje del docente</p>
+                <p className="mt-2">{adminMessage}</p>
+              </div>
+            ) : null}
+
+            {!showExamSummary && currentQuestion ? (
+              <article className="mx-auto flex min-h-[52vh] w-full max-w-4xl flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold text-zinc-500">
+                    Pregunta {safeQuestionIndex + 1} de {totalQuestions}
+                  </p>
+                  <div className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
+                    Respondidas: {answeredCount}/{totalQuestions}
+                  </div>
+                </div>
+                <p className="mt-2 text-sm font-medium text-zinc-900">{currentQuestion.statement}</p>
+
+                <div className="mt-3">{renderQuestionInput(currentQuestion)}</div>
+
+                <div className="mt-4 flex items-center justify-between">
+                  <IconButton
+                    onClick={() => setCurrentQuestionIndex((i) => Math.max(0, i - 1))}
+                    className="h-10 w-10"
+                    aria-label="Pregunta anterior"
+                    title="Pregunta anterior"
+                    disabled={safeQuestionIndex === 0}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </IconButton>
+
+                  <div className="flex items-center gap-2">
+                    {safeQuestionIndex < totalQuestions - 1 ? (
+                      <IconButton
+                        variant="primary"
+                        onClick={() => setCurrentQuestionIndex((i) => Math.min(totalQuestions - 1, i + 1))}
+                        className="h-10 w-10"
+                        aria-label="Siguiente pregunta"
+                        title="Siguiente pregunta"
+                      >
+                        <ArrowRight className="h-4 w-4" />
+                      </IconButton>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowExamSummary(true)}
+                        className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                      >
+                        Revisar y finalizar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </article>
+            ) : null}
+
+            {showExamSummary ? (
+              <article className="mx-auto flex min-h-[52vh] w-full max-w-4xl flex-col rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-zinc-900">Resumen final del intento</h3>
+                <p className="mt-1 text-xs text-zinc-600">
+                  Revisa el estado de cada pregunta antes de enviar de forma definitiva.
+                </p>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-5">
+                  {questions.map((q, idx) => {
+                    const answered = hasAnswer(q);
+                    return (
+                      <button
+                        key={q.questionId}
+                        type="button"
+                        onClick={() => {
+                          setCurrentQuestionIndex(idx);
+                          setShowExamSummary(false);
+                        }}
+                        className={`rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                          answered
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-amber-200 bg-amber-50 text-amber-800"
+                        }`}
+                      >
+                        P{idx + 1} {answered ? "OK" : "Pend."}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowExamSummary(false)}
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Volver a preguntas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void submitAttempt(false)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={submitting}
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    Finalizar envio definitivo
+                  </button>
+                </div>
+              </article>
+            ) : null}
+          </section>
+        ) : null}
+
+        {step === "result" && result ? (
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-zinc-950">Examen enviado</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Tu nota se muestra sin revelar respuestas correctas.
+            </p>
+            {result.fraudForcedFail ? (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
+                Examen perdido por fraude (demasiados intentos).
+              </div>
+            ) : null}
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                <p className="text-xs text-zinc-500">Escala 0-5</p>
+                <p className="text-xl font-semibold text-zinc-900">{result.score5}</p>
+              </div>
+              <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                <p className="text-xs text-zinc-500">Escala 0-50</p>
+                <p className="text-xl font-semibold text-zinc-900">{result.score50}</p>
+              </div>
+            </div>
+            {result.fraudTabSwitches + result.fraudClipboardAttempts > 0 ? (
+              <div className="mt-4 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Indicador de fraude</p>
+                <p className="mt-1">
+                  Pestañas: <strong>{result.fraudTabSwitches}</strong> • Copiar/Pegar:{" "}
+                  <strong>{result.fraudClipboardAttempts}</strong> • Penalización:{" "}
+                  <strong>-{result.fraudPenalty0to5.toFixed(2)}</strong> (escala 0-5)
+                </p>
+                {!result.fraudForcedFail ? (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Nota sin penalización: {result.score5Raw.toFixed(2)} (0-5) • {result.score50Raw.toFixed(2)} (0-50)
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <p className="mt-3 text-sm text-zinc-600">
+              Puntaje: {result.earned} de {result.total}
+            </p>
+          </section>
+        ) : null}
+      </div>
+    </div>
+  );
+}

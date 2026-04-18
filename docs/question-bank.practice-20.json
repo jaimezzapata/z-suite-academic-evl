@@ -1,0 +1,406 @@
+{
+  "schemaVersion": "1.0.0",
+  "batch": {
+    "batchId": "2026-04-17-practice-20q",
+    "importedAt": "2026-04-17T21:00:00Z",
+    "importMode": "append_only",
+    "createdBy": "admin@colegio.edu",
+    "notes": "Banco de practica con 20 preguntas para pruebas de flujo estudiantil."
+  },
+  "catalog": {
+    "groups": [
+      { "id": "manana_10a", "name": "Grado 10A Manana", "active": true }
+    ],
+    "subjects": [
+      { "id": "frontend_1", "name": "Frontend 1", "active": true }
+    ],
+    "moments": [
+      { "id": "m1", "name": "Momento 1", "active": true }
+    ]
+  },
+  "questions": [
+    {
+      "id": "q_front_prac_0001",
+      "type": "single_choice",
+      "statement": "¿Que etiqueta define el contenido principal de una pagina?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<main>", "isCorrect": true },
+        { "id": "b", "text": "<section>" },
+        { "id": "c", "text": "<footer>" },
+        { "id": "d", "text": "<aside>" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0002",
+      "type": "single_choice",
+      "statement": "¿Que propiedad CSS cambia el color del texto?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "background" },
+        { "id": "b", "text": "font-color" },
+        { "id": "c", "text": "color", "isCorrect": true },
+        { "id": "d", "text": "text-style" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0003",
+      "type": "multiple_choice",
+      "statement": "Selecciona propiedades validas de Flexbox.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "justify-content", "isCorrect": true },
+        { "id": "b", "text": "align-items", "isCorrect": true },
+        { "id": "c", "text": "grid-template-columns" },
+        { "id": "d", "text": "flex-wrap", "isCorrect": true }
+      ],
+      "partialCredit": true
+    },
+    {
+      "id": "q_front_prac_0004",
+      "type": "single_choice",
+      "statement": "¿Que metodo convierte un JSON string en objeto JavaScript?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "JSON.stringify()" },
+        { "id": "b", "text": "JSON.parse()", "isCorrect": true },
+        { "id": "c", "text": "JSON.object()" },
+        { "id": "d", "text": "JSON.decode()" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0005",
+      "type": "single_choice",
+      "statement": "¿Que atributo de input oculta los caracteres al escribir?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "type='email'" },
+        { "id": "b", "text": "type='hidden'" },
+        { "id": "c", "text": "type='password'", "isCorrect": true },
+        { "id": "d", "text": "type='secure'" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0006",
+      "type": "multiple_choice",
+      "statement": "Selecciona eventos de formulario en JavaScript.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "submit", "isCorrect": true },
+        { "id": "b", "text": "change", "isCorrect": true },
+        { "id": "c", "text": "compile" },
+        { "id": "d", "text": "input", "isCorrect": true }
+      ],
+      "partialCredit": true
+    },
+    {
+      "id": "q_front_prac_0007",
+      "type": "single_choice",
+      "statement": "¿Que hook de React se usa para estado local?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "useEffect" },
+        { "id": "b", "text": "useState", "isCorrect": true },
+        { "id": "c", "text": "useMemo" },
+        { "id": "d", "text": "useRef" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0008",
+      "type": "single_choice",
+      "statement": "¿Que unidad CSS es relativa al tamano de fuente del elemento raiz?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "em" },
+        { "id": "b", "text": "px" },
+        { "id": "c", "text": "rem", "isCorrect": true },
+        { "id": "d", "text": "%" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0009",
+      "type": "multiple_choice",
+      "statement": "Selecciona metodos de arrays en JavaScript.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "map", "isCorrect": true },
+        { "id": "b", "text": "filter", "isCorrect": true },
+        { "id": "c", "text": "reduce", "isCorrect": true },
+        { "id": "d", "text": "compile" }
+      ],
+      "partialCredit": true
+    },
+    {
+      "id": "q_front_prac_0010",
+      "type": "single_choice",
+      "statement": "¿Que propiedad CSS redondea esquinas?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "box-shadow" },
+        { "id": "b", "text": "border-radius", "isCorrect": true },
+        { "id": "c", "text": "outline-radius" },
+        { "id": "d", "text": "radius" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0011",
+      "type": "open_concept",
+      "statement": "Explica en tus palabras que es el DOM y para que sirve.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "answerRules": {
+        "maxWords": 80,
+        "keywords": [
+          { "term": "documento", "weight": 1.0 },
+          { "term": "arbol", "weight": 1.0 },
+          { "term": "elementos", "weight": 1.0 },
+          { "term": "manipular", "weight": 1.0 }
+        ],
+        "passThreshold": 0.5
+      }
+    },
+    {
+      "id": "q_front_prac_0012",
+      "type": "single_choice",
+      "statement": "¿Que etiqueta HTML crea un enlace?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<link>" },
+        { "id": "b", "text": "<a>", "isCorrect": true },
+        { "id": "c", "text": "<href>" },
+        { "id": "d", "text": "<nav>" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0013",
+      "type": "single_choice",
+      "statement": "¿Que valor de position permite fijar un elemento en pantalla al hacer scroll?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "relative" },
+        { "id": "b", "text": "absolute" },
+        { "id": "c", "text": "sticky" },
+        { "id": "d", "text": "fixed", "isCorrect": true }
+      ]
+    },
+    {
+      "id": "q_front_prac_0014",
+      "type": "multiple_choice",
+      "statement": "Selecciona buenas practicas de accesibilidad web.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "Usar texto alternativo en imagenes", "isCorrect": true },
+        { "id": "b", "text": "Contraste adecuado de color", "isCorrect": true },
+        { "id": "c", "text": "Ocultar todos los labels" },
+        { "id": "d", "text": "Navegacion por teclado", "isCorrect": true }
+      ],
+      "partialCredit": true
+    },
+    {
+      "id": "q_front_prac_0015",
+      "type": "single_choice",
+      "statement": "¿Que metodo de fetch convierte la respuesta a JSON?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "response.toJson()" },
+        { "id": "b", "text": "response.json()", "isCorrect": true },
+        { "id": "c", "text": "response.parse()" },
+        { "id": "d", "text": "JSON.response()" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0016",
+      "type": "single_choice",
+      "statement": "¿Que selector CSS apunta a un elemento con id='menu'?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": ".menu" },
+        { "id": "b", "text": "#menu", "isCorrect": true },
+        { "id": "c", "text": "menu#" },
+        { "id": "d", "text": "*menu" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0017",
+      "type": "open_concept",
+      "statement": "Describe cuando usar localStorage y una limitacion importante.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "answerRules": {
+        "maxWords": 90,
+        "keywords": [
+          { "term": "persistente", "weight": 1.0 },
+          { "term": "navegador", "weight": 1.0 },
+          { "term": "no seguro", "weight": 1.0 },
+          { "term": "tamano", "weight": 1.0 }
+        ],
+        "passThreshold": 0.5
+      }
+    },
+    {
+      "id": "q_front_prac_0018",
+      "type": "single_choice",
+      "statement": "¿Que propiedad CSS controla el espacio interno de un elemento?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "margin" },
+        { "id": "b", "text": "padding", "isCorrect": true },
+        { "id": "c", "text": "spacing" },
+        { "id": "d", "text": "gap" }
+      ]
+    },
+    {
+      "id": "q_front_prac_0019",
+      "type": "multiple_choice",
+      "statement": "Selecciona elementos semanticos de estructura en HTML.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 2,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<header>", "isCorrect": true },
+        { "id": "b", "text": "<nav>", "isCorrect": true },
+        { "id": "c", "text": "<div>" },
+        { "id": "d", "text": "<footer>", "isCorrect": true }
+      ],
+      "partialCredit": true
+    },
+    {
+      "id": "q_front_prac_0020",
+      "type": "single_choice",
+      "statement": "¿Que propiedad de JavaScript se usa para conocer la longitud de un array?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "size" },
+        { "id": "b", "text": "count" },
+        { "id": "c", "text": "length", "isCorrect": true },
+        { "id": "d", "text": "items" }
+      ]
+    }
+  ],
+  "examTemplates": [
+    {
+      "id": "exam_front_practice_m1_20q",
+      "name": "Frontend 1 - Practica 20 preguntas",
+      "subjectId": "frontend_1",
+      "groupId": "manana_10a",
+      "momentId": "m1",
+      "questionCount": 20,
+      "recommendedRange": { "min": 20, "max": 20 },
+      "timeLimitMinutes": 30,
+      "allowedQuestionTypes": [
+        "single_choice",
+        "multiple_choice",
+        "open_concept"
+      ],
+      "selectionRules": {
+        "mode": "random",
+        "shuffleOptions": true
+      },
+      "accessCode": {
+        "mode": "generated_6_digits"
+      },
+      "resultPolicy": {
+        "showScoreAfterSubmit": true,
+        "showAnswersAfterSubmit": false
+      },
+      "gradingScale": "both",
+      "studentRequiredFields": ["fullName", "documentId", "email"]
+    }
+  ]
+}
