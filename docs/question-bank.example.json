@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "1.0.0",
+  "batch": {
+    "batchId": "2026-04-17-lote-01",
+    "importedAt": "2026-04-17T19:30:00Z",
+    "importMode": "append_only",
+    "createdBy": "admin@colegio.edu",
+    "notes": "Primer lote de preguntas."
+  },
+  "catalog": {
+    "groups": [
+      { "id": "manana_10a", "name": "Grado 10A Manana", "active": true },
+      { "id": "noche_10a", "name": "Grado 10A Noche", "active": true }
+    ],
+    "subjects": [
+      { "id": "frontend_1", "name": "Frontend 1", "active": true },
+      { "id": "db_1", "name": "Bases de Datos 1", "active": true }
+    ],
+    "moments": [
+      { "id": "m1", "name": "Momento 1", "active": true },
+      { "id": "m2", "name": "Momento 2", "active": true },
+      { "id": "rever", "name": "Recuperacion", "active": true }
+    ]
+  },
+  "questions": [
+    {
+      "id": "q_front_0001",
+      "type": "single_choice",
+      "statement": "¿Que propiedad CSS se usa para convertir un contenedor en flex?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a", "noche_10a"],
+      "momentIds": ["m1", "rever"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "tags": ["css", "flexbox"],
+      "options": [
+        { "id": "a", "text": "display: flex;", "isCorrect": true },
+        { "id": "b", "text": "position: flex;" },
+        { "id": "c", "text": "layout: flex;" }
+      ]
+    },
+    {
+      "id": "q_front_0002",
+      "type": "multiple_choice",
+      "statement": "Selecciona etiquetas semanticas HTML validas:",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1", "m2", "rever"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<article>", "isCorrect": true },
+        { "id": "b", "text": "<header>", "isCorrect": true },
+        { "id": "c", "text": "<box>" },
+        { "id": "d", "text": "<main>", "isCorrect": true }
+      ],
+      "partialCredit": true
+    },
+    {
+      "id": "q_front_0003",
+      "type": "open_concept",
+      "statement": "Explica la diferencia entre var, let y const en JavaScript.",
+      "subjectId": "frontend_1",
+      "groupIds": ["noche_10a"],
+      "momentIds": ["m2", "rever"],
+      "difficulty": "medium",
+      "points": 3,
+      "status": "published",
+      "answerRules": {
+        "maxWords": 80,
+        "keywords": [
+          { "term": "scope", "weight": 1.5 },
+          { "term": "block", "weight": 1.2 },
+          { "term": "reasignacion", "weight": 1.3 },
+          { "term": "hoisting", "weight": 1.0 }
+        ],
+        "passThreshold": 0.6
+      }
+    },
+    {
+      "id": "q_db_0001",
+      "type": "puzzle_order",
+      "statement": "Ordena los pasos correctos para ejecutar una consulta SQL simple.",
+      "subjectId": "db_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1", "rever"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "puzzle": {
+        "items": [
+          { "id": "p1", "text": "SELECT columnas", "correctPosition": 1 },
+          { "id": "p2", "text": "FROM tabla", "correctPosition": 2 },
+          { "id": "p3", "text": "WHERE condicion", "correctPosition": 3 }
+        ]
+      }
+    },
+    {
+      "id": "q_front_0004",
+      "type": "puzzle_match",
+      "statement": "Relaciona cada propiedad CSS con su descripcion.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a", "noche_10a"],
+      "momentIds": ["m2", "rever"],
+      "difficulty": "hard",
+      "points": 3,
+      "status": "published",
+      "puzzle": {
+        "leftItems": [
+          { "id": "l1", "text": "display" },
+          { "id": "l2", "text": "margin" }
+        ],
+        "rightItems": [
+          { "id": "r1", "text": "Define modelo de renderizado" },
+          { "id": "r2", "text": "Espacio externo del elemento" }
+        ],
+        "pairs": [
+          { "leftId": "l1", "rightId": "r1" },
+          { "leftId": "l2", "rightId": "r2" }
+        ]
+      }
+    },
+    {
+      "id": "q_front_0005",
+      "type": "puzzle_cloze",
+      "statement": "Completa el enunciado sobre React.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "puzzle": {
+        "templateText": "En React, {{slot_1}} se usa para manejar estado local.",
+        "slots": [
+          {
+            "slotId": "slot_1",
+            "options": [
+              { "id": "o1", "text": "useState" },
+              { "id": "o2", "text": "useMemo" }
+            ],
+            "correctOptionId": "o1"
+          }
+        ]
+      }
+    }
+  ],
+  "examTemplates": [
+    {
+      "id": "exam_front_m1_manana",
+      "name": "Frontend 1 - Momento 1 - Manana",
+      "subjectId": "frontend_1",
+      "groupId": "manana_10a",
+      "momentId": "m1",
+      "questionCount": 45,
+      "recommendedRange": { "min": 40, "max": 50 },
+      "timeLimitMinutes": 60,
+      "allowedQuestionTypes": [
+        "single_choice",
+        "multiple_choice",
+        "open_concept",
+        "puzzle_order",
+        "puzzle_match",
+        "puzzle_cloze"
+      ],
+      "selectionRules": {
+        "mode": "random",
+        "shuffleOptions": true
+      },
+      "accessCode": {
+        "mode": "generated_6_digits"
+      },
+      "resultPolicy": {
+        "showScoreAfterSubmit": true,
+        "showAnswersAfterSubmit": false
+      },
+      "gradingScale": "both",
+      "studentRequiredFields": ["fullName", "documentId", "email"]
+    }
+  ]
+}

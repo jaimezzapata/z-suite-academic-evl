@@ -1,0 +1,697 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://z-suite-academic-evl.local/schemas/question-bank.schema.json",
+  "title": "Question Bank Import Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "batch",
+    "catalog",
+    "questions",
+    "examTemplates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.0\\.\\d+$"
+    },
+    "batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batchId",
+        "importedAt",
+        "importMode"
+      ],
+      "properties": {
+        "batchId": {
+          "type": "string",
+          "minLength": 3
+        },
+        "importedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "importMode": {
+          "type": "string",
+          "enum": [
+            "append_only"
+          ]
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groups",
+        "subjects",
+        "moments"
+      ],
+      "properties": {
+        "groups": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/catalogItem"
+          }
+        },
+        "subjects": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/catalogItem"
+          }
+        },
+        "moments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/catalogItem"
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/question"
+      }
+    },
+    "examTemplates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/examTemplate"
+      }
+    }
+  },
+  "$defs": {
+    "catalogItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "active"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]{2,40}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "active": {
+          "type": "boolean"
+        }
+      }
+    },
+    "questionOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]{1,20}$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "isCorrect": {
+          "type": "boolean"
+        }
+      }
+    },
+    "questionBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "statement",
+        "subjectId",
+        "groupIds",
+        "momentIds",
+        "difficulty",
+        "points",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^q_[a-z0-9_\\-]{4,60}$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "single_choice",
+            "multiple_choice",
+            "open_concept",
+            "puzzle_order",
+            "puzzle_match",
+            "puzzle_cloze"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 1200
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "groupIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "momentIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": [
+            "easy",
+            "medium",
+            "hard"
+          ]
+        },
+        "points": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 100
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "published",
+            "archived"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "questionSingleChoice": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/questionBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "options"
+          ],
+          "properties": {
+            "type": {
+              "const": "single_choice"
+            },
+            "options": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "$ref": "#/$defs/questionOption"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "questionMultipleChoice": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/questionBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "options"
+          ],
+          "properties": {
+            "type": {
+              "const": "multiple_choice"
+            },
+            "options": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "$ref": "#/$defs/questionOption"
+              }
+            },
+            "partialCredit": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      ]
+    },
+    "questionOpenConcept": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/questionBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "answerRules"
+          ],
+          "properties": {
+            "type": {
+              "const": "open_concept"
+            },
+            "answerRules": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "maxWords",
+                "keywords",
+                "passThreshold"
+              ],
+              "properties": {
+                "maxWords": {
+                  "type": "integer",
+                  "minimum": 5,
+                  "maximum": 400
+                },
+                "keywords": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "term",
+                      "weight"
+                    ],
+                    "properties": {
+                      "term": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 80
+                      },
+                      "weight": {
+                        "type": "number",
+                        "minimum": 0.1,
+                        "maximum": 10
+                      }
+                    }
+                  }
+                },
+                "passThreshold": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "questionPuzzleOrder": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/questionBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "puzzle"
+          ],
+          "properties": {
+            "type": {
+              "const": "puzzle_order"
+            },
+            "puzzle": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "items"
+              ],
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "minItems": 3,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "text",
+                      "correctPosition"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "correctPosition": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "questionPuzzleMatch": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/questionBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "puzzle"
+          ],
+          "properties": {
+            "type": {
+              "const": "puzzle_match"
+            },
+            "puzzle": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "leftItems",
+                "rightItems",
+                "pairs"
+              ],
+              "properties": {
+                "leftItems": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "$ref": "#/$defs/questionOption"
+                  }
+                },
+                "rightItems": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "$ref": "#/$defs/questionOption"
+                  }
+                },
+                "pairs": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "leftId",
+                      "rightId"
+                    ],
+                    "properties": {
+                      "leftId": {
+                        "type": "string"
+                      },
+                      "rightId": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "questionPuzzleCloze": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/questionBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "puzzle"
+          ],
+          "properties": {
+            "type": {
+              "const": "puzzle_cloze"
+            },
+            "puzzle": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "templateText",
+                "slots"
+              ],
+              "properties": {
+                "templateText": {
+                  "type": "string",
+                  "description": "Use placeholders like {{slot_1}}."
+                },
+                "slots": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "slotId",
+                      "options",
+                      "correctOptionId"
+                    ],
+                    "properties": {
+                      "slotId": {
+                        "type": "string"
+                      },
+                      "options": {
+                        "type": "array",
+                        "minItems": 2,
+                        "items": {
+                          "$ref": "#/$defs/questionOption"
+                        }
+                      },
+                      "correctOptionId": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "question": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/questionSingleChoice"
+        },
+        {
+          "$ref": "#/$defs/questionMultipleChoice"
+        },
+        {
+          "$ref": "#/$defs/questionOpenConcept"
+        },
+        {
+          "$ref": "#/$defs/questionPuzzleOrder"
+        },
+        {
+          "$ref": "#/$defs/questionPuzzleMatch"
+        },
+        {
+          "$ref": "#/$defs/questionPuzzleCloze"
+        }
+      ]
+    },
+    "examTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "subjectId",
+        "groupId",
+        "momentId",
+        "questionCount",
+        "timeLimitMinutes",
+        "allowedQuestionTypes",
+        "accessCode",
+        "resultPolicy",
+        "gradingScale"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^exam_[a-z0-9_\\-]{4,60}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 140
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "groupId": {
+          "type": "string"
+        },
+        "momentId": {
+          "type": "string"
+        },
+        "questionCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "recommendedRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "timeLimitMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        },
+        "allowedQuestionTypes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "single_choice",
+              "multiple_choice",
+              "open_concept",
+              "puzzle_order",
+              "puzzle_match",
+              "puzzle_cloze"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "selectionRules": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "random",
+                "fixed_order"
+              ],
+              "default": "random"
+            },
+            "shuffleOptions": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "accessCode": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "generated_6_digits",
+                "fixed_6_digits"
+              ]
+            },
+            "fixedCode": {
+              "type": "string",
+              "pattern": "^\\d{6}$"
+            }
+          }
+        },
+        "resultPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "showScoreAfterSubmit",
+            "showAnswersAfterSubmit"
+          ],
+          "properties": {
+            "showScoreAfterSubmit": {
+              "type": "boolean",
+              "const": true
+            },
+            "showAnswersAfterSubmit": {
+              "type": "boolean"
+            }
+          }
+        },
+        "gradingScale": {
+          "type": "string",
+          "enum": [
+            "0_5",
+            "0_50",
+            "both"
+          ]
+        },
+        "studentRequiredFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "fullName",
+              "documentId",
+              "email"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
