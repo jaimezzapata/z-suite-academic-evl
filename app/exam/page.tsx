@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -17,11 +18,13 @@ import {
 import { firestore } from "@/lib/firebase/client";
 import { normalizeFullName, normalizePersonNamePart } from "@/lib/text/normalize";
 import { IconButton } from "@/app/admin/ui/icon-button";
+import { MarkdownViewer } from "@/app/ui/markdown-viewer";
 import {
   ArrowLeft,
   ArrowRight,
   Award,
   BadgeCheck,
+  BookOpen,
   CheckCircle2,
   LayoutGrid,
   LockKeyhole,
@@ -41,6 +44,7 @@ type PublishedExam = {
   status: string;
   questionCount: number;
   timeLimitMinutes: number;
+  documentationMarkdown: string;
 };
 
 type SnapshotQuestion = {
@@ -64,6 +68,27 @@ type Step = "code" | "student" | "rules" | "exam" | "result";
 
 const FRAUD_PENALTY_PER_EVENT_0TO5 = 0.2;
 const FRAUD_FAIL_TOTAL_EVENTS = 11;
+const RESUME_KEY = "zse:examResume";
+
+function randomInt(maxExclusive: number) {
+  if (maxExclusive <= 0) return 0;
+  try {
+    const arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    return arr[0] % maxExclusive;
+  } catch {
+    return Math.floor(Math.random() * maxExclusive);
+  }
+}
+
+function shuffleIds(ids: string[]) {
+  const copy = [...ids];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value : fallback;
@@ -152,6 +177,7 @@ export default function ExamPublicPage() {
 
   const [exam, setExam] = useState<PublishedExam | null>(null);
   const [questions, setQuestions] = useState<SnapshotQuestion[]>([]);
+  const [questionOrder, setQuestionOrder] = useState<string[]>([]);
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [rulesAccepted, setRulesAccepted] = useState(false);
 
@@ -170,6 +196,7 @@ export default function ExamPublicPage() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showExamSummary, setShowExamSummary] = useState(false);
   const [showQuestionMap, setShowQuestionMap] = useState(false);
+  const [docOpen, setDocOpen] = useState(false);
   const [finalSubmitAccepted, setFinalSubmitAccepted] = useState(false);
   const [result, setResult] = useState<{
     score5: number;
@@ -197,10 +224,39 @@ export default function ExamPublicPage() {
     isVisible: true,
     submittedFraudFail: false,
   });
+  const autosaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  const displayQuestions = useMemo(() => {
+    if (!questionOrder.length) return questions;
+    const byId = new Map<string, SnapshotQuestion>();
+    questions.forEach((q) => byId.set(q.questionId, q));
+    const ordered: SnapshotQuestion[] = [];
+    questionOrder.forEach((id) => {
+      const q = byId.get(id);
+      if (q) ordered.push(q);
+    });
+    if (ordered.length !== questions.length) {
+      questions.forEach((q) => {
+        if (!questionOrder.includes(q.questionId)) ordered.push(q);
+      });
+    }
+    return ordered;
+  }, [questions, questionOrder]);
+
+  useEffect(() => {
+    if (step !== "code") return;
+    try {
+      const raw = localStorage.getItem(RESUME_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { accessCode?: unknown };
+      const c = typeof parsed.accessCode === "string" ? parsed.accessCode : "";
+      if (c && /^\d{6}$/.test(c)) setCode(c);
+    } catch {}
+  }, [step]);
 
   useEffect(() => {
     fraudCountsRef.current = { tab: fraudTabSwitches, clip: fraudClipboardAttempts };
@@ -216,7 +272,9 @@ export default function ExamPublicPage() {
         return;
       }
 
-      const snap = await getDocs(query(collection(firestore, "publishedExams"), where("accessCode", "==", c), limit(5)));
+      const snap = await getDocs(
+        query(collection(firestore, "publishedExams"), where("accessCode", "==", c), limit(5)),
+      );
       const found = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
         .find((row) => {
@@ -230,7 +288,7 @@ export default function ExamPublicPage() {
       }
       const foundRow = found as Record<string, unknown> & { id: string };
 
-      setExam({
+      const nextExam: PublishedExam = {
         id: foundRow.id,
         templateId: toString(foundRow.templateId, ""),
         name: toString(foundRow.name, "Examen"),
@@ -238,35 +296,170 @@ export default function ExamPublicPage() {
         status: toString(foundRow.status, "published"),
         questionCount: toNumber(foundRow.questionCount, 0),
         timeLimitMinutes: toNumber(foundRow.timeLimitMinutes, 60),
-      });
+        documentationMarkdown: toString(foundRow.documentationMarkdown, ""),
+      };
+      setExam(nextExam);
 
       const qSnap = await getDocs(
         query(collection(firestore, "publishedExams", foundRow.id, "questions"), orderBy("order", "asc"), limit(300)),
       );
-      setQuestions(
-        qSnap.docs.map((d) => {
-          const row = d.data() as Record<string, unknown>;
-          return {
-            id: d.id,
-            questionId: toString(row.questionId, d.id),
-            order: toNumber(row.order, 0),
-            type: toString(row.type, "single_choice"),
-            statement: toString(row.statement, ""),
-            points: toNumber(row.points, 1),
-            options: Array.isArray(row.options) ? (row.options as SnapshotQuestion["options"]) : undefined,
-            partialCredit: Boolean(row.partialCredit),
-            answerRules: (row.answerRules as SnapshotQuestion["answerRules"]) ?? undefined,
-            puzzle: (row.puzzle as Record<string, unknown>) ?? undefined,
-          };
-        }),
-      );
+      const loadedQuestions = qSnap.docs.map((d) => {
+        const row = d.data() as Record<string, unknown>;
+        return {
+          id: d.id,
+          questionId: toString(row.questionId, d.id),
+          order: toNumber(row.order, 0),
+          type: toString(row.type, "single_choice"),
+          statement: toString(row.statement, ""),
+          points: toNumber(row.points, 1),
+          options: Array.isArray(row.options) ? (row.options as SnapshotQuestion["options"]) : undefined,
+          partialCredit: Boolean(row.partialCredit),
+          answerRules: (row.answerRules as SnapshotQuestion["answerRules"]) ?? undefined,
+          puzzle: (row.puzzle as Record<string, unknown>) ?? undefined,
+        };
+      });
+      setQuestions(loadedQuestions);
+      setQuestionOrder([]);
+      setAnswers({});
+      setSubmitted(false);
+      setSubmitting(false);
+      setAttemptId(null);
+      setAttemptStartMs(null);
+      setEndAtMs(null);
+      setRemainingMs(0);
+      setCurrentQuestionIndex(0);
+      setShowExamSummary(false);
+      setShowQuestionMap(false);
 
       setRulesAccepted(false);
+      setDocOpen(false);
       setFraudTabSwitches(0);
       setFraudClipboardAttempts(0);
       fraudCountsRef.current = { tab: 0, clip: 0 };
       fraudRuntimeRef.current.submittedFraudFail = false;
-      setStep("student");
+
+      let resumed = false;
+      try {
+        const raw = localStorage.getItem(RESUME_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            publishedExamId?: unknown;
+            attemptId?: unknown;
+            accessCode?: unknown;
+          };
+          const resumeExamId = typeof parsed.publishedExamId === "string" ? parsed.publishedExamId : "";
+          const resumeAttemptId = typeof parsed.attemptId === "string" ? parsed.attemptId : "";
+          if (resumeExamId === foundRow.id && resumeAttemptId) {
+            const attemptSnap = await getDoc(doc(firestore, "attempts", resumeAttemptId));
+            if (attemptSnap.exists()) {
+              const attempt = attemptSnap.data() as Record<string, unknown>;
+              const status = toString(attempt.status, "in_progress");
+              if (status === "in_progress") {
+                const startedAt = attempt.startedAt as unknown;
+                const startMs =
+                  startedAt && typeof startedAt === "object" && "toMillis" in (startedAt as any)
+                    ? Number((startedAt as any).toMillis())
+                    : Date.now();
+                const ends = startMs + nextExam.timeLimitMinutes * 60 * 1000;
+                setAttemptId(resumeAttemptId);
+                setAttemptStartMs(startMs);
+                setEndAtMs(ends);
+                setRemainingMs(ends - Date.now());
+                setCurrentQuestionIndex(toNumber(attempt.currentQuestionIndex, 0));
+
+                const ord = Array.isArray(attempt.questionOrder)
+                  ? (attempt.questionOrder as unknown[])
+                      .map((x) => (typeof x === "string" ? x : ""))
+                      .filter(Boolean)
+                  : [];
+                setQuestionOrder(ord);
+
+                const ans = attempt.answers;
+                if (ans && typeof ans === "object") setAnswers(ans as Record<string, unknown>);
+
+                const fraudTab = toNumber(attempt.fraudTabSwitches, 0);
+                const fraudClip = toNumber(attempt.fraudClipboardAttempts, 0);
+                setFraudTabSwitches(fraudTab);
+                setFraudClipboardAttempts(fraudClip);
+                fraudCountsRef.current = { tab: fraudTab, clip: fraudClip };
+
+                setRulesAccepted(true);
+                setStep("exam");
+                resumed = true;
+
+                const answersMap = ans && typeof ans === "object" ? (ans as Record<string, unknown>) : {};
+                const totalQuestionsLocal = loadedQuestions.length;
+                const correctCount = loadedQuestions.reduce((acc, q) => {
+                  const earned = evaluateQuestion(q, answersMap[q.questionId]);
+                  if (!Number.isFinite(earned)) return acc;
+                  if (q.type === "open_concept") return acc + (earned > 0 ? 1 : 0);
+                  return acc + (earned >= q.points && q.points > 0 ? 1 : 0);
+                }, 0);
+                const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
+                const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
+                const score5Raw = correctCount * valuePerQuestion0to5;
+                const score50Raw = correctCount * valuePerQuestion0to50;
+                const fraudTotal = fraudTab + fraudClip;
+                const fraudPenalty0to5 = Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+
+                if (fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS || Date.now() >= ends) {
+                  const forceZero = fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS;
+                  const status = forceZero ? "submitted_fraud" : "submitted_expired";
+                  const adjusted5 = forceZero ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
+                  const adjusted50 = forceZero ? 0 : (adjusted5 / 5) * 50;
+                  const score5 = Number(adjusted5.toFixed(2));
+                  const score50 = Number(adjusted50.toFixed(2));
+
+                  try {
+                    await updateDoc(doc(firestore, "attempts", resumeAttemptId), {
+                      status,
+                      answers: answersMap,
+                      correctCount,
+                      questionCount: totalQuestionsLocal,
+                      questionValue0to5: Number(valuePerQuestion0to5.toFixed(4)),
+                      questionValue0to50: Number(valuePerQuestion0to50.toFixed(4)),
+                      earnedPoints: Number(correctCount),
+                      totalPoints: Number(totalQuestionsLocal),
+                      grade0to5Raw: Number(score5Raw.toFixed(2)),
+                      grade0to50Raw: Number(score50Raw.toFixed(2)),
+                      grade0to5: score5,
+                      grade0to50: score50,
+                      fraudTabSwitches: fraudTab,
+                      fraudClipboardAttempts: fraudClip,
+                      fraudPenalty0to5,
+                      fraudForcedFail: forceZero,
+                      gradeMethod: "per_question_equal",
+                      submittedAt: serverTimestamp(),
+                      updatedAt: serverTimestamp(),
+                    });
+                  } catch {}
+
+                  try {
+                    localStorage.removeItem(RESUME_KEY);
+                  } catch {}
+
+                  setResult({
+                    score5,
+                    score50,
+                    score5Raw: Number(score5Raw.toFixed(2)),
+                    score50Raw: Number(score50Raw.toFixed(2)),
+                    earned: Number(correctCount),
+                    total: Number(totalQuestionsLocal),
+                    fraudTabSwitches: fraudTab,
+                    fraudClipboardAttempts: fraudClip,
+                    fraudPenalty0to5,
+                    fraudForcedFail: forceZero,
+                  });
+                  setSubmitted(true);
+                  setStep("result");
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+
+      if (!resumed) setStep("student");
     } catch {
       setError("No fue posible cargar el examen.");
     } finally {
@@ -335,6 +528,7 @@ export default function ExamPublicPage() {
 
     const now = Date.now();
     const ends = now + exam.timeLimitMinutes * 60 * 1000;
+    const order = shuffleIds(questions.map((q) => q.questionId));
 
     const ref = await addDoc(collection(firestore, "attempts"), {
       publishedExamId: exam.id,
@@ -348,12 +542,19 @@ export default function ExamPublicPage() {
       email: emailNorm,
       status: "in_progress",
       questionCount: questions.length,
+      answers: {},
+      questionOrder: order,
+      currentQuestionIndex: 0,
+      fraudTabSwitches: 0,
+      fraudClipboardAttempts: 0,
       startedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
 
     setAttemptId(ref.id);
+    setQuestionOrder(order);
+    setAnswers({});
     setAttemptStartMs(now);
     setEndAtMs(ends);
     setRemainingMs(ends - now);
@@ -362,6 +563,9 @@ export default function ExamPublicPage() {
     setShowQuestionMap(false);
     setFinalSubmitAccepted(false);
     fraudRuntimeRef.current.isVisible = document.visibilityState === "visible";
+    try {
+      localStorage.setItem(RESUME_KEY, JSON.stringify({ publishedExamId: exam.id, attemptId: ref.id, accessCode: exam.accessCode }));
+    } catch {}
     setStep("exam");
   }
 
@@ -385,6 +589,7 @@ export default function ExamPublicPage() {
       const row = snap.data() as Record<string, unknown>;
       const status = toString(row.status, "published");
       const timeLimitMinutes = toNumber(row.timeLimitMinutes, exam.timeLimitMinutes);
+      const documentationMarkdown = toString(row.documentationMarkdown, exam.documentationMarkdown);
 
       if (timeLimitMinutes !== exam.timeLimitMinutes) {
         setExam((prev) => (prev ? { ...prev, timeLimitMinutes } : prev));
@@ -396,6 +601,9 @@ export default function ExamPublicPage() {
             setRemainingMs(nextEnd - Date.now());
           }
         }
+      }
+      if (documentationMarkdown !== exam.documentationMarkdown) {
+        setExam((prev) => (prev ? { ...prev, documentationMarkdown } : prev));
       }
       if (status === "closed" && (step === "rules" || step === "student")) {
         setError("Este examen ya esta cerrado.");
@@ -454,6 +662,36 @@ export default function ExamPublicPage() {
     });
     return () => unsub();
   }, [attemptId, step, questions]);
+
+  useEffect(() => {
+    if (!attemptId || step !== "exam" || submitted) return;
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(async () => {
+      try {
+        await updateDoc(doc(firestore, "attempts", attemptId), {
+          answers,
+          currentQuestionIndex,
+          questionOrder,
+          fraudTabSwitches,
+          fraudClipboardAttempts,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {}
+    }, 600);
+    return () => {
+      if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    };
+  }, [
+    attemptId,
+    step,
+    submitted,
+    answers,
+    currentQuestionIndex,
+    questionOrder,
+    fraudTabSwitches,
+    fraudClipboardAttempts,
+  ]);
 
   function setAnswer(questionId: string, value: unknown) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -720,8 +958,8 @@ export default function ExamPublicPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const totalQuestionsLocal = questions.length;
-      const correctCount = questions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
+      const totalQuestionsLocal = displayQuestions.length;
+      const correctCount = displayQuestions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
       const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
       const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
       const score5Raw = correctCount * valuePerQuestion0to5;
@@ -742,6 +980,7 @@ export default function ExamPublicPage() {
         answers,
         correctCount,
         questionCount: totalQuestionsLocal,
+        questionOrder,
         questionValue0to5: Number(valuePerQuestion0to5.toFixed(4)),
         questionValue0to50: Number(valuePerQuestion0to50.toFixed(4)),
         earnedPoints: Number(correctCount),
@@ -758,6 +997,10 @@ export default function ExamPublicPage() {
         submittedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      try {
+        localStorage.removeItem(RESUME_KEY);
+      } catch {}
 
       setResult({
         score5,
@@ -922,7 +1165,7 @@ export default function ExamPublicPage() {
         setCurrentQuestionIndex((i) => Math.max(0, i - 1));
       }
       if (e.key === "ArrowRight") {
-        setCurrentQuestionIndex((i) => Math.min(Math.max(0, questions.length - 1), i + 1));
+        setCurrentQuestionIndex((i) => Math.min(Math.max(0, displayQuestions.length - 1), i + 1));
       }
       if (e.key.toLowerCase() === "m") {
         setShowQuestionMap(true);
@@ -931,14 +1174,14 @@ export default function ExamPublicPage() {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [step, showExamSummary, showQuestionMap, questions.length]);
+  }, [step, showExamSummary, showQuestionMap, displayQuestions.length]);
 
   const centeredEntryStep = step === "code" || step === "student" || step === "rules";
   const centeredExamStep = step === "exam";
-  const totalQuestions = questions.length;
+  const totalQuestions = displayQuestions.length;
   const safeQuestionIndex = Math.min(Math.max(currentQuestionIndex, 0), Math.max(0, totalQuestions - 1));
-  const currentQuestion = totalQuestions > 0 ? questions[safeQuestionIndex] : null;
-  const answeredCount = questions.filter((q) => hasAnswer(q)).length;
+  const currentQuestion = totalQuestions > 0 ? displayQuestions[safeQuestionIndex] : null;
+  const answeredCount = displayQuestions.filter((q) => hasAnswer(q)).length;
   const unansweredCount = Math.max(0, totalQuestions - answeredCount);
   const progressPct = totalQuestions > 0 ? Math.round(((safeQuestionIndex + 1) / totalQuestions) * 100) : 0;
   const fraudTotalEvents = fraudTabSwitches + fraudClipboardAttempts;
@@ -969,8 +1212,8 @@ export default function ExamPublicPage() {
           ? "recovery"
           : "fail";
   const scorePreview = useMemo(() => {
-    const totalQuestionsLocal = questions.length;
-    const correctCount = questions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
+    const totalQuestionsLocal = displayQuestions.length;
+    const correctCount = displayQuestions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
     const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
     const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
     const score5Raw = correctCount * valuePerQuestion0to5;
@@ -987,7 +1230,7 @@ export default function ExamPublicPage() {
       score5: Number(adjusted5.toFixed(2)),
       score50: Number(adjusted50.toFixed(2)),
     };
-  }, [answers, fraudPenaltyPreview0to5, questions]);
+  }, [answers, fraudPenaltyPreview0to5, displayQuestions]);
 
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-6 sm:px-6">
@@ -1216,12 +1459,35 @@ export default function ExamPublicPage() {
         ) : null}
 
         {step === "exam" && exam ? (
-          <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-4">
-            <div className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-base font-semibold text-zinc-950 sm:text-lg">{exam.name}</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
+          <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-4">
+            <div className="rounded-3xl border border-zinc-200 bg-white px-5 py-4 shadow-sm">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="min-w-0 truncate text-base font-semibold text-zinc-950 sm:text-lg">{exam.name}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                      <Timer className="h-3.5 w-3.5" />
+                      {formatRemaining(remainingMs)}
+                    </div>
+                    <div
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${fraudPill}`}
+                      title={`Fraude total: ${fraudTotalEvents} (Cambio de pestaña: ${fraudTabSwitches}, Copiar/Pegar: ${fraudClipboardAttempts}). Penalización: ${fraudPenaltyPreview0to5.toFixed(
+                        2,
+                      )} en escala 0-5.`}
+                    >
+                      Fraude {fraudTotalEvents}/{FRAUD_FAIL_TOTAL_EVENTS}
+                    </div>
+                    <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                      Pestaña {fraudTabSwitches}
+                    </div>
+                    <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                      Copiar/Pegar {fraudClipboardAttempts}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
                     <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">
                       Pregunta {safeQuestionIndex + 1}/{Math.max(1, totalQuestions)} • {progressPct}%
                     </div>
@@ -1240,41 +1506,31 @@ export default function ExamPublicPage() {
                       <LayoutGrid className="h-3.5 w-3.5" />
                       Mapa
                     </button>
+                    {exam.documentationMarkdown.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => setDocOpen(true)}
+                        className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+                        title="Documentacion"
+                      >
+                        <BookOpen className="h-3.5 w-3.5" />
+                        Docs
+                      </button>
+                    ) : null}
                   </div>
+
+                  <p className="text-xs text-zinc-600">
+                    Fraude: pestaña + copiar/pegar (-{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} c/u). Límite{" "}
+                    {FRAUD_FAIL_TOTAL_EVENTS}.
+                  </p>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
                   <div
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${fraudPill}`}
-                    title={`Fraude total: ${fraudTotalEvents} (Cambio de pestaña: ${fraudTabSwitches}, Copiar/Pegar: ${fraudClipboardAttempts}). Penalización: ${fraudPenaltyPreview0to5.toFixed(
-                      2,
-                    )} en escala 0-5.`}
-                  >
-                    Fraude {fraudTotalEvents}/{FRAUD_FAIL_TOTAL_EVENTS}
-                  </div>
-                  <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
-                    Pestaña {fraudTabSwitches}
-                  </div>
-                  <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
-                    Copiar/Pegar {fraudClipboardAttempts}
-                  </div>
-                  <div className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
-                    <Timer className="h-3.5 w-3.5" />
-                    {formatRemaining(remainingMs)}
-                  </div>
+                    className="h-full rounded-full bg-indigo-600 transition-[width]"
+                    style={{ width: `${progressPct}%` }}
+                  />
                 </div>
-              </div>
-
-              <p className="mt-3 text-xs text-zinc-600">
-                Tipos de fraude monitoreados: <strong>Pestaña</strong> (salir/cambiar de ventana) y{" "}
-                <strong>Copiar/Pegar</strong> (Ctrl+C, Ctrl+V o intento de copy/paste). Cada intento suma al contador.
-              </p>
-
-              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-                <div
-                  className="h-full rounded-full bg-indigo-600 transition-[width]"
-                  style={{ width: `${progressPct}%` }}
-                />
               </div>
             </div>
 
@@ -1282,6 +1538,35 @@ export default function ExamPublicPage() {
               <div className="mx-auto w-full max-w-4xl rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
                 <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Mensaje del docente</p>
                 <p className="mt-2">{adminMessage}</p>
+              </div>
+            ) : null}
+
+            {docOpen && exam.documentationMarkdown.trim() ? (
+              <div className="fixed inset-0 z-50">
+                <button
+                  type="button"
+                  onClick={() => setDocOpen(false)}
+                  className="absolute inset-0 bg-black/40"
+                  aria-label="Cerrar documentacion"
+                />
+                <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-4xl rounded-t-3xl bg-white p-4 shadow-2xl sm:inset-y-8 sm:bottom-auto sm:rounded-3xl sm:p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h3 className="text-base font-semibold text-zinc-950">Documentacion</h3>
+                      <p className="mt-1 text-xs text-zinc-500">Usa scroll y enlaces para navegar.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDocOpen(false)}
+                      className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                  <div className="mt-4 max-h-[70vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4">
+                    <MarkdownViewer markdown={exam.documentationMarkdown} />
+                  </div>
+                </div>
               </div>
             ) : null}
 
@@ -1304,7 +1589,7 @@ export default function ExamPublicPage() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6 md:grid-cols-8">
-                  {questions.map((q, idx) => {
+                  {displayQuestions.map((q, idx) => {
                     const answered = hasAnswer(q);
                     const isCurrent = idx === safeQuestionIndex;
                     return (
@@ -1454,7 +1739,7 @@ export default function ExamPublicPage() {
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                  {questions.map((q, idx) => {
+                  {displayQuestions.map((q, idx) => {
                     const answered = hasAnswer(q);
                     return (
                       <button

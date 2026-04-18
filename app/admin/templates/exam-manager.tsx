@@ -38,6 +38,7 @@ type ExamTemplateRow = {
   questionCount: number;
   timeLimitMinutes: number;
   active: boolean;
+  documentationMarkdown: string;
 };
 
 type PublishedRef = {
@@ -71,6 +72,15 @@ function buildExamName(params: {
 }) {
   const parts = [params.site, params.subject, params.group, params.shift, params.moment].filter(Boolean);
   return parts.join(" - ") || "Nuevo examen";
+}
+
+function readFileAsText(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No fue posible leer el archivo."));
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.readAsText(file);
+  });
 }
 
 function Select({
@@ -220,6 +230,8 @@ export function ExamManager() {
   const [questionCount, setQuestionCount] = useState(45);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
   const [active, setActive] = useState(true);
+  const [documentationMarkdown, setDocumentationMarkdown] = useState("");
+  const [docFileName, setDocFileName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -338,6 +350,7 @@ export function ExamManager() {
               questionCount: toNumber(row.questionCount, 45),
               timeLimitMinutes: toNumber(row.timeLimitMinutes, 60),
               active: toBoolean(row.active, true),
+              documentationMarkdown: typeof row.documentationMarkdown === "string" ? row.documentationMarkdown : "",
             };
           }),
         );
@@ -391,6 +404,21 @@ export function ExamManager() {
     await reloadShifts();
   }
 
+  async function importDocumentationFile(file: File) {
+    setError(null);
+    try {
+      if (file.size > 1024 * 1024) {
+        setError("El archivo es muy grande. Maximo recomendado: 1MB.");
+        return;
+      }
+      const text = await readFileAsText(file);
+      setDocumentationMarkdown(text);
+      setDocFileName(file.name);
+    } catch {
+      setError("No fue posible cargar el archivo de documentacion.");
+    }
+  }
+
   async function createExamTemplate() {
     setCreating(true);
     setError(null);
@@ -414,6 +442,7 @@ export function ExamManager() {
         shiftId,
         questionCount,
         timeLimitMinutes,
+        documentationMarkdown: documentationMarkdown.trim(),
         allowedQuestionTypes: [
           "single_choice",
           "multiple_choice",
@@ -434,6 +463,8 @@ export function ExamManager() {
       setQuestionCount(45);
       setTimeLimitMinutes(60);
       setActive(true);
+      setDocumentationMarkdown("");
+      setDocFileName(null);
       setCreateOpen(false);
     } catch {
       setError("No fue posible crear el examen. Revisa permisos o conexion.");
@@ -568,6 +599,7 @@ export function ExamManager() {
         shiftId: publishTarget.shiftId,
         questionCount: publishTarget.questionCount,
         timeLimitMinutes: publishTarget.timeLimitMinutes || 60,
+        documentationMarkdown: publishTarget.documentationMarkdown || "",
         accessCode,
         status: "published",
         publishedAt: serverTimestamp(),
@@ -608,6 +640,8 @@ export function ExamManager() {
     setQuestionCount(row.questionCount);
     setTimeLimitMinutes(row.timeLimitMinutes || 60);
     setActive(row.active);
+    setDocumentationMarkdown(row.documentationMarkdown || "");
+    setDocFileName(null);
     setEditOpen(true);
   }
 
@@ -697,6 +731,7 @@ export function ExamManager() {
         shiftId,
         questionCount,
         timeLimitMinutes,
+        documentationMarkdown: documentationMarkdown.trim(),
         active,
         updatedAt: serverTimestamp(),
       });
@@ -752,6 +787,8 @@ export function ExamManager() {
             variant="primary"
             onClick={() => {
               setTimeLimitMinutes(60);
+              setDocumentationMarkdown("");
+              setDocFileName(null);
               setCreateOpen(true);
             }}
             className="h-11 w-11 shrink-0"
@@ -1015,6 +1052,52 @@ export function ExamManager() {
                 value={active}
                 onChange={setActive}
               />
+
+              <div className="grid gap-2 sm:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-zinc-700">Documentacion (README.md)</p>
+                    <p className="text-xs text-zinc-500">Se muestra al estudiante como pagina web explorables.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex h-9 cursor-pointer items-center rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50">
+                      <input
+                        type="file"
+                        accept=".md,text/markdown,text/plain"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) void importDocumentationFile(file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      Cargar archivo
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocumentationMarkdown("");
+                        setDocFileName(null);
+                      }}
+                      className="inline-flex h-9 items-center rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+
+                {docFileName ? <p className="text-xs text-zinc-500">Archivo: {docFileName}</p> : null}
+
+                <textarea
+                  value={documentationMarkdown}
+                  onChange={(e) => {
+                    setDocumentationMarkdown(e.target.value);
+                    setDocFileName(null);
+                  }}
+                  placeholder="# Documentacion\n\nPega aqui el contenido del README en Markdown..."
+                  className="min-h-40 w-full resize-y rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                />
+              </div>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1142,6 +1225,52 @@ export function ExamManager() {
                 value={active}
                 onChange={setActive}
               />
+
+              <div className="grid gap-2 sm:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-zinc-700">Documentacion (README.md)</p>
+                    <p className="text-xs text-zinc-500">Se muestra al estudiante como pagina web explorables.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex h-9 cursor-pointer items-center rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50">
+                      <input
+                        type="file"
+                        accept=".md,text/markdown,text/plain"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) void importDocumentationFile(file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      Cargar archivo
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocumentationMarkdown("");
+                        setDocFileName(null);
+                      }}
+                      className="inline-flex h-9 items-center rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+
+                {docFileName ? <p className="text-xs text-zinc-500">Archivo: {docFileName}</p> : null}
+
+                <textarea
+                  value={documentationMarkdown}
+                  onChange={(e) => {
+                    setDocumentationMarkdown(e.target.value);
+                    setDocFileName(null);
+                  }}
+                  placeholder="# Documentacion\n\nPega aqui el contenido del README en Markdown..."
+                  className="min-h-40 w-full resize-y rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                />
+              </div>
             </div>
 
             <div className="mt-4 flex items-center justify-end gap-3">
