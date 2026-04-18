@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
 import { normalizeSentenceText } from "@/lib/text/normalize";
-import { Plus, Save, Power } from "lucide-react";
+import { BookOpen, CalendarClock, Layers, MapPin, Plus, Save, Search, Users, Power } from "lucide-react";
 import { IconButton } from "@/app/admin/ui/icon-button";
 
 type Row = {
@@ -55,6 +55,11 @@ function CollectionPanel({
   const [search, setSearch] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [draftNames, setDraftNames] = useState<Record<string, string>>({});
+  const stats = useMemo(() => {
+    const total = rows.length;
+    const activeCount = rows.filter((r) => r.active).length;
+    return { total, activeCount, inactiveCount: total - activeCount };
+  }, [rows]);
 
   useEffect(() => {
     setLoading(true);
@@ -159,45 +164,134 @@ function CollectionPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate text-sm font-semibold tracking-tight text-zinc-950">{title}</h2>
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-700">
-              {rows.length}
-            </span>
-          </div>
-          <p className="mt-0.5 hidden text-[11px] text-zinc-500 sm:block">{description}</p>
+    <section className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-zinc-950">{title}</h2>
+          <p className="mt-1 text-sm text-zinc-600">{description}</p>
         </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Total</p>
+            <p className="text-base font-semibold text-zinc-900">{stats.total}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Activos</p>
+            <p className="text-base font-semibold text-emerald-700">{stats.activeCount}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Inactivos</p>
+            <p className="text-base font-semibold text-zinc-700">{stats.inactiveCount}</p>
+          </div>
+        </div>
+      </div>
 
-        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[220px_1fr_auto] sm:items-center">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void create();
-            }}
-            className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-[220px]"
-            placeholder={`Nuevo ${title.toLowerCase()}`}
-            disabled={savingId === "__new__"}
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-56"
-            placeholder="Buscar"
-          />
-          <IconButton
-            variant="primary"
-            onClick={create}
-            disabled={!newName.trim() || savingId === "__new__"}
-            className="h-8 w-8"
-            aria-label={`Crear ${title}`}
-            title={`Crear ${title}`}
-          >
-            <Plus className="h-4 w-4" />
-          </IconButton>
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[300px_1fr]">
+        <aside className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
+          <h3 className="text-sm font-semibold text-zinc-900">Crear nuevo</h3>
+          <p className="mt-1 text-xs text-zinc-600">
+            Usa un nombre claro. El ID se genera automáticamente a partir del texto.
+          </p>
+          <div className="mt-3 grid gap-2">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void create();
+              }}
+              className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+              placeholder={`Nuevo ${title.toLowerCase()}`}
+              disabled={savingId === "__new__"}
+            />
+            <button
+              type="button"
+              onClick={() => void create()}
+              disabled={!newName.trim() || savingId === "__new__"}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Crear
+            </button>
+          </div>
+        </aside>
+
+        <div className="min-w-0">
+          <div className="relative w-full max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-10 w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-zinc-400"
+              placeholder="Buscar por nombre o ID"
+            />
+          </div>
+
+          <div className="mt-3">
+            {loading ? (
+              <div className="rounded-xl bg-zinc-50 px-3 py-8 text-center text-sm text-zinc-500">Cargando...</div>
+            ) : filtered.length ? (
+              <div className="overflow-hidden rounded-xl border border-zinc-200">
+                <div className="grid grid-cols-[140px_1fr_90px_120px] items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-2 py-2 text-[11px] font-semibold text-zinc-600">
+                  <div>ID</div>
+                  <div>Nombre</div>
+                  <div>Activo</div>
+                  <div className="text-right">Acciones</div>
+                </div>
+                <div className="max-h-[58vh] overflow-y-auto">
+                  {filtered.map((r) => {
+                    const disabled = savingId === r.id;
+                    const draft = draftNames[r.id] ?? r.name;
+                    return (
+                      <div
+                        key={r.id}
+                        className="grid grid-cols-[140px_1fr_90px_120px] items-center gap-2 border-b border-zinc-100 px-2 py-2"
+                      >
+                        <div className="truncate rounded-lg bg-zinc-100 px-2 py-1 text-xs font-mono text-zinc-700">{r.id}</div>
+                        <input
+                          value={draft}
+                          onChange={(e) => setDraftNames((p) => ({ ...p, [r.id]: e.target.value }))}
+                          className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
+                          disabled={disabled}
+                        />
+                        <span
+                          className={`inline-flex items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                            r.active
+                              ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                              : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                          }`}
+                        >
+                          {r.active ? "Sí" : "No"}
+                        </span>
+                        <div className="flex items-center justify-end gap-2">
+                          <IconButton
+                            onClick={() => saveName(r.id)}
+                            disabled={disabled}
+                            className="h-8 w-8"
+                            aria-label="Guardar"
+                            title="Guardar"
+                          >
+                            <Save className="h-4 w-4" />
+                          </IconButton>
+                          <IconButton
+                            variant={r.active ? "danger" : "secondary"}
+                            onClick={() => toggleActive(r.id, !r.active)}
+                            disabled={disabled}
+                            className="h-8 w-8"
+                            aria-label={r.active ? "Inactivar" : "Activar"}
+                            title={r.active ? "Inactivar" : "Activar"}
+                          >
+                            <Power className="h-4 w-4" />
+                          </IconButton>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-zinc-50 px-3 py-8 text-center text-sm text-zinc-500">Sin registros.</div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -206,78 +300,6 @@ function CollectionPanel({
           {error}
         </div>
       ) : null}
-
-      <div className="mt-2">
-        {loading ? (
-          <div className="rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
-            Cargando...
-          </div>
-        ) : filtered.length ? (
-          <div className="overflow-hidden rounded-xl border border-zinc-200">
-            <div className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-2 py-2 text-[11px] font-semibold text-zinc-600 sm:grid-cols-[1fr_110px_120px]">
-              <div className="text-zinc-600">Nombre</div>
-              <div className="text-zinc-600">Activo</div>
-              <div className="text-right text-zinc-600">Acciones</div>
-            </div>
-
-            <div className="max-h-[52vh] overflow-y-auto">
-              {filtered.map((r) => {
-                const disabled = savingId === r.id;
-                const draft = draftNames[r.id] ?? r.name;
-                return (
-                  <div
-                    key={r.id}
-                    className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-100 px-2 py-2 sm:grid-cols-[1fr_110px_120px]"
-                  >
-                    <input
-                      value={draft}
-                      onChange={(e) => setDraftNames((p) => ({ ...p, [r.id]: e.target.value }))}
-                      className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
-                      disabled={disabled}
-                    />
-
-                    <span
-                      className={`inline-flex items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
-                        r.active
-                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                          : "bg-zinc-100 text-zinc-700 ring-zinc-200"
-                      }`}
-                    >
-                      {r.active ? "Sí" : "No"}
-                    </span>
-
-                    <div className="flex items-center justify-end gap-2">
-                      <IconButton
-                        onClick={() => saveName(r.id)}
-                        disabled={disabled}
-                        className="h-8 w-8"
-                        aria-label="Guardar"
-                        title="Guardar"
-                      >
-                        <Save className="h-4 w-4" />
-                      </IconButton>
-                      <IconButton
-                        variant={r.active ? "danger" : "secondary"}
-                        onClick={() => toggleActive(r.id, !r.active)}
-                        disabled={disabled}
-                        className="h-8 w-8"
-                        aria-label={r.active ? "Inactivar" : "Activar"}
-                        title={r.active ? "Inactivar" : "Activar"}
-                      >
-                        <Power className="h-4 w-4" />
-                      </IconButton>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
-            Sin registros.
-          </div>
-        )}
-      </div>
     </section>
   );
 }
@@ -323,44 +345,56 @@ export function CatalogsPage() {
   const [activeKey, setActiveKey] = useState<(typeof catalogs)[number]["key"]>("subjects");
   const active = catalogs.find((c) => c.key === activeKey) ?? catalogs[0];
 
+  const iconByKey = useMemo(
+    () =>
+      ({
+        subjects: BookOpen,
+        sites: MapPin,
+        shifts: Layers,
+        moments: CalendarClock,
+        groups: Users,
+      }) as Record<string, React.ComponentType<{ className?: string }>>,
+    [],
+  );
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-950">Catalogos</h1>
-          <p className="mt-1 text-sm text-zinc-600">Gestiona datos base de la app.</p>
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-950">Catálogos</h1>
+          <p className="mt-1 text-sm text-zinc-600">Nueva vista para visualizar y crear catálogos de forma más rápida.</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_1fr]">
-        <aside className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
-          <div className="grid gap-1">
-            {catalogs.map((c) => {
-              const active = c.key === activeKey;
-              return (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={() => setActiveKey(c.key)}
-                  className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
-                    active ? "bg-zinc-950 text-white" : "text-zinc-800 hover:bg-zinc-50"
-                  }`}
-                >
-                  {c.title}
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        <div className="min-w-0">
-          <CollectionPanel
-            title={active.title}
-            description={active.description}
-            collectionName={active.collectionName}
-          />
+      <div className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {catalogs.map((c) => {
+            const activeTab = c.key === activeKey;
+            const Icon = iconByKey[c.key] ?? Layers;
+            return (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setActiveKey(c.key)}
+                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
+                  activeTab
+                    ? "bg-zinc-900 text-white"
+                    : "border border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span className="truncate">{c.title}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      <CollectionPanel
+        title={active.title}
+        description={active.description}
+        collectionName={active.collectionName}
+      />
     </div>
   );
 }

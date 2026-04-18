@@ -836,7 +836,7 @@ export function ExamManager() {
           </div>
         ) : filteredRows.length ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {filteredRows.map((row) => {
+            {filteredRows.map((row, idx) => {
               const subject = (namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId) || "N/A";
               const group = (namesById.get(`groups:${row.groupId}`) ?? row.groupId) || "N/A";
               const moment = (namesById.get(`moments:${row.momentId}`) ?? row.momentId) || "N/A";

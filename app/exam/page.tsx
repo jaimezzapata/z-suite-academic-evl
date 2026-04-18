@@ -225,10 +225,35 @@ export default function ExamPublicPage() {
     submittedFraudFail: false,
   });
   const autosaveTimerRef = useRef<number | null>(null);
+  const attemptIdRef = useRef<string | null>(null);
+  const submittedRef = useRef(false);
+  const submittingRef = useRef(false);
+  const questionsRef = useRef<SnapshotQuestion[]>([]);
+  const questionOrderRef = useRef<string[]>([]);
 
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  useEffect(() => {
+    attemptIdRef.current = attemptId;
+  }, [attemptId]);
+
+  useEffect(() => {
+    submittedRef.current = submitted;
+  }, [submitted]);
+
+  useEffect(() => {
+    submittingRef.current = submitting;
+  }, [submitting]);
+
+  useEffect(() => {
+    questionsRef.current = questions;
+  }, [questions]);
+
+  useEffect(() => {
+    questionOrderRef.current = questionOrder;
+  }, [questionOrder]);
 
   const displayQuestions = useMemo(() => {
     if (!questionOrder.length) return questions;
@@ -944,7 +969,7 @@ export default function ExamPublicPage() {
   }
 
   function isQuestionFullyCorrect(q: SnapshotQuestion) {
-    const earned = evaluateQuestion(q, answers[q.questionId]);
+    const earned = evaluateQuestion(q, answersRef.current[q.questionId]);
     if (!Number.isFinite(earned)) return false;
     if (q.type === "open_concept") return earned > 0;
     return earned >= q.points && q.points > 0;
@@ -954,12 +979,15 @@ export default function ExamPublicPage() {
     expired = false,
     opts?: { forcedStatus?: "submitted" | "submitted_expired" | "submitted_fraud"; forceZero?: boolean },
   ) {
-    if (!attemptId || submitted || submitting) return;
+    const id = attemptIdRef.current;
+    if (!id || submittedRef.current || submittingRef.current) return;
     setSubmitting(true);
+    submittingRef.current = true;
     setError(null);
     try {
-      const totalQuestionsLocal = displayQuestions.length;
-      const correctCount = displayQuestions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
+      const questionsSnapshot = questionsRef.current;
+      const totalQuestionsLocal = questionsSnapshot.length;
+      const correctCount = questionsSnapshot.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
       const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
       const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
       const score5Raw = correctCount * valuePerQuestion0to5;
@@ -975,12 +1003,12 @@ export default function ExamPublicPage() {
       const score5 = Number(adjusted5.toFixed(2));
       const score50 = Number(adjusted50.toFixed(2));
 
-      await updateDoc(doc(firestore, "attempts", attemptId), {
+      await updateDoc(doc(firestore, "attempts", id), {
         status: opts?.forcedStatus ?? (expired ? "submitted_expired" : "submitted"),
-        answers,
+        answers: answersRef.current,
         correctCount,
         questionCount: totalQuestionsLocal,
-        questionOrder,
+        questionOrder: questionOrderRef.current,
         questionValue0to5: Number(valuePerQuestion0to5.toFixed(4)),
         questionValue0to50: Number(valuePerQuestion0to50.toFixed(4)),
         earnedPoints: Number(correctCount),
@@ -1015,11 +1043,13 @@ export default function ExamPublicPage() {
         fraudForcedFail: Boolean(opts?.forceZero),
       });
       setSubmitted(true);
+      submittedRef.current = true;
       setStep("result");
     } catch {
       setError("No fue posible enviar el examen.");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 

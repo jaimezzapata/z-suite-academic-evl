@@ -7,8 +7,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/app/providers";
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   BookOpen,
+  FolderOpen,
   LayoutDashboard,
   Menu,
   Settings2,
@@ -29,6 +31,9 @@ const navItems: NavItem[] = [
   { label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },
   { label: "Resultados", href: "/admin/results", hint: "Notas y exportaciones", icon: BarChart3 },
   { label: "Catalogos", href: "/admin/settings", hint: "Sedes, grupos, jornadas", icon: Settings2 },
+  { label: "Documentación", href: "/admin/docs", hint: "Material para estudiantes", icon: BookOpen },
+  { label: "Grupos Drive", href: "/admin/drive-groups", hint: "Estructuras por grupo", icon: FolderOpen },
+  { label: "DangerZone", href: "/admin/danger-zone", hint: "Limpieza y acciones críticas", icon: AlertTriangle },
 ];
 
 function getInitials(name: string | null, email: string | null) {

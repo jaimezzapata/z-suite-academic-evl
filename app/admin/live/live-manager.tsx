@@ -115,6 +115,7 @@ export function LiveManager() {
 
   function focusQuickCode() {
     quickCodeInputRef.current?.focus();
+    quickCodeInputRef.current?.select();
   }
 
   async function openByQuickCode() {
@@ -164,18 +165,6 @@ export function LiveManager() {
     } finally {
       setQuickCodeLoading(false);
     }
-  }
-
-  function quickDigit(d: string) {
-    setQuickCodeError(null);
-    setQuickCode((prev) => normalizeOtp(prev + d));
-    focusQuickCode();
-  }
-
-  function quickBackspace() {
-    setQuickCodeError(null);
-    setQuickCode((prev) => prev.slice(0, -1));
-    focusQuickCode();
   }
 
   function quickClear() {
@@ -439,7 +428,7 @@ export function LiveManager() {
         </div>
       ) : filtered.length ? (
         viewMode === "map" ? (
-          <div className="space-y-3">
+            <div className="space-y-3">
             <div className="rounded-2xl border border-zinc-200 bg-white p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -467,81 +456,32 @@ export function LiveManager() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_220px]">
-                <div>
-                  <input
-                    ref={quickCodeInputRef}
-                    value={quickCode}
-                    onChange={(e) => {
-                      setQuickCodeError(null);
-                      setQuickCode(normalizeOtp(e.target.value));
-                    }}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    className="sr-only"
-                    aria-label="Código de examen"
-                  />
-                  <button
-                    type="button"
-                    onClick={focusQuickCode}
-                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-4"
-                    aria-label="Editar código"
-                  >
-                    <div className="grid grid-cols-6 gap-2">
-                      {Array.from({ length: 6 }, (_, i) => {
-                        const digit = quickCode[i] ?? "";
-                        return (
-                          <div
-                            key={i}
-                            className={`flex h-12 items-center justify-center rounded-xl border text-lg font-semibold ${
-                              digit ? "border-zinc-200 bg-white text-zinc-900" : "border-zinc-200 bg-white text-zinc-300"
-                            }`}
-                          >
-                            {digit || "•"}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </button>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="w-full max-w-md">
+                  <label className="grid gap-1">
+                    <span className="text-xs font-semibold text-zinc-600">Código</span>
+                    <input
+                      ref={quickCodeInputRef}
+                      value={quickCode}
+                      onChange={(e) => {
+                        setQuickCodeError(null);
+                        setQuickCode(normalizeOtp(e.target.value));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void openByQuickCode();
+                      }}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="000000"
+                      className="h-11 w-full rounded-2xl border border-zinc-200 bg-white px-4 text-center text-lg font-semibold tracking-[0.35em] text-zinc-900 outline-none focus:border-zinc-400"
+                      aria-label="Código de examen"
+                    />
+                  </label>
                   {quickCodeError ? (
-                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                       {quickCodeError}
                     </div>
                   ) : null}
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => quickDigit(d)}
-                      className="h-12 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                    >
-                      {d}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={quickClear}
-                    className="h-12 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                  >
-                    Limpiar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => quickDigit("0")}
-                    className="h-12 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                  >
-                    0
-                  </button>
-                  <button
-                    type="button"
-                    onClick={quickBackspace}
-                    className="h-12 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                  >
-                    Borrar
-                  </button>
                 </div>
               </div>
             </div>
