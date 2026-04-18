@@ -18,7 +18,7 @@ import {
 import { firestore } from "@/lib/firebase/client";
 import { normalizeFullName, normalizePersonNamePart } from "@/lib/text/normalize";
 import { IconButton } from "@/app/admin/ui/icon-button";
-import { MarkdownViewer } from "@/app/ui/markdown-viewer";
+import { DocumentationDrawer } from "@/app/ui/documentation-drawer";
 import {
   ArrowLeft,
   ArrowRight,
@@ -1506,17 +1506,16 @@ export default function ExamPublicPage() {
                       <LayoutGrid className="h-3.5 w-3.5" />
                       Mapa
                     </button>
-                    {exam.documentationMarkdown.trim() ? (
-                      <button
-                        type="button"
-                        onClick={() => setDocOpen(true)}
-                        className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
-                        title="Documentacion"
-                      >
-                        <BookOpen className="h-3.5 w-3.5" />
-                        Docs
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setDocOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                      title="Documentacion"
+                      disabled={!exam.documentationMarkdown.trim()}
+                    >
+                      <BookOpen className="h-3.5 w-3.5" />
+                      Docs
+                    </button>
                   </div>
 
                   <p className="text-xs text-zinc-600">
@@ -1541,34 +1540,12 @@ export default function ExamPublicPage() {
               </div>
             ) : null}
 
-            {docOpen && exam.documentationMarkdown.trim() ? (
-              <div className="fixed inset-0 z-50">
-                <button
-                  type="button"
-                  onClick={() => setDocOpen(false)}
-                  className="absolute inset-0 bg-black/40"
-                  aria-label="Cerrar documentacion"
-                />
-                <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-4xl rounded-t-3xl bg-white p-4 shadow-2xl sm:inset-y-8 sm:bottom-auto sm:rounded-3xl sm:p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <h3 className="text-base font-semibold text-zinc-950">Documentacion</h3>
-                      <p className="mt-1 text-xs text-zinc-500">Usa scroll y enlaces para navegar.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setDocOpen(false)}
-                      className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                    >
-                      Cerrar
-                    </button>
-                  </div>
-                  <div className="mt-4 max-h-[70vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4">
-                    <MarkdownViewer markdown={exam.documentationMarkdown} />
-                  </div>
-                </div>
-              </div>
-            ) : null}
+            <DocumentationDrawer
+              open={docOpen}
+              title="Documentación"
+              markdown={exam.documentationMarkdown}
+              onClose={() => setDocOpen(false)}
+            />
 
             {showQuestionMap ? (
               <article className="mx-auto flex min-h-[60vh] w-full max-w-4xl flex-col rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">

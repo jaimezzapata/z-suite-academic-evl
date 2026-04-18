@@ -3,15 +3,48 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+function toPlainText(children: unknown): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) return children.map(toPlainText).join("");
+  if (children && typeof children === "object" && "props" in (children as any)) {
+    return toPlainText((children as any).props?.children);
+  }
+  return "";
+}
+
+function slugify(text: string) {
+  const base = text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+  return base || "section";
+}
+
 export function MarkdownViewer({ markdown }: { markdown: string }) {
   return (
     <div className="space-y-3 text-sm leading-7 text-zinc-900">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: (props) => <h1 {...props} className="text-2xl font-semibold tracking-tight" />,
-          h2: (props) => <h2 {...props} className="pt-2 text-xl font-semibold tracking-tight" />,
-          h3: (props) => <h3 {...props} className="pt-2 text-lg font-semibold tracking-tight" />,
+          h1: (props) => {
+            const text = toPlainText(props.children);
+            const id = typeof props.id === "string" ? props.id : slugify(text);
+            return <h1 {...props} id={id} className="scroll-mt-24 text-2xl font-semibold tracking-tight" />;
+          },
+          h2: (props) => {
+            const text = toPlainText(props.children);
+            const id = typeof props.id === "string" ? props.id : slugify(text);
+            return <h2 {...props} id={id} className="scroll-mt-24 pt-2 text-xl font-semibold tracking-tight" />;
+          },
+          h3: (props) => {
+            const text = toPlainText(props.children);
+            const id = typeof props.id === "string" ? props.id : slugify(text);
+            return <h3 {...props} id={id} className="scroll-mt-24 pt-2 text-lg font-semibold tracking-tight" />;
+          },
           p: (props) => <p {...props} className="text-sm leading-7 text-zinc-800" />,
           a: (props) => (
             <a

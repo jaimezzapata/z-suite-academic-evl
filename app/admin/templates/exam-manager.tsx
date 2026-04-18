@@ -735,6 +735,24 @@ export function ExamManager() {
         active,
         updatedAt: serverTimestamp(),
       });
+      const publishedSnap = await getDocs(
+        query(
+          collection(firestore, "publishedExams"),
+          where("templateId", "==", editId),
+          limit(200),
+        ),
+      );
+      await Promise.all(
+        publishedSnap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as Record<string, unknown> & { id: string })
+          .filter((r) => toString((r as Record<string, unknown>).status, "published") === "published")
+          .map(async (r) => {
+            await updateDoc(doc(firestore, "publishedExams", r.id), {
+              documentationMarkdown: documentationMarkdown.trim(),
+              updatedAt: serverTimestamp(),
+            });
+          }),
+      );
       setEditOpen(false);
       setEditId(null);
     } catch {
@@ -850,6 +868,11 @@ export function ExamManager() {
                           <span>{pub.accessCode}</span>
                           <span className="text-zinc-500">•</span>
                           <span className="uppercase">{pub.status}</span>
+                        </div>
+                      ) : null}
+                      {row.documentationMarkdown.trim() ? (
+                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                          Docs
                         </div>
                       ) : null}
                     </div>
