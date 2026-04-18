@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { MarkdownViewer } from "@/app/ui/markdown-viewer";
 
@@ -53,6 +53,28 @@ export function DocumentationDrawer({
   onClose: () => void;
 }) {
   const toc = useMemo(() => buildToc(markdown), [markdown]);
+  const [search, setSearch] = useState("");
+  const filteredToc = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return toc;
+    return toc.filter((item) => item.title.toLowerCase().includes(q));
+  }, [toc, search]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        const el = document.getElementById("docs-search-input") as HTMLInputElement | null;
+        if (el) {
+          e.preventDefault();
+          el.focus();
+          el.select();
+        }
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   if (!open) return null;
 
@@ -78,9 +100,32 @@ export function DocumentationDrawer({
         <div className="grid h-[calc(100vh-3.5rem)] grid-cols-1 lg:grid-cols-[320px_1fr]">
           <aside className="hidden overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4 lg:block">
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Contenido</p>
+            <div className="mt-3 space-y-2">
+              <input
+                id="docs-search-input"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar sección..."
+                className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const q = search.trim();
+                  if (!q) return;
+                  const finder = (window as Window & { find?: (...args: unknown[]) => boolean }).find;
+                  if (typeof finder === "function") {
+                    finder(q, false, false, true, false, false, false);
+                  }
+                }}
+                className="inline-flex h-9 items-center rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+              >
+                Buscar en texto
+              </button>
+            </div>
             <nav className="mt-3 space-y-1">
-              {toc.length ? (
-                toc.map((item) => (
+              {filteredToc.length ? (
+                filteredToc.map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -111,4 +156,3 @@ export function DocumentationDrawer({
     </div>
   );
 }
-
