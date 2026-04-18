@@ -1231,6 +1231,8 @@ export default function ExamPublicPage() {
       score50: Number(adjusted50.toFixed(2)),
     };
   }, [answers, fraudPenaltyPreview0to5, displayQuestions]);
+  const hasAnyWrongAnswer = scorePreview.correctCount < scorePreview.totalQuestions;
+  const hasFraudPenalty = fraudPenaltyPreview0to5 > 0;
 
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-6 sm:px-6">
@@ -1710,9 +1712,27 @@ export default function ExamPublicPage() {
                       <p className="text-lg font-semibold text-zinc-900">-{fraudPenaltyPreview0to5.toFixed(2)}</p>
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-zinc-600">
-                    No revela respuestas correctas. Solo muestra la nota estimada con la fórmula del examen.
-                  </p>
+                  <div className="mt-2 space-y-1 text-xs">
+                    <p className="text-zinc-700">
+                      Hasta el momento tienes una nota estimada de <strong>{scorePreview.score5.toFixed(2)}</strong>.
+                    </p>
+                    {hasAnyWrongAnswer ? (
+                      <p className="text-amber-700">
+                        Se detecta al menos una respuesta incorrecta. Puedes revisar tus respuestas antes del envío definitivo
+                        (no se mostrará cuál es).
+                      </p>
+                    ) : (
+                      <p className="text-emerald-700">
+                        No se detectan respuestas incorrectas con la información actual. Si lo deseas, puedes revisar de nuevo
+                        antes de enviar.
+                      </p>
+                    )}
+                    {hasFraudPenalty ? (
+                      <p className="text-zinc-600">
+                        Esta nota ya incluye la penalización de fraude registrada hasta este momento.
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-5">
