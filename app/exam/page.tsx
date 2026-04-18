@@ -166,6 +166,7 @@ export default function ExamPublicPage() {
   const [submitting, setSubmitting] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
   const [endAtMs, setEndAtMs] = useState<number | null>(null);
+  const [attemptStartMs, setAttemptStartMs] = useState<number | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showExamSummary, setShowExamSummary] = useState(false);
   const [showQuestionMap, setShowQuestionMap] = useState(false);
@@ -353,6 +354,7 @@ export default function ExamPublicPage() {
     });
 
     setAttemptId(ref.id);
+    setAttemptStartMs(now);
     setEndAtMs(ends);
     setRemainingMs(ends - now);
     setCurrentQuestionIndex(0);
@@ -382,6 +384,19 @@ export default function ExamPublicPage() {
       if (!snap.exists()) return;
       const row = snap.data() as Record<string, unknown>;
       const status = toString(row.status, "published");
+      const timeLimitMinutes = toNumber(row.timeLimitMinutes, exam.timeLimitMinutes);
+
+      if (timeLimitMinutes !== exam.timeLimitMinutes) {
+        setExam((prev) => (prev ? { ...prev, timeLimitMinutes } : prev));
+        if (step === "exam" && !submitted) {
+          const start = attemptStartMs ?? (endAtMs ? endAtMs - exam.timeLimitMinutes * 60 * 1000 : null);
+          if (start) {
+            const nextEnd = start + timeLimitMinutes * 60 * 1000;
+            setEndAtMs(nextEnd);
+            setRemainingMs(nextEnd - Date.now());
+          }
+        }
+      }
       if (status === "closed" && (step === "rules" || step === "student")) {
         setError("Este examen ya esta cerrado.");
         setStep("code");
@@ -389,7 +404,7 @@ export default function ExamPublicPage() {
       }
     });
     return () => unsub();
-  }, [exam, attemptId, step, submitted]);
+  }, [exam, attemptStartMs, endAtMs, step, submitted]);
 
   useEffect(() => {
     if (!attemptId) return;
@@ -400,6 +415,12 @@ export default function ExamPublicPage() {
       const msg = toString(row.adminMessage, "") || null;
       setAdminMessage(msg);
 
+      const startedAt = row.startedAt as unknown;
+      if (!attemptStartMs && startedAt && typeof startedAt === "object" && "toMillis" in (startedAt as any)) {
+        const ms = Number((startedAt as any).toMillis());
+        if (Number.isFinite(ms) && ms > 0) setAttemptStartMs(ms);
+      }
+
       if (status === "annulled" && step !== "result") {
         setAnnulled(true);
         setAnnulReason(
@@ -408,7 +429,7 @@ export default function ExamPublicPage() {
             "Tu intento fue anulado por el docente. Nota asignada: 0.00, sin posibilidad de recuperacion.",
           ),
         );
-        const total = toNumber(row.totalPoints, questions.reduce((acc, q) => acc + q.points, 0));
+        const total = toNumber(row.questionCount, toNumber(row.totalPoints, questions.length));
         const fraudTab = toNumber(row.fraudTabSwitches, 0);
         const fraudClip = toNumber(row.fraudClipboardAttempts, 0);
         const fraudPenalty0to5 = toNumber(
@@ -421,7 +442,7 @@ export default function ExamPublicPage() {
           score5Raw: 0,
           score50Raw: 0,
           earned: 0,
-          total: Number(total.toFixed(2)),
+          total: Number(total),
           fraudTabSwitches: fraudTab,
           fraudClipboardAttempts: fraudClip,
           fraudPenalty0to5,
@@ -684,6 +705,13 @@ export default function ExamPublicPage() {
     return 0;
   }
 
+  function isQuestionFullyCorrect(q: SnapshotQuestion) {
+    const earned = evaluateQuestion(q, answers[q.questionId]);
+    if (!Number.isFinite(earned)) return false;
+    if (q.type === "open_concept") return earned > 0;
+    return earned >= q.points && q.points > 0;
+  }
+
   async function submitAttempt(
     expired = false,
     opts?: { forcedStatus?: "submitted" | "submitted_expired" | "submitted_fraud"; forceZero?: boolean },
@@ -692,11 +720,12 @@ export default function ExamPublicPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const total = questions.reduce((acc, q) => acc + q.points, 0);
-      const earnedRaw = questions.reduce((acc, q) => acc + evaluateQuestion(q, answers[q.questionId]), 0);
-      const earned = opts?.forceZero ? 0 : earnedRaw;
-      const score5Raw = total > 0 ? (earnedRaw / total) * 5 : 0;
-      const score50Raw = total > 0 ? (earnedRaw / total) * 50 : 0;
+      const totalQuestionsLocal = questions.length;
+      const correctCount = questions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
+      const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
+      const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
+      const score5Raw = correctCount * valuePerQuestion0to5;
+      const score50Raw = correctCount * valuePerQuestion0to50;
 
       const fraudTab = fraudCountsRef.current.tab;
       const fraudClip = fraudCountsRef.current.clip;
@@ -711,8 +740,12 @@ export default function ExamPublicPage() {
       await updateDoc(doc(firestore, "attempts", attemptId), {
         status: opts?.forcedStatus ?? (expired ? "submitted_expired" : "submitted"),
         answers,
-        earnedPoints: Number(earned.toFixed(2)),
-        totalPoints: Number(total.toFixed(2)),
+        correctCount,
+        questionCount: totalQuestionsLocal,
+        questionValue0to5: Number(valuePerQuestion0to5.toFixed(4)),
+        questionValue0to50: Number(valuePerQuestion0to50.toFixed(4)),
+        earnedPoints: Number(correctCount),
+        totalPoints: Number(totalQuestionsLocal),
         grade0to5Raw: Number(score5Raw.toFixed(2)),
         grade0to50Raw: Number(score50Raw.toFixed(2)),
         grade0to5: score5,
@@ -721,6 +754,7 @@ export default function ExamPublicPage() {
         fraudClipboardAttempts: fraudClip,
         fraudPenalty0to5,
         fraudForcedFail: Boolean(opts?.forceZero),
+        gradeMethod: "per_question_equal",
         submittedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -730,8 +764,8 @@ export default function ExamPublicPage() {
         score50,
         score5Raw: Number(score5Raw.toFixed(2)),
         score50Raw: Number(score50Raw.toFixed(2)),
-        earned: Number(earned.toFixed(2)),
-        total: Number(total.toFixed(2)),
+        earned: Number(correctCount),
+        total: Number(totalQuestionsLocal),
         fraudTabSwitches: fraudTab,
         fraudClipboardAttempts: fraudClip,
         fraudPenalty0to5,
@@ -925,9 +959,38 @@ export default function ExamPublicPage() {
         : fraudTone === "yellow"
           ? "border-amber-200 bg-amber-50 text-amber-800"
           : "border-emerald-200 bg-emerald-50 text-emerald-800";
+  const resultStatus = !result
+    ? null
+    : result.fraudForcedFail
+      ? "fraud"
+      : result.score5 >= 3
+        ? "pass"
+        : result.score5 >= 2
+          ? "recovery"
+          : "fail";
+  const scorePreview = useMemo(() => {
+    const totalQuestionsLocal = questions.length;
+    const correctCount = questions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
+    const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
+    const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
+    const score5Raw = correctCount * valuePerQuestion0to5;
+    const score50Raw = correctCount * valuePerQuestion0to50;
+    const adjusted5 = Math.max(0, score5Raw - fraudPenaltyPreview0to5);
+    const adjusted50 = (adjusted5 / 5) * 50;
+    return {
+      totalQuestions: totalQuestionsLocal,
+      correctCount,
+      valuePerQuestion0to5,
+      valuePerQuestion0to50,
+      score5Raw,
+      score50Raw,
+      score5: Number(adjusted5.toFixed(2)),
+      score50: Number(adjusted50.toFixed(2)),
+    };
+  }, [answers, fraudPenaltyPreview0to5, questions]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-zinc-50 to-white px-4 py-6 sm:px-6">
+    <div className="min-h-screen bg-zinc-50 px-4 py-6 sm:px-6">
       <div
         className={`mx-auto w-full ${
           centeredEntryStep
@@ -1026,13 +1089,25 @@ export default function ExamPublicPage() {
             </div>
 
             <div className="mt-4 space-y-3 text-sm text-zinc-700">
-              <div className="rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-white p-4">
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Reglas del examen</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   <li>Tiempo limite: <strong>{exam.timeLimitMinutes} minutos</strong>.</li>
                   <li>Al llegar a 0, el examen se <strong>cierra automaticamente</strong> y se envia lo registrado.</li>
                   <li><strong>Solo un intento</strong> por estudiante: se valida por correo y documento.</li>
                   <li>El examen es <strong>individual</strong>.</li>
+                  <li>
+                    Esta <strong>prohibido copiar y pegar</strong>. Cada intento de copiar/pegar se registra como fraude.
+                  </li>
+                  <li>
+                    Cambiar de <strong>pestaña o ventana</strong> tambien se registra como fraude.
+                  </li>
+                  <li>
+                    Penalizacion por fraude: <strong>-{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)}</strong> en escala 0-5 por cada evento (pestaña o copiar/pegar).
+                  </li>
+                  <li>
+                    Si el fraude total llega a <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong>, el intento se marca como <strong>perdido</strong> (nota 0).
+                  </li>
                   <li>Al finalizar, solo veras tu <strong>nota</strong>. Las preguntas y respuestas se habilitan despues.</li>
                   <li>Recuperacion solo si la nota final esta entre <strong>2.0 y 2.9</strong>.</li>
                   <li>Si obtienes <strong>3.0 o superior</strong>, esa es tu nota definitiva.</li>
@@ -1142,17 +1217,40 @@ export default function ExamPublicPage() {
 
         {step === "exam" && exam ? (
           <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-4">
-            <div className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 shadow-sm">
-              <div className="flex items-center justify-between">
-                <p className="truncate text-sm font-semibold text-zinc-900">{exam.name}</p>
-                <div className="flex items-center gap-2">
+            <div className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-zinc-950 sm:text-lg">{exam.name}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">
+                      Pregunta {safeQuestionIndex + 1}/{Math.max(1, totalQuestions)} • {progressPct}%
+                    </div>
+                    <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">
+                      Respondidas {answeredCount}/{Math.max(1, totalQuestions)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExamSummary(false);
+                        setShowQuestionMap(true);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+                      title="Mapa de preguntas (Alt+M)"
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                      Mapa
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
                   <div
                     className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${fraudPill}`}
                     title={`Fraude total: ${fraudTotalEvents} (Cambio de pestaña: ${fraudTabSwitches}, Copiar/Pegar: ${fraudClipboardAttempts}). Penalización: ${fraudPenaltyPreview0to5.toFixed(
                       2,
                     )} en escala 0-5.`}
                   >
-                    Fraude total {fraudTotalEvents}
+                    Fraude {fraudTotalEvents}/{FRAUD_FAIL_TOTAL_EVENTS}
                   </div>
                   <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
                     Pestaña {fraudTabSwitches}
@@ -1166,6 +1264,18 @@ export default function ExamPublicPage() {
                   </div>
                 </div>
               </div>
+
+              <p className="mt-3 text-xs text-zinc-600">
+                Tipos de fraude monitoreados: <strong>Pestaña</strong> (salir/cambiar de ventana) y{" "}
+                <strong>Copiar/Pegar</strong> (Ctrl+C, Ctrl+V o intento de copy/paste). Cada intento suma al contador.
+              </p>
+
+              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+                <div
+                  className="h-full rounded-full bg-indigo-600 transition-[width]"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
             </div>
 
             {adminMessage ? (
@@ -1175,21 +1285,75 @@ export default function ExamPublicPage() {
               </div>
             ) : null}
 
-            {!showExamSummary && currentQuestion ? (
-              <article className="mx-auto flex min-h-[52vh] w-full max-w-4xl flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            {showQuestionMap ? (
+              <article className="mx-auto flex min-h-[60vh] w-full max-w-4xl flex-col rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-zinc-950">Mapa de preguntas</h3>
+                    <p className="mt-1 text-xs text-zinc-600">
+                      Selecciona una pregunta para ir directamente. Atajo: <strong>Alt + M</strong>.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuestionMap(false)}
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6 md:grid-cols-8">
+                  {questions.map((q, idx) => {
+                    const answered = hasAnswer(q);
+                    const isCurrent = idx === safeQuestionIndex;
+                    return (
+                      <button
+                        key={q.questionId}
+                        type="button"
+                        onClick={() => {
+                          setCurrentQuestionIndex(idx);
+                          setShowQuestionMap(false);
+                        }}
+                        className={`rounded-xl border px-2 py-2 text-xs font-semibold transition ${
+                          isCurrent
+                            ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                            : answered
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                        }`}
+                        title={answered ? "Respondida" : "Pendiente"}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            ) : null}
+
+            {!showExamSummary && !showQuestionMap && currentQuestion ? (
+              <article className="mx-auto flex min-h-[60vh] w-full max-w-4xl flex-col justify-between rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs font-semibold text-zinc-500">
                     Pregunta {safeQuestionIndex + 1} de {totalQuestions}
                   </p>
-                  <div className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
-                    Respondidas: {answeredCount}/{totalQuestions}
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-semibold text-zinc-700">
+                      Puntos {currentQuestion.points}
+                    </div>
+                    <div className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-semibold text-zinc-700">
+                      Respondidas {answeredCount}/{totalQuestions}
+                    </div>
                   </div>
                 </div>
-                <p className="mt-2 text-sm font-medium text-zinc-900">{currentQuestion.statement}</p>
+                <p className="mt-4 text-lg font-semibold leading-snug text-zinc-950 sm:text-2xl">
+                  {currentQuestion.statement}
+                </p>
 
-                <div className="mt-3">{renderQuestionInput(currentQuestion)}</div>
+                <div className="mt-5">{renderQuestionInput(currentQuestion)}</div>
 
-                <div className="mt-4 flex items-center justify-between">
+                <div className="mt-6 flex items-center justify-between">
                   <IconButton
                     onClick={() => setCurrentQuestionIndex((i) => Math.max(0, i - 1))}
                     className="h-10 w-10"
@@ -1201,6 +1365,14 @@ export default function ExamPublicPage() {
                   </IconButton>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowQuestionMap(true)}
+                      className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                      title="Mapa de preguntas (Alt+M)"
+                    >
+                      Ir a...
+                    </button>
                     {safeQuestionIndex < totalQuestions - 1 ? (
                       <IconButton
                         variant="primary"
@@ -1214,7 +1386,10 @@ export default function ExamPublicPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setShowExamSummary(true)}
+                        onClick={() => {
+                          setFinalSubmitAccepted(false);
+                          setShowExamSummary(true);
+                        }}
                         className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
                       >
                         Revisar y finalizar
@@ -1226,11 +1401,57 @@ export default function ExamPublicPage() {
             ) : null}
 
             {showExamSummary ? (
-              <article className="mx-auto flex min-h-[52vh] w-full max-w-4xl flex-col rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-                <h3 className="text-sm font-semibold text-zinc-900">Resumen final del intento</h3>
-                <p className="mt-1 text-xs text-zinc-600">
-                  Revisa el estado de cada pregunta antes de enviar de forma definitiva.
-                </p>
+              <article className="mx-auto flex min-h-[60vh] w-full max-w-4xl flex-col rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-zinc-950">Resumen final del intento</h3>
+                    <p className="mt-1 text-xs text-zinc-600">
+                      Antes de enviar, revisa pendientes y confirma el envio definitivo.
+                    </p>
+                  </div>
+                  <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">
+                    Pendientes {unansweredCount}
+                  </div>
+                </div>
+
+                {unansweredCount > 0 ? (
+                  <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <OctagonAlert className="mt-0.5 h-5 w-5" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">Aun tienes preguntas pendientes</p>
+                      <p className="mt-1 text-xs text-amber-800">
+                        Puedes entrar a cualquier pregunta y completarla antes de finalizar el envio.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                    <BadgeCheck className="mt-0.5 h-5 w-5" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">Todo listo</p>
+                      <p className="mt-1 text-xs text-emerald-800">Todas las preguntas tienen respuesta registrada.</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                    Nota estimada si envias ahora
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl bg-white px-3 py-2">
+                      <p className="text-xs text-zinc-500">0–5 (final)</p>
+                      <p className="text-lg font-semibold text-zinc-900">{scorePreview.score5.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-2xl bg-white px-3 py-2">
+                      <p className="text-xs text-zinc-500">Penalización fraude</p>
+                      <p className="text-lg font-semibold text-zinc-900">-{fraudPenaltyPreview0to5.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-zinc-600">
+                    No revela respuestas correctas. Solo muestra la nota estimada con la fórmula del examen.
+                  </p>
+                </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-5">
                   {questions.map((q, idx) => {
@@ -1255,6 +1476,22 @@ export default function ExamPublicPage() {
                   })}
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => setFinalSubmitAccepted((v) => !v)}
+                  className={`mt-4 flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left ${
+                    finalSubmitAccepted ? "border-indigo-200 bg-indigo-50" : "border-zinc-200 bg-white"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-zinc-900">Confirmo envio definitivo</p>
+                    <p className="truncate text-xs text-zinc-600">
+                      Al finalizar no podras editar respuestas nuevamente.
+                    </p>
+                  </div>
+                  <CheckCircle2 className={`h-5 w-5 ${finalSubmitAccepted ? "text-indigo-600" : "text-zinc-300"}`} />
+                </button>
+
                 <div className="mt-4 flex items-center justify-between gap-2">
                   <button
                     type="button"
@@ -1266,8 +1503,8 @@ export default function ExamPublicPage() {
                   <button
                     type="button"
                     onClick={() => void submitAttempt(false)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={submitting}
+                    className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={submitting || !finalSubmitAccepted}
                   >
                     <Save className="h-3.5 w-3.5" />
                     Finalizar envio definitivo
@@ -1279,44 +1516,142 @@ export default function ExamPublicPage() {
         ) : null}
 
         {step === "result" && result ? (
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-zinc-950">Examen enviado</h2>
-            <p className="mt-1 text-sm text-zinc-600">
-              Tu nota se muestra sin revelar respuestas correctas.
-            </p>
-            {result.fraudForcedFail ? (
-              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
-                Examen perdido por fraude (demasiados intentos).
+          <section className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm">
+            <div className="bg-indigo-600 px-6 py-6 text-white">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Resultado del examen</p>
+                  <h2 className="mt-1 truncate text-xl font-semibold tracking-tight sm:text-2xl">
+                    {exam?.name ?? "Examen"}
+                  </h2>
+                  <p className="mt-2 text-sm text-white/90">
+                    La nota se muestra sin revelar respuestas correctas.
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold">
+                  {resultStatus === "pass"
+                    ? "Aprobado"
+                    : resultStatus === "recovery"
+                      ? "Recuperación"
+                      : resultStatus === "fraud"
+                        ? "Fraude"
+                        : "Reprobado"}
+                </div>
               </div>
-            ) : null}
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-xl bg-zinc-50 px-3 py-2">
-                <p className="text-xs text-zinc-500">Escala 0-5</p>
-                <p className="text-xl font-semibold text-zinc-900">{result.score5}</p>
-              </div>
-              <div className="rounded-xl bg-zinc-50 px-3 py-2">
-                <p className="text-xs text-zinc-500">Escala 0-50</p>
-                <p className="text-xl font-semibold text-zinc-900">{result.score50}</p>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-white/10 px-4 py-3">
+                  <p className="text-xs font-semibold text-white/80">Nota final (0–5)</p>
+                  <p className="mt-1 text-3xl font-semibold tracking-tight">{result.score5.toFixed(2)}</p>
+                </div>
+                <div className="rounded-2xl bg-white/10 px-4 py-3">
+                  <p className="text-xs font-semibold text-white/80">Correctas</p>
+                  <p className="mt-1 text-3xl font-semibold tracking-tight">
+                    {result.earned.toFixed(0)}/{result.total.toFixed(0)}
+                  </p>
+                </div>
               </div>
             </div>
-            {result.fraudTabSwitches + result.fraudClipboardAttempts > 0 ? (
-              <div className="mt-4 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Indicador de fraude</p>
-                <p className="mt-1">
-                  Pestañas: <strong>{result.fraudTabSwitches}</strong> • Copiar/Pegar:{" "}
-                  <strong>{result.fraudClipboardAttempts}</strong> • Penalización:{" "}
-                  <strong>-{result.fraudPenalty0to5.toFixed(2)}</strong> (escala 0-5)
-                </p>
-                {!result.fraudForcedFail ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Nota sin penalización: {result.score5Raw.toFixed(2)} (0-5) • {result.score50Raw.toFixed(2)} (0-50)
+
+            <div className="space-y-4 px-6 py-6">
+              {resultStatus === "fraud" ? (
+                <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
+                  <XCircle className="mt-0.5 h-5 w-5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Examen perdido por fraude</p>
+                    <p className="mt-1 text-xs text-rose-800">
+                      Se alcanzó el límite de {FRAUD_FAIL_TOTAL_EVENTS} eventos de fraude (pestañas + copiar/pegar).
+                    </p>
+                  </div>
+                </div>
+              ) : resultStatus === "pass" ? (
+                <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+                  <Award className="mt-0.5 h-5 w-5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Aprobado</p>
+                    <p className="mt-1 text-xs text-emerald-800">
+                      Nota final igual o superior a 3.0. Esta es tu nota definitiva.
+                    </p>
+                  </div>
+                </div>
+              ) : resultStatus === "recovery" ? (
+                <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                  <OctagonAlert className="mt-0.5 h-5 w-5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Rango de recuperación</p>
+                    <p className="mt-1 text-xs text-amber-800">
+                      Nota final entre 2.0 y 2.9. Consulta con tu docente el proceso de recuperación.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
+                  <OctagonAlert className="mt-0.5 h-5 w-5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Reprobado</p>
+                    <p className="mt-1 text-xs text-rose-800">
+                      Nota final inferior a 2.0.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Detalle de calificación</p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                      <p className="text-xs text-zinc-500">Nota sin penalización (0–5)</p>
+                      <p className="text-lg font-semibold text-zinc-900">{result.score5Raw.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                      <p className="text-xs text-zinc-500">Penalización por fraude</p>
+                      <p className="text-lg font-semibold text-zinc-900">-{result.fraudPenalty0to5.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-800">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Fórmula</p>
+                    <p className="mt-2">
+                      Factor = <strong>5 / {result.total.toFixed(0)}</strong> ={" "}
+                      <strong>{(result.total > 0 ? 5 / result.total : 0).toFixed(2)}</strong>
+                    </p>
+                    <p className="mt-1">
+                      Nota bruta = factor × buenas ={" "}
+                      <strong>{(result.total > 0 ? (5 / result.total) * result.earned : 0).toFixed(2)}</strong>
+                    </p>
+                    <p className="mt-1">
+                      Nota final = nota bruta − fraude ={" "}
+                      <strong>
+                        {Math.max(
+                          0,
+                          (result.total > 0 ? (5 / result.total) * result.earned : 0) - result.fraudPenalty0to5,
+                        ).toFixed(2)}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Indicador de fraude</p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                      <p className="text-xs text-zinc-500">Cambio de pestaña</p>
+                      <p className="text-lg font-semibold text-zinc-900">{result.fraudTabSwitches}</p>
+                    </div>
+                    <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                      <p className="text-xs text-zinc-500">Copiar/Pegar</p>
+                      <p className="text-lg font-semibold text-zinc-900">{result.fraudClipboardAttempts}</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-zinc-700">
+                    Penalización aplicada: <strong>-{result.fraudPenalty0to5.toFixed(2)}</strong> (escala 0–5)
                   </p>
-                ) : null}
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Límite de fraude: <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong>. Al llegar al límite el examen se pierde (nota 0).
+                  </p>
+                </div>
               </div>
-            ) : null}
-            <p className="mt-3 text-sm text-zinc-600">
-              Puntaje: {result.earned} de {result.total}
-            </p>
+            </div>
           </section>
         ) : null}
       </div>

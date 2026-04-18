@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "1.0.0",
+  "batch": {
+    "batchId": "YYYY-MM-DD-subject-group-moment-batch-001",
+    "importedAt": "YYYY-MM-DDT00:00:00Z",
+    "importMode": "append_only",
+    "createdBy": "admin@colegio.edu",
+    "notes": "Describe el contenido del lote (materia/grupo/momento y rango de preguntas)."
+  },
+  "catalog": {
+    "groups": [
+      { "id": "manana_10a", "name": "Grado 10A Manana", "active": true }
+    ],
+    "subjects": [
+      { "id": "frontend_1", "name": "Frontend 1", "active": true }
+    ],
+    "moments": [
+      { "id": "m1", "name": "Momento 1", "active": true }
+    ]
+  },
+  "questions": [
+    {
+      "id": "q_front_000001",
+      "type": "single_choice",
+      "statement": "Pregunta ejemplo: ¿Que etiqueta HTML se usa para un enlace?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<a>", "isCorrect": true },
+        { "id": "b", "text": "<link>" },
+        { "id": "c", "text": "<href>" },
+        { "id": "d", "text": "<url>" }
+      ]
+    },
+    {
+      "id": "q_front_000002",
+      "type": "multiple_choice",
+      "statement": "Pregunta ejemplo: Selecciona conceptos de JavaScript.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "array", "isCorrect": true },
+        { "id": "b", "text": "function", "isCorrect": true },
+        { "id": "c", "text": "router" },
+        { "id": "d", "text": "promise", "isCorrect": true }
+      ]
+    }
+  ],
+  "examTemplates": [
+    {
+      "id": "exam_frontend_1_m1_10q",
+      "name": "Frontend 1 - M1 - 10 preguntas",
+      "subjectId": "frontend_1",
+      "groupId": "manana_10a",
+      "momentId": "m1",
+      "questionCount": 10,
+      "recommendedRange": { "min": 10, "max": 10 },
+      "timeLimitMinutes": 30,
+      "allowedQuestionTypes": ["single_choice", "multiple_choice", "open_concept", "puzzle_order", "puzzle_match", "puzzle_cloze"],
+      "selectionRules": { "mode": "random", "shuffleOptions": true },
+      "accessCode": { "mode": "generated_6_digits" },
+      "resultPolicy": { "showScoreAfterSubmit": true, "showAnswersAfterSubmit": false },
+      "gradingScale": "both",
+      "studentRequiredFields": ["fullName", "documentId", "email"]
+    }
+  ]
+}
+

@@ -1,0 +1,368 @@
+{
+  "schemaVersion": "1.0.0",
+  "batch": {
+    "batchId": "2026-04-18-intro_programacion-general-m1-batch-001",
+    "importedAt": "2026-04-18T00:00:00Z",
+    "importMode": "append_only",
+    "createdBy": "admin@colegio.edu",
+    "notes": "Introducción a la programación: 20 preguntas (HTML semántico y convenciones de nombres)."
+  },
+  "catalog": {
+    "groups": [
+      { "id": "g1", "name": "G1", "active": true }
+    ],
+    "subjects": [
+      { "id": "introduccion", "name": "Introducción a la programación", "active": true }
+    ],
+    "moments": [
+      { "id": "m1", "name": "Momento 1", "active": true }
+    ]
+  },
+  "questions": [
+    {
+      "id": "q_intro_000001",
+      "type": "single_choice",
+      "statement": "¿Qué etiqueta semántica representa el contenido principal de la página (sin incluir header, nav, footer)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<main>", "isCorrect": true },
+        { "id": "b", "text": "<section>" },
+        { "id": "c", "text": "<article>" },
+        { "id": "d", "text": "<aside>" }
+      ]
+    },
+    {
+      "id": "q_intro_000002",
+      "type": "single_choice",
+      "statement": "¿Qué etiqueta se usa para agrupar contenido relacionado dentro de un formulario y añadir un título?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<group>" },
+        { "id": "b", "text": "<fieldset> con <legend>", "isCorrect": true },
+        { "id": "c", "text": "<section> con <title>" },
+        { "id": "d", "text": "<formgroup>" }
+      ]
+    },
+    {
+      "id": "q_intro_000003",
+      "type": "multiple_choice",
+      "statement": "Selecciona elementos semánticos de estructura en HTML.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "<header>", "isCorrect": true },
+        { "id": "b", "text": "<nav>", "isCorrect": true },
+        { "id": "c", "text": "<div>" },
+        { "id": "d", "text": "<footer>", "isCorrect": true }
+      ]
+    },
+    {
+      "id": "q_intro_000004",
+      "type": "single_choice",
+      "statement": "¿Qué atributo en <label> se usa para asociarlo a un input específico?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "name" },
+        { "id": "b", "text": "for", "isCorrect": true },
+        { "id": "c", "text": "target" },
+        { "id": "d", "text": "idref" }
+      ]
+    },
+    {
+      "id": "q_intro_000005",
+      "type": "single_choice",
+      "statement": "En un formulario, ¿qué atributo es clave para que un campo viaje con un nombre al enviar (submit)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "id" },
+        { "id": "b", "text": "name", "isCorrect": true },
+        { "id": "c", "text": "class" },
+        { "id": "d", "text": "placeholder" }
+      ]
+    },
+    {
+      "id": "q_intro_000006",
+      "type": "multiple_choice",
+      "statement": "¿Cuáles de estas son etiquetas válidas para construir una tabla semántica?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "<thead>", "isCorrect": true },
+        { "id": "b", "text": "<tbody>", "isCorrect": true },
+        { "id": "c", "text": "<th>", "isCorrect": true },
+        { "id": "d", "text": "<tcaption>" }
+      ]
+    },
+    {
+      "id": "q_intro_000007",
+      "type": "single_choice",
+      "statement": "¿Qué etiqueta se recomienda usar para el título o descripción de una tabla?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<caption>", "isCorrect": true },
+        { "id": "b", "text": "<legend>" },
+        { "id": "c", "text": "<title>" },
+        { "id": "d", "text": "<summary>" }
+      ]
+    },
+    {
+      "id": "q_intro_000008",
+      "type": "single_choice",
+      "statement": "¿Qué atributo en <th> ayuda a indicar si es encabezado de columna o de fila?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "scope", "isCorrect": true },
+        { "id": "b", "text": "span" },
+        { "id": "c", "text": "role" },
+        { "id": "d", "text": "axis" }
+      ]
+    },
+    {
+      "id": "q_intro_000009",
+      "type": "single_choice",
+      "statement": "¿Qué etiqueta es apropiada para contenido que puede estar “al lado” del contenido principal (barra lateral)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<aside>", "isCorrect": true },
+        { "id": "b", "text": "<article>" },
+        { "id": "c", "text": "<section>" },
+        { "id": "d", "text": "<main>" }
+      ]
+    },
+    {
+      "id": "q_intro_000010",
+      "type": "single_choice",
+      "statement": "¿Qué etiqueta semántica representa un contenido independiente y reutilizable (por ejemplo un post de blog)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<article>", "isCorrect": true },
+        { "id": "b", "text": "<section>" },
+        { "id": "c", "text": "<aside>" },
+        { "id": "d", "text": "<header>" }
+      ]
+    },
+    {
+      "id": "q_intro_000011",
+      "type": "multiple_choice",
+      "statement": "Selecciona tipos válidos de input en HTML.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "email", "isCorrect": true },
+        { "id": "b", "text": "password", "isCorrect": true },
+        { "id": "c", "text": "number", "isCorrect": true },
+        { "id": "d", "text": "textArea" }
+      ]
+    },
+    {
+      "id": "q_intro_000012",
+      "type": "single_choice",
+      "statement": "¿Qué etiqueta se usa para capturar texto de varias líneas en un formulario?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<input type='multiline'>" },
+        { "id": "b", "text": "<textarea>", "isCorrect": true },
+        { "id": "c", "text": "<text>" },
+        { "id": "d", "text": "<multiline>" }
+      ]
+    },
+    {
+      "id": "q_intro_000013",
+      "type": "single_choice",
+      "statement": "¿Qué combinación es la más correcta para un botón que envía el formulario?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<button type='submit'>Enviar</button>", "isCorrect": true },
+        { "id": "b", "text": "<button type='send'>Enviar</button>" },
+        { "id": "c", "text": "<input type='button' submit>" },
+        { "id": "d", "text": "<submit>Enviar</submit>" }
+      ]
+    },
+    {
+      "id": "q_intro_000014",
+      "type": "single_choice",
+      "statement": "¿Qué atributo nativo obliga a que un input tenga valor antes de enviar el formulario?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "required", "isCorrect": true },
+        { "id": "b", "text": "mandatory" },
+        { "id": "c", "text": "validate" },
+        { "id": "d", "text": "min" }
+      ]
+    },
+    {
+      "id": "q_intro_000015",
+      "type": "single_choice",
+      "statement": "¿Cuál es un ejemplo correcto de kebab-case?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "miVariable" },
+        { "id": "b", "text": "MiVariable" },
+        { "id": "c", "text": "mi-variable", "isCorrect": true },
+        { "id": "d", "text": "mi_variable" }
+      ]
+    },
+    {
+      "id": "q_intro_000016",
+      "type": "single_choice",
+      "statement": "¿Cuál es un ejemplo correcto de snake_case?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "miVariable" },
+        { "id": "b", "text": "mi_variable", "isCorrect": true },
+        { "id": "c", "text": "mi-variable" },
+        { "id": "d", "text": "MiVariable" }
+      ]
+    },
+    {
+      "id": "q_intro_000017",
+      "type": "single_choice",
+      "statement": "¿Cuál es un ejemplo correcto de PascalCase?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "miVariable" },
+        { "id": "b", "text": "MiVariable", "isCorrect": true },
+        { "id": "c", "text": "mi_variable" },
+        { "id": "d", "text": "mi-variable" }
+      ]
+    },
+    {
+      "id": "q_intro_000018",
+      "type": "single_choice",
+      "statement": "¿Cuál es un ejemplo correcto de camelCase?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "miVariable", "isCorrect": true },
+        { "id": "b", "text": "MiVariable" },
+        { "id": "c", "text": "mi_variable" },
+        { "id": "d", "text": "mi-variable" }
+      ]
+    },
+    {
+      "id": "q_intro_000019",
+      "type": "multiple_choice",
+      "statement": "Relaciona convención con su uso típico (selecciona las verdaderas).",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "PascalCase suele usarse para clases/componentes", "isCorrect": true },
+        { "id": "b", "text": "camelCase suele usarse para variables/funciones", "isCorrect": true },
+        { "id": "c", "text": "kebab-case suele usarse para nombres de archivos/URLs", "isCorrect": true },
+        { "id": "d", "text": "snake_case es obligatorio en HTML para ids" }
+      ]
+    },
+    {
+      "id": "q_intro_000020",
+      "type": "single_choice",
+      "statement": "En un formulario accesible, ¿qué práctica es la más correcta para describir el campo?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "Usar solo placeholder y no usar label" },
+        { "id": "b", "text": "Usar <label> asociado al input (for/id) o envolver el input", "isCorrect": true },
+        { "id": "c", "text": "Poner el texto del label dentro del value del input" },
+        { "id": "d", "text": "Ocultar el label y no asociarlo" }
+      ]
+    }
+  ],
+  "examTemplates": [  ]
+}

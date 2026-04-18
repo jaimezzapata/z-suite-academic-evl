@@ -5,9 +5,9 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  getDocs,
   doc,
   getCountFromServer,
-  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -86,6 +86,15 @@ function Select({
   options: CatalogItem[];
   placeholder: string;
 }) {
+  const dup = useMemo(() => {
+    const counts = new Map<string, number>();
+    options.forEach((o) => {
+      const k = o.name.trim().toLowerCase();
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    });
+    return counts;
+  }, [options]);
+
   return (
     <label className="grid gap-1">
       <span className="text-sm font-medium text-zinc-800">{label}</span>
@@ -97,7 +106,9 @@ function Select({
         <option value="">{placeholder}</option>
         {options.map((opt) => (
           <option key={opt.id} value={opt.id}>
-            {opt.name}
+            {dup.get(opt.name.trim().toLowerCase()) && (dup.get(opt.name.trim().toLowerCase()) ?? 0) > 1
+              ? `${opt.name} · ${opt.id.slice(0, 6)}`
+              : opt.name}
           </option>
         ))}
       </select>
@@ -207,6 +218,7 @@ export function ExamManager() {
   const [siteId, setSiteId] = useState("");
   const [shiftId, setShiftId] = useState("");
   const [questionCount, setQuestionCount] = useState(45);
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
   const [active, setActive] = useState(true);
   const [creating, setCreating] = useState(false);
 
@@ -401,7 +413,7 @@ export function ExamManager() {
         siteId,
         shiftId,
         questionCount,
-        timeLimitMinutes: 60,
+        timeLimitMinutes,
         allowedQuestionTypes: [
           "single_choice",
           "multiple_choice",
@@ -420,6 +432,7 @@ export function ExamManager() {
       });
 
       setQuestionCount(45);
+      setTimeLimitMinutes(60);
       setActive(true);
       setCreateOpen(false);
     } catch {
@@ -484,27 +497,59 @@ export function ExamManager() {
     setPublishMessage(null);
 
     try {
+      function momentRank(id: unknown) {
+        const s = typeof id === "string" ? id.trim().toLowerCase() : "";
+        const m = /^m(\d+)$/.exec(s);
+        if (!m) return null;
+        const n = Number(m[1]);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      }
+
       const questionSnap = await getDocs(
         query(
           collection(firestore, "questions"),
           where("subjectId", "==", publishTarget.subjectId),
-          where("groupIds", "array-contains", publishTarget.groupId),
           where("status", "==", "published"),
           limit(1200),
         ),
       );
 
-      const eligible = questionSnap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
-        .filter((q) => {
-          const row = q as Record<string, unknown>;
-          const moments = Array.isArray(row.momentIds) ? row.momentIds : [];
-          return moments.includes(publishTarget.momentId);
+      const candidates = questionSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      if (candidates.length === 0) {
+        setError(
+          "No se encontraron preguntas para la materia seleccionada. Esto suele pasar cuando la materia (catalogo) tiene un ID diferente al subjectId que tienen las preguntas importadas. Solución: usa la materia creada por el import JSON (ID estable) o vuelve a importar el lote con el subjectId correcto.",
+        );
+        return;
+      }
+
+      const examRank = momentRank(publishTarget.momentId);
+      const eligible = candidates.filter((q) => {
+        const row = q as Record<string, unknown>;
+        const momentIds = Array.isArray(row.momentIds)
+          ? (row.momentIds as unknown[])
+          : typeof row.momentIds === "string"
+            ? [row.momentIds]
+            : typeof row.momentId === "string"
+              ? [row.momentId]
+              : [];
+
+        if (momentIds.length === 0) {
+          return true;
+        }
+
+        if (examRank === null) {
+          return momentIds.includes(publishTarget.momentId);
+        }
+
+        return momentIds.some((m) => {
+          const r = momentRank(m);
+          return r !== null && r <= examRank;
         });
+      });
 
       if (eligible.length < publishTarget.questionCount) {
         setError(
-          `No hay suficientes preguntas para publicar. Disponibles: ${eligible.length}, requeridas: ${publishTarget.questionCount}.`,
+          `No hay suficientes preguntas para publicar para este examen. En materia: ${candidates.length}, en momento (regla Mx): ${eligible.length}. Requeridas: ${publishTarget.questionCount}.`,
         );
         return;
       }
@@ -561,6 +606,7 @@ export function ExamManager() {
     setSiteId(row.siteId);
     setShiftId(row.shiftId);
     setQuestionCount(row.questionCount);
+    setTimeLimitMinutes(row.timeLimitMinutes || 60);
     setActive(row.active);
     setEditOpen(true);
   }
@@ -596,6 +642,23 @@ export function ExamManager() {
     setDeleting(true);
     setError(null);
     try {
+      const publishedSnap = await getDocs(
+        query(collection(firestore, "publishedExams"), where("templateId", "==", deleteTarget.id), limit(200)),
+      );
+      const publishedIds = publishedSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
+        .filter((r) => toString((r as Record<string, unknown>).status, "published") === "published")
+        .map((r) => (r as { id: string }).id);
+      await Promise.all(
+        publishedIds.map(async (id) => {
+          await updateDoc(doc(firestore, "publishedExams", id), {
+            status: "closed",
+            closedAt: serverTimestamp(),
+            closedReason: "template_deleted",
+            updatedAt: serverTimestamp(),
+          });
+        }),
+      );
       await deleteDoc(doc(firestore, "examTemplates", deleteTarget.id));
       setDeleteOpen(false);
       setDeleteTarget(null);
@@ -616,6 +679,10 @@ export function ExamManager() {
         setError("Completa Jornada, Grupo y Momento.");
         return;
       }
+      if (!Number.isFinite(timeLimitMinutes) || timeLimitMinutes < 1 || timeLimitMinutes > 240) {
+        setError("Tiempo inválido. Rango recomendado: 1 a 240 minutos.");
+        return;
+      }
       const nameRes = normalizeSentenceText(autoName);
       if (!nameRes.ok) {
         setError(nameRes.error);
@@ -629,6 +696,7 @@ export function ExamManager() {
         siteId,
         shiftId,
         questionCount,
+        timeLimitMinutes,
         active,
         updatedAt: serverTimestamp(),
       });
@@ -682,7 +750,10 @@ export function ExamManager() {
           </label>
           <IconButton
             variant="primary"
-            onClick={() => setCreateOpen(true)}
+            onClick={() => {
+              setTimeLimitMinutes(60);
+              setCreateOpen(true);
+            }}
             className="h-11 w-11 shrink-0"
             aria-label="Crear examen"
             title="Crear examen"
@@ -926,6 +997,18 @@ export function ExamManager() {
                 />
               </label>
 
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Tiempo (min)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={timeLimitMinutes}
+                  onChange={(e) => setTimeLimitMinutes(Number(e.target.value || 0))}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                />
+              </label>
+
               <Toggle
                 label="Activo"
                 description="Si esta inactivo, no se deberia poder publicar."
@@ -1037,6 +1120,18 @@ export function ExamManager() {
                   max={200}
                   value={questionCount}
                   onChange={(e) => setQuestionCount(Number(e.target.value || 0))}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Tiempo (min)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={timeLimitMinutes}
+                  onChange={(e) => setTimeLimitMinutes(Number(e.target.value || 0))}
                   className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
                 />
               </label>

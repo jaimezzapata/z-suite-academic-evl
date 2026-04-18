@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "1.0.0",
+  "batch": {
+    "batchId": "2026-04-18-frontend_1-manana_10a-m1-batch-001",
+    "importedAt": "2026-04-18T00:00:00Z",
+    "importMode": "append_only",
+    "createdBy": "admin@colegio.edu",
+    "notes": "Primer lote ejemplo (copiar y extender)."
+  },
+  "catalog": {
+    "groups": [
+      { "id": "manana_10a", "name": "Grado 10A Manana", "active": true }
+    ],
+    "subjects": [
+      { "id": "frontend_1", "name": "Frontend 1", "active": true }
+    ],
+    "moments": [
+      { "id": "m1", "name": "Momento 1", "active": true }
+    ]
+  },
+  "questions": [
+    {
+      "id": "q_front_000101",
+      "type": "single_choice",
+      "statement": "¿Que etiqueta HTML representa el contenido principal de la pagina?",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "<main>", "isCorrect": true },
+        { "id": "b", "text": "<section>" },
+        { "id": "c", "text": "<article>" },
+        { "id": "d", "text": "<footer>" }
+      ]
+    },
+    {
+      "id": "q_front_000102",
+      "type": "multiple_choice",
+      "statement": "Selecciona propiedades validas de Flexbox.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "justify-content", "isCorrect": true },
+        { "id": "b", "text": "align-items", "isCorrect": true },
+        { "id": "c", "text": "grid-template-columns" },
+        { "id": "d", "text": "flex-wrap", "isCorrect": true }
+      ]
+    },
+    {
+      "id": "q_front_000103",
+      "type": "open_concept",
+      "statement": "Explica que es el DOM y una forma de manipularlo.",
+      "subjectId": "frontend_1",
+      "groupIds": ["manana_10a"],
+      "momentIds": ["m1"],
+      "difficulty": "medium",
+      "points": 2,
+      "status": "published",
+      "answerRules": {
+        "maxWords": 80,
+        "keywords": [
+          { "term": "arbol", "weight": 1.0 },
+          { "term": "documento", "weight": 1.0 },
+          { "term": "elemento", "weight": 1.0 },
+          { "term": "querySelector", "weight": 1.0 }
+        ],
+        "passThreshold": 0.5
+      }
+    }
+  ],
+  "examTemplates": [
+    {
+      "id": "exam_frontend_1_m1_20q_prueba",
+      "name": "Frontend 1 - M1 - Prueba (20)",
+      "subjectId": "frontend_1",
+      "groupId": "manana_10a",
+      "momentId": "m1",
+      "questionCount": 20,
+      "recommendedRange": { "min": 20, "max": 20 },
+      "timeLimitMinutes": 30,
+      "allowedQuestionTypes": ["single_choice", "multiple_choice", "open_concept"],
+      "selectionRules": { "mode": "random", "shuffleOptions": true },
+      "accessCode": { "mode": "generated_6_digits" },
+      "resultPolicy": { "showScoreAfterSubmit": true, "showAnswersAfterSubmit": false },
+      "gradingScale": "both",
+      "studentRequiredFields": ["fullName", "documentId", "email"]
+    }
+  ]
+}
+

@@ -1,0 +1,1055 @@
+{
+  "schemaVersion": "1.0.0",
+  "batch": {
+    "batchId": "2026-04-18-introduccion-g1-m2-batch-002",
+    "importedAt": "2026-04-18T00:00:00Z",
+    "importMode": "append_only",
+    "createdBy": "admin@colegio.edu",
+    "notes": "Introducción (M2): CSS (flexbox, box model, selectores, unidades) y Git (repo, clone, ramas, estructura). Lote extendido."
+  },
+  "catalog": {
+    "groups": [
+      { "id": "g1", "name": "G1", "active": true }
+    ],
+    "subjects": [
+      { "id": "introduccion", "name": "Introducción a la programación", "active": true }
+    ],
+    "moments": [
+      { "id": "m2", "name": "Momento 2", "active": true }
+    ]
+  },
+  "questions": [
+    {
+      "id": "q_introm2_000001",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad CSS define el modelo de layout Flexbox en un contenedor?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "display: flex", "isCorrect": true },
+        { "id": "b", "text": "position: flex" },
+        { "id": "c", "text": "flex: 1" },
+        { "id": "d", "text": "float: flex" }
+      ]
+    },
+    {
+      "id": "q_introm2_000002",
+      "type": "single_choice",
+      "statement": "En Flexbox, ¿qué propiedad alinea elementos en el eje principal?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "align-items" },
+        { "id": "b", "text": "justify-content", "isCorrect": true },
+        { "id": "c", "text": "align-content" },
+        { "id": "d", "text": "flex-basis" }
+      ]
+    },
+    {
+      "id": "q_introm2_000003",
+      "type": "single_choice",
+      "statement": "En Flexbox, ¿qué propiedad alinea elementos en el eje cruzado?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "align-items", "isCorrect": true },
+        { "id": "b", "text": "justify-content" },
+        { "id": "c", "text": "gap" },
+        { "id": "d", "text": "order" }
+      ]
+    },
+    {
+      "id": "q_introm2_000004",
+      "type": "multiple_choice",
+      "statement": "Selecciona propiedades comunes de un contenedor Flexbox.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "flex-direction", "isCorrect": true },
+        { "id": "b", "text": "justify-content", "isCorrect": true },
+        { "id": "c", "text": "align-items", "isCorrect": true },
+        { "id": "d", "text": "grid-template-areas" }
+      ]
+    },
+    {
+      "id": "q_introm2_000005",
+      "type": "single_choice",
+      "statement": "¿Qué valor de flex-direction organiza elementos en columna?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "row" },
+        { "id": "b", "text": "column", "isCorrect": true },
+        { "id": "c", "text": "wrap" },
+        { "id": "d", "text": "inline" }
+      ]
+    },
+    {
+      "id": "q_introm2_000006",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad permite que los ítems flex pasen a la siguiente línea si no caben?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "flex-wrap", "isCorrect": true },
+        { "id": "b", "text": "flex-grow" },
+        { "id": "c", "text": "align-self" },
+        { "id": "d", "text": "white-space" }
+      ]
+    },
+    {
+      "id": "q_introm2_000007",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad define el espacio entre ítems (sin usar margin individual)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "gap", "isCorrect": true },
+        { "id": "b", "text": "space" },
+        { "id": "c", "text": "padding" },
+        { "id": "d", "text": "border-spacing" }
+      ]
+    },
+    {
+      "id": "q_introm2_000008",
+      "type": "single_choice",
+      "statement": "En el box model, ¿qué área está entre el contenido y el borde?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "margin" },
+        { "id": "b", "text": "padding", "isCorrect": true },
+        { "id": "c", "text": "outline" },
+        { "id": "d", "text": "gap" }
+      ]
+    },
+    {
+      "id": "q_introm2_000009",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad cambia el comportamiento de width/height para incluir padding y border en el cálculo?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "box-sizing: border-box", "isCorrect": true },
+        { "id": "b", "text": "display: border-box" },
+        { "id": "c", "text": "border: box" },
+        { "id": "d", "text": "size: border" }
+      ]
+    },
+    {
+      "id": "q_introm2_000010",
+      "type": "multiple_choice",
+      "statement": "Selecciona partes del modelo de caja (box model).",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "content", "isCorrect": true },
+        { "id": "b", "text": "padding", "isCorrect": true },
+        { "id": "c", "text": "border", "isCorrect": true },
+        { "id": "d", "text": "shadow" }
+      ]
+    },
+    {
+      "id": "q_introm2_000011",
+      "type": "single_choice",
+      "statement": "¿Cuál selector selecciona todos los elementos con la clase 'card'?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "#card" },
+        { "id": "b", "text": ".card", "isCorrect": true },
+        { "id": "c", "text": "card" },
+        { "id": "d", "text": "*card" }
+      ]
+    },
+    {
+      "id": "q_introm2_000012",
+      "type": "single_choice",
+      "statement": "¿Cuál selector selecciona el elemento con id='menu'?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": ".menu" },
+        { "id": "b", "text": "#menu", "isCorrect": true },
+        { "id": "c", "text": "menu#" },
+        { "id": "d", "text": "menu.id" }
+      ]
+    },
+    {
+      "id": "q_introm2_000013",
+      "type": "single_choice",
+      "statement": "¿Qué selector selecciona todos los <p> que están dentro de un <article>?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "article+p" },
+        { "id": "b", "text": "article p", "isCorrect": true },
+        { "id": "c", "text": "p article" },
+        { "id": "d", "text": "article > p > *" }
+      ]
+    },
+    {
+      "id": "q_introm2_000014",
+      "type": "single_choice",
+      "statement": "¿Qué selector selecciona solo los hijos directos <li> de un <ul>?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "ul li" },
+        { "id": "b", "text": "ul > li", "isCorrect": true },
+        { "id": "c", "text": "ul + li" },
+        { "id": "d", "text": "ul ~ li" }
+      ]
+    },
+    {
+      "id": "q_introm2_000015",
+      "type": "single_choice",
+      "statement": "¿Cuál unidad CSS es relativa al tamaño de fuente del elemento raíz (root)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "em" },
+        { "id": "b", "text": "rem", "isCorrect": true },
+        { "id": "c", "text": "px" },
+        { "id": "d", "text": "vh" }
+      ]
+    },
+    {
+      "id": "q_introm2_000016",
+      "type": "multiple_choice",
+      "statement": "Selecciona unidades de medida relativas en CSS.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "%", "isCorrect": true },
+        { "id": "b", "text": "rem", "isCorrect": true },
+        { "id": "c", "text": "vh", "isCorrect": true },
+        { "id": "d", "text": "px" }
+      ]
+    },
+    {
+      "id": "q_introm2_000017",
+      "type": "single_choice",
+      "statement": "En CSS, ¿qué significa que un selector tenga mayor especificidad?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "Se aplica menos" },
+        { "id": "b", "text": "Tiene más prioridad cuando hay conflictos", "isCorrect": true },
+        { "id": "c", "text": "Hace el CSS más rápido" },
+        { "id": "d", "text": "Solo aplica en móviles" }
+      ]
+    },
+    {
+      "id": "q_introm2_000018",
+      "type": "single_choice",
+      "statement": "¿Qué comando crea un nuevo repositorio Git en la carpeta actual?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git start" },
+        { "id": "b", "text": "git init", "isCorrect": true },
+        { "id": "c", "text": "git new" },
+        { "id": "d", "text": "git create" }
+      ]
+    },
+    {
+      "id": "q_introm2_000019",
+      "type": "single_choice",
+      "statement": "¿Qué comando descarga un repositorio remoto a tu máquina?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git clone <url>", "isCorrect": true },
+        { "id": "b", "text": "git copy <url>" },
+        { "id": "c", "text": "git pull <url>" },
+        { "id": "d", "text": "git download <url>" }
+      ]
+    },
+    {
+      "id": "q_introm2_000020",
+      "type": "single_choice",
+      "statement": "¿Qué comando muestra el estado de archivos (staged, unstaged, etc.)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git status", "isCorrect": true },
+        { "id": "b", "text": "git state" },
+        { "id": "c", "text": "git log" },
+        { "id": "d", "text": "git diff --status-only" }
+      ]
+    },
+    {
+      "id": "q_introm2_000021",
+      "type": "single_choice",
+      "statement": "¿Qué comando crea una nueva rama llamada 'feature/login'?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git branch feature/login", "isCorrect": true },
+        { "id": "b", "text": "git checkout main feature/login" },
+        { "id": "c", "text": "git merge feature/login" },
+        { "id": "d", "text": "git add feature/login" }
+      ]
+    },
+    {
+      "id": "q_introm2_000022",
+      "type": "single_choice",
+      "statement": "¿Qué comando cambia a una rama existente llamada 'dev'?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git switch dev", "isCorrect": true },
+        { "id": "b", "text": "git branch dev" },
+        { "id": "c", "text": "git init dev" },
+        { "id": "d", "text": "git status dev" }
+      ]
+    },
+    {
+      "id": "q_introm2_000023",
+      "type": "multiple_choice",
+      "statement": "Selecciona comandos relacionados con ramas (branches) en Git.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "git branch", "isCorrect": true },
+        { "id": "b", "text": "git switch", "isCorrect": true },
+        { "id": "c", "text": "git checkout", "isCorrect": true },
+        { "id": "d", "text": "git format" }
+      ]
+    },
+    {
+      "id": "q_introm2_000024",
+      "type": "single_choice",
+      "statement": "¿Qué archivo normalmente se usa para listar carpetas/archivos que no deben subirse al repositorio?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": ".gitignore", "isCorrect": true },
+        { "id": "b", "text": "ignore.txt" },
+        { "id": "c", "text": ".ignoregit" },
+        { "id": "d", "text": ".npmignore (siempre)" }
+      ]
+    },
+    {
+      "id": "q_introm2_000025",
+      "type": "single_choice",
+      "statement": "¿Qué comando une (integra) cambios de una rama a la rama actual?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git merge", "isCorrect": true },
+        { "id": "b", "text": "git join" },
+        { "id": "c", "text": "git push" },
+        { "id": "d", "text": "git stash" }
+      ]
+    },
+    {
+      "id": "q_introm2_000026",
+      "type": "single_choice",
+      "statement": "¿Qué comando envía tus commits al repositorio remoto?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git push", "isCorrect": true },
+        { "id": "b", "text": "git send" },
+        { "id": "c", "text": "git upload" },
+        { "id": "d", "text": "git publish" }
+      ]
+    },
+    {
+      "id": "q_introm2_000027",
+      "type": "single_choice",
+      "statement": "¿Qué comando trae commits del remoto e intenta integrarlos en tu rama local?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git pull", "isCorrect": true },
+        { "id": "b", "text": "git download" },
+        { "id": "c", "text": "git fetch-only" },
+        { "id": "d", "text": "git import" }
+      ]
+    },
+    {
+      "id": "q_introm2_000028",
+      "type": "single_choice",
+      "statement": "En una estructura de proyecto web, ¿qué carpeta suele contener estilos (CSS) cuando no usas frameworks?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "assets/css o css", "isCorrect": true },
+        { "id": "b", "text": "node_modules" },
+        { "id": "c", "text": ".git" },
+        { "id": "d", "text": "dist (siempre)" }
+      ]
+    },
+    {
+      "id": "q_introm2_000029",
+      "type": "multiple_choice",
+      "statement": "Selecciona buenas prácticas de organización de proyecto (encarpetado).",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "Separar assets (img/fonts) de código", "isCorrect": true },
+        { "id": "b", "text": "Mantener nombres consistentes de carpetas", "isCorrect": true },
+        { "id": "c", "text": "Poner todo en una sola carpeta para evitar rutas" },
+        { "id": "d", "text": "Usar un README con instrucciones", "isCorrect": true }
+      ]
+    },
+    {
+      "id": "q_introm2_000030",
+      "type": "single_choice",
+      "statement": "En Flexbox, ¿qué propiedad permite cambiar el orden visual de un ítem sin moverlo en el HTML?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "order", "isCorrect": true },
+        { "id": "b", "text": "index" },
+        { "id": "c", "text": "z-order" },
+        { "id": "d", "text": "flow" }
+      ]
+    },
+    {
+      "id": "q_introm2_000031",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad de un ítem Flex controla cuánto puede crecer respecto a los demás?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "flex-grow", "isCorrect": true },
+        { "id": "b", "text": "flex-wrap" },
+        { "id": "c", "text": "justify-self" },
+        { "id": "d", "text": "align-content" }
+      ]
+    },
+    {
+      "id": "q_introm2_000032",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad de un ítem Flex controla cuánto puede encogerse?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "flex-shrink", "isCorrect": true },
+        { "id": "b", "text": "flex-basis" },
+        { "id": "c", "text": "shrink-wrap" },
+        { "id": "d", "text": "minmax" }
+      ]
+    },
+    {
+      "id": "q_introm2_000033",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad de un ítem Flex define su tamaño base antes de crecer/encoger?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "flex-basis", "isCorrect": true },
+        { "id": "b", "text": "flex-order" },
+        { "id": "c", "text": "basis" },
+        { "id": "d", "text": "grow-size" }
+      ]
+    },
+    {
+      "id": "q_introm2_000034",
+      "type": "single_choice",
+      "statement": "¿Qué selector selecciona solo el primer hijo de un contenedor?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": ":first-child", "isCorrect": true },
+        { "id": "b", "text": ":first" },
+        { "id": "c", "text": ":child-first" },
+        { "id": "d", "text": "::first-child" }
+      ]
+    },
+    {
+      "id": "q_introm2_000035",
+      "type": "single_choice",
+      "statement": "¿Qué selector selecciona un elemento cuando el mouse está encima?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": ":hover", "isCorrect": true },
+        { "id": "b", "text": "::hover" },
+        { "id": "c", "text": ":mouse" },
+        { "id": "d", "text": ":active-hover" }
+      ]
+    },
+    {
+      "id": "q_introm2_000036",
+      "type": "multiple_choice",
+      "statement": "Selecciona pseudo-clases comunes en CSS.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": ":hover", "isCorrect": true },
+        { "id": "b", "text": ":focus", "isCorrect": true },
+        { "id": "c", "text": "::before" },
+        { "id": "d", "text": ":active", "isCorrect": true }
+      ]
+    },
+    {
+      "id": "q_introm2_000037",
+      "type": "single_choice",
+      "statement": "¿Cuál pseudo-elemento inserta contenido antes de un elemento?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": ":before" },
+        { "id": "b", "text": "::before", "isCorrect": true },
+        { "id": "c", "text": ":prepend" },
+        { "id": "d", "text": "::start" }
+      ]
+    },
+    {
+      "id": "q_introm2_000038",
+      "type": "single_choice",
+      "statement": "¿Qué comando agrega archivos al área de preparación (staging area) en Git?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git add", "isCorrect": true },
+        { "id": "b", "text": "git stage --all" },
+        { "id": "c", "text": "git commit -a (siempre)" },
+        { "id": "d", "text": "git put" }
+      ]
+    },
+    {
+      "id": "q_introm2_000039",
+      "type": "single_choice",
+      "statement": "¿Qué comando crea un commit con un mensaje?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git commit -m \"mensaje\"", "isCorrect": true },
+        { "id": "b", "text": "git push -m \"mensaje\"" },
+        { "id": "c", "text": "git log -m \"mensaje\"" },
+        { "id": "d", "text": "git save \"mensaje\"" }
+      ]
+    },
+    {
+      "id": "q_introm2_000040",
+      "type": "single_choice",
+      "statement": "¿Qué comando muestra el historial de commits?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git log", "isCorrect": true },
+        { "id": "b", "text": "git history" },
+        { "id": "c", "text": "git commits" },
+        { "id": "d", "text": "git show-all" }
+      ]
+    },
+    {
+      "id": "q_introm2_000041",
+      "type": "multiple_choice",
+      "statement": "Selecciona archivos o carpetas típicas que NO debes versionar en Git.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "node_modules/", "isCorrect": true },
+        { "id": "b", "text": ".env.local", "isCorrect": true },
+        { "id": "c", "text": "README.md" },
+        { "id": "d", "text": ".secrets/", "isCorrect": true }
+      ]
+    },
+    {
+      "id": "q_introm2_000042",
+      "type": "single_choice",
+      "statement": "¿Qué comando descarga cambios del remoto sin fusionarlos automáticamente?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git fetch", "isCorrect": true },
+        { "id": "b", "text": "git pull" },
+        { "id": "c", "text": "git clone" },
+        { "id": "d", "text": "git sync" }
+      ]
+    },
+    {
+      "id": "q_introm2_000043",
+      "type": "single_choice",
+      "statement": "En CSS, ¿qué propiedad define el grosor de un borde?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "border-width", "isCorrect": true },
+        { "id": "b", "text": "border-size" },
+        { "id": "c", "text": "outline-width" },
+        { "id": "d", "text": "stroke" }
+      ]
+    },
+    {
+      "id": "q_introm2_000044",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad CSS controla el tamaño de fuente?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "font-size", "isCorrect": true },
+        { "id": "b", "text": "text-size" },
+        { "id": "c", "text": "size" },
+        { "id": "d", "text": "font-weight" }
+      ]
+    },
+    {
+      "id": "q_introm2_000045",
+      "type": "single_choice",
+      "statement": "En CSS, ¿qué propiedad define el grosor del texto (negrita)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "font-style" },
+        { "id": "b", "text": "font-weight", "isCorrect": true },
+        { "id": "c", "text": "text-bold" },
+        { "id": "d", "text": "letter-weight" }
+      ]
+    },
+    {
+      "id": "q_introm2_000046",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad define el color del texto en CSS?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "text-color" },
+        { "id": "b", "text": "color", "isCorrect": true },
+        { "id": "c", "text": "font-color" },
+        { "id": "d", "text": "background-color" }
+      ]
+    },
+    {
+      "id": "q_introm2_000047",
+      "type": "multiple_choice",
+      "statement": "Selecciona selectores CSS válidos.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "div", "isCorrect": true },
+        { "id": "b", "text": ".card", "isCorrect": true },
+        { "id": "c", "text": "#menu", "isCorrect": true },
+        { "id": "d", "text": "@button" }
+      ]
+    },
+    {
+      "id": "q_introm2_000048",
+      "type": "single_choice",
+      "statement": "En Git, ¿qué comando muestra las ramas locales disponibles?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git branch", "isCorrect": true },
+        { "id": "b", "text": "git branches" },
+        { "id": "c", "text": "git list-branches" },
+        { "id": "d", "text": "git show-branch --only" }
+      ]
+    },
+    {
+      "id": "q_introm2_000049",
+      "type": "single_choice",
+      "statement": "¿Qué comando crea y cambia a una nueva rama en un solo paso (forma moderna)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git switch -c feature/x", "isCorrect": true },
+        { "id": "b", "text": "git merge -c feature/x" },
+        { "id": "c", "text": "git init -c feature/x" },
+        { "id": "d", "text": "git pull -c feature/x" }
+      ]
+    },
+    {
+      "id": "q_introm2_000050",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad CSS centra el contenido de un elemento flex en ambos ejes (combinación típica)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "align-items: center; justify-content: center;", "isCorrect": true },
+        { "id": "b", "text": "text-align: center; vertical-align: middle;" },
+        { "id": "c", "text": "margin: auto; padding: auto;" },
+        { "id": "d", "text": "float: center; clear: both;" }
+      ]
+    },
+    {
+      "id": "q_introm2_000051",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad CSS controla el espacio exterior de un elemento?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "padding" },
+        { "id": "b", "text": "margin", "isCorrect": true },
+        { "id": "c", "text": "border" },
+        { "id": "d", "text": "gap" }
+      ]
+    },
+    {
+      "id": "q_introm2_000052",
+      "type": "single_choice",
+      "statement": "En CSS, ¿qué selector tiene mayor especificidad normalmente?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "Selector de etiqueta (p)" },
+        { "id": "b", "text": "Selector de clase (.card)" },
+        { "id": "c", "text": "Selector de id (#menu)", "isCorrect": true },
+        { "id": "d", "text": "Selector universal (*)" }
+      ]
+    },
+    {
+      "id": "q_introm2_000053",
+      "type": "single_choice",
+      "statement": "¿Qué archivo suele describir el proyecto y cómo ejecutarlo en un repositorio?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "README.md", "isCorrect": true },
+        { "id": "b", "text": "package-lock.json" },
+        { "id": "c", "text": ".git/index" },
+        { "id": "d", "text": "config.yml (siempre)" }
+      ]
+    },
+    {
+      "id": "q_introm2_000054",
+      "type": "multiple_choice",
+      "statement": "Selecciona buenas prácticas al trabajar con ramas en Git.",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "Nombrar ramas de forma clara (feature/..., fix/...)", "isCorrect": true },
+        { "id": "b", "text": "Hacer commits pequeños y descriptivos", "isCorrect": true },
+        { "id": "c", "text": "Trabajar directamente en main siempre" },
+        { "id": "d", "text": "Actualizar tu rama con cambios del remoto cuando sea necesario", "isCorrect": true }
+      ]
+    },
+    {
+      "id": "q_introm2_000055",
+      "type": "single_choice",
+      "statement": "¿Qué propiedad CSS redondea las esquinas de un elemento?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "border-radius", "isCorrect": true },
+        { "id": "b", "text": "corner-radius" },
+        { "id": "c", "text": "radius" },
+        { "id": "d", "text": "outline-radius" }
+      ]
+    },
+    {
+      "id": "q_introm2_000056",
+      "type": "single_choice",
+      "statement": "¿Qué comando compara cambios entre archivos (diferencias) en Git?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git diff", "isCorrect": true },
+        { "id": "b", "text": "git compare" },
+        { "id": "c", "text": "git status -d" },
+        { "id": "d", "text": "git show --files-only" }
+      ]
+    },
+    {
+      "id": "q_introm2_000057",
+      "type": "single_choice",
+      "statement": "En CSS, ¿qué propiedad controla el tipo de caja (block/inline/inline-block)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "easy",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "display", "isCorrect": true },
+        { "id": "b", "text": "position" },
+        { "id": "c", "text": "float" },
+        { "id": "d", "text": "box" }
+      ]
+    },
+    {
+      "id": "q_introm2_000058",
+      "type": "single_choice",
+      "statement": "¿Qué comando configura un nombre de usuario global para Git (localmente en tu PC)?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "hard",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "git config --global user.name \"Tu Nombre\"", "isCorrect": true },
+        { "id": "b", "text": "git set user.name \"Tu Nombre\"" },
+        { "id": "c", "text": "git profile --name \"Tu Nombre\"" },
+        { "id": "d", "text": "git init --name \"Tu Nombre\"" }
+      ]
+    },
+    {
+      "id": "q_introm2_000059",
+      "type": "single_choice",
+      "statement": "En CSS, ¿qué propiedad permite posicionar un elemento de forma relativa a su posición original?",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "medium",
+      "points": 1,
+      "status": "published",
+      "options": [
+        { "id": "a", "text": "position: relative", "isCorrect": true },
+        { "id": "b", "text": "position: flex" },
+        { "id": "c", "text": "display: relative" },
+        { "id": "d", "text": "float: relative" }
+      ]
+    },
+    {
+      "id": "q_introm2_000060",
+      "type": "multiple_choice",
+      "statement": "Selecciona comandos básicos para crear y publicar un repositorio (flujo típico).",
+      "subjectId": "introduccion",
+      "groupIds": ["g1"],
+      "momentIds": ["m2"],
+      "difficulty": "hard",
+      "points": 2,
+      "status": "published",
+      "partialCredit": true,
+      "options": [
+        { "id": "a", "text": "git init", "isCorrect": true },
+        { "id": "b", "text": "git add .", "isCorrect": true },
+        { "id": "c", "text": "git commit -m \"...\"", "isCorrect": true },
+        { "id": "d", "text": "git push origin main", "isCorrect": true }
+      ]
+    }
+  ],
+  "examTemplates": []
+}
+

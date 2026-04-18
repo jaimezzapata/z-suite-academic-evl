@@ -9,6 +9,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
@@ -22,13 +23,23 @@ type Row = {
   active: boolean;
 };
 
+function toStableId(input: string) {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
 function toRow(id: string, data: Record<string, unknown>): Row {
   const name = typeof data.name === "string" && data.name.trim() ? data.name : id;
   const active = typeof data.active === "boolean" ? data.active : true;
   return { id, name, active };
 }
 
-function Section({
+function CollectionPanel({
   title,
   description,
   collectionName,
@@ -75,9 +86,30 @@ function Section({
       setError(res.error);
       return;
     }
+    const baseId = toStableId(res.value);
+    if (!baseId) {
+      setError("ID inválido. Usa letras, números y guion bajo.");
+      return;
+    }
+
+    const byId = rows.find((r) => r.id.toLowerCase() === baseId.toLowerCase());
+    if (byId) {
+      setError(`Ya existe: "${byId.name}" (ID: ${byId.id}). Edita el existente.`);
+      return;
+    }
+
+    const normalizedName = res.value.trim().toLowerCase();
+    const byName = rows.find((r) => r.name.trim().toLowerCase() === normalizedName);
+    if (byName) {
+      setError(`Ya existe: "${byName.name}" (ID: ${byName.id}). Edita el existente.`);
+      return;
+    }
+
+    setSavingId("__new__");
     setError(null);
     try {
-      await addDoc(collection(firestore, collectionName), {
+      await setDoc(doc(collection(firestore, collectionName), baseId), {
+        id: baseId,
         name: res.value,
         active: true,
         createdAt: serverTimestamp(),
@@ -86,6 +118,8 @@ function Section({
       setNewName("");
     } catch {
       setError(`No fue posible crear en ${collectionName}.`);
+    } finally {
+      setSavingId(null);
     }
   }
 
@@ -125,97 +159,94 @@ function Section({
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold tracking-tight text-zinc-950">{title}</h2>
-          <p className="text-xs text-zinc-500">{description}</p>
+    <section className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="truncate text-sm font-semibold tracking-tight text-zinc-950">{title}</h2>
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-700">
+              {rows.length}
+            </span>
+          </div>
+          <p className="mt-0.5 hidden text-[11px] text-zinc-500 sm:block">{description}</p>
         </div>
-        <label className="grid gap-1">
-          <span className="text-xs font-semibold text-zinc-700">Buscar</span>
+
+        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[220px_1fr_auto] sm:items-center">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void create();
+            }}
+            className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-[220px]"
+            placeholder={`Nuevo ${title.toLowerCase()}`}
+            disabled={savingId === "__new__"}
+          />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-56"
-            placeholder="Nombre"
+            className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-56"
+            placeholder="Buscar"
           />
-        </label>
+          <IconButton
+            variant="primary"
+            onClick={create}
+            disabled={!newName.trim() || savingId === "__new__"}
+            className="h-8 w-8"
+            aria-label={`Crear ${title}`}
+            title={`Crear ${title}`}
+          >
+            <Plus className="h-4 w-4" />
+          </IconButton>
+        </div>
       </div>
 
       {error ? (
-        <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {error}
         </div>
       ) : null}
 
-      <div className="mt-3">
+      <div className="mt-2">
         {loading ? (
-          <div className="rounded-xl bg-zinc-50 px-3 py-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
             Cargando...
           </div>
         ) : filtered.length ? (
-          <div className="rounded-xl border border-zinc-200">
-            <div className="hidden grid-cols-[1fr_120px_168px] gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600 sm:grid">
-              <div className="min-w-0">Nombre</div>
-              <div>Estado</div>
-              <div className="text-right">Acciones</div>
+          <div className="overflow-hidden rounded-xl border border-zinc-200">
+            <div className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-2 py-2 text-[11px] font-semibold text-zinc-600 sm:grid-cols-[1fr_110px_120px]">
+              <div className="text-zinc-600">Nombre</div>
+              <div className="text-zinc-600">Activo</div>
+              <div className="text-right text-zinc-600">Acciones</div>
             </div>
 
-            <div className="grid gap-2 p-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px_168px] sm:items-center">
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
-                  placeholder={`Nuevo ${title.toLowerCase()}`}
-                />
-                <div className="hidden sm:block" />
-                <div className="flex justify-end">
-                  <IconButton
-                    variant="primary"
-                    onClick={create}
-                    disabled={!newName.trim()}
-                    className="h-9 w-9"
-                    aria-label={`Crear ${title}`}
-                    title={`Crear ${title}`}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </IconButton>
-                </div>
-              </div>
-
-              <div className="h-px bg-zinc-200" />
-
+            <div className="max-h-[52vh] overflow-y-auto">
               {filtered.map((r) => {
                 const disabled = savingId === r.id;
                 const draft = draftNames[r.id] ?? r.name;
                 return (
                   <div
                     key={r.id}
-                    className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px_168px] sm:items-center"
+                    className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-100 px-2 py-2 sm:grid-cols-[1fr_110px_120px]"
                   >
-                    <div className="min-w-0">
-                      <input
-                        value={draft}
-                        onChange={(e) => setDraftNames((p) => ({ ...p, [r.id]: e.target.value }))}
-                        className="h-9 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
-                        disabled={disabled}
-                      />
-                    </div>
+                    <input
+                      value={draft}
+                      onChange={(e) => setDraftNames((p) => ({ ...p, [r.id]: e.target.value }))}
+                      className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
+                      disabled={disabled}
+                    />
 
-                    <div>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${
-                          r.active
-                            ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                            : "bg-zinc-100 text-zinc-700 ring-zinc-200"
-                        }`}
-                      >
-                        {r.active ? "Activo" : "Inactivo"}
-                      </span>
-                    </div>
+                    <span
+                      className={`inline-flex items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                        r.active
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                          : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                      }`}
+                    >
+                      {r.active ? "Sí" : "No"}
+                    </span>
 
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2">
                       <IconButton
                         onClick={() => saveName(r.id)}
                         disabled={disabled}
@@ -225,7 +256,6 @@ function Section({
                       >
                         <Save className="h-4 w-4" />
                       </IconButton>
-
                       <IconButton
                         variant={r.active ? "danger" : "secondary"}
                         onClick={() => toggleActive(r.id, !r.active)}
@@ -243,7 +273,7 @@ function Section({
             </div>
           </div>
         ) : (
-          <div className="rounded-xl bg-zinc-50 px-3 py-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
             Sin registros.
           </div>
         )}
@@ -253,41 +283,83 @@ function Section({
 }
 
 export function CatalogsPage() {
+  const catalogs = useMemo(
+    () =>
+      [
+        {
+          key: "subjects",
+          title: "Materias",
+          description: "Materias o asignaturas (por ejemplo Front 1).",
+          collectionName: "subjects",
+        },
+        {
+          key: "sites",
+          title: "Sedes",
+          description: "Lugares o sedes disponibles para examenes.",
+          collectionName: "sites",
+        },
+        {
+          key: "shifts",
+          title: "Jornadas",
+          description: "Jornada o turno (manana, tarde, noche).",
+          collectionName: "shifts",
+        },
+        {
+          key: "moments",
+          title: "Momentos",
+          description: "Momentos de evaluacion (M1, M2, recuperacion).",
+          collectionName: "moments",
+        },
+        {
+          key: "groups",
+          title: "Grupos",
+          description: "Grupos o cursos (por ejemplo 10A Manana).",
+          collectionName: "groups",
+        },
+      ] as const,
+    [],
+  );
+
+  const [activeKey, setActiveKey] = useState<(typeof catalogs)[number]["key"]>("subjects");
+  const active = catalogs.find((c) => c.key === activeKey) ?? catalogs[0];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">Catalogos</h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Crea, edita, lista y gestiona sedes, momentos, grupos y jornadas.
-        </p>
+    <div className="space-y-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-950">Catalogos</h1>
+          <p className="mt-1 text-sm text-zinc-600">Gestiona datos base de la app.</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Section
-          title="Materias"
-          description="Materias o asignaturas (por ejemplo Frontend 1)."
-          collectionName="subjects"
-        />
-        <Section
-          title="Sedes"
-          description="Lugares o sedes disponibles para examenes."
-          collectionName="sites"
-        />
-        <Section
-          title="Jornadas"
-          description="Jornada o turno (manana, tarde, noche)."
-          collectionName="shifts"
-        />
-        <Section
-          title="Momentos"
-          description="Momentos de evaluacion (M1, M2, recuperacion)."
-          collectionName="moments"
-        />
-        <Section
-          title="Grupos"
-          description="Grupos o cursos (por ejemplo 10A Manana)."
-          collectionName="groups"
-        />
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_1fr]">
+        <aside className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
+          <div className="grid gap-1">
+            {catalogs.map((c) => {
+              const active = c.key === activeKey;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setActiveKey(c.key)}
+                  className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
+                    active ? "bg-zinc-950 text-white" : "text-zinc-800 hover:bg-zinc-50"
+                  }`}
+                >
+                  {c.title}
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        <div className="min-w-0">
+          <CollectionPanel
+            title={active.title}
+            description={active.description}
+            collectionName={active.collectionName}
+          />
+        </div>
       </div>
     </div>
   );
