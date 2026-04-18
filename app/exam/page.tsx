@@ -1524,9 +1524,6 @@ export default function ExamPublicPage() {
                   <h2 className="mt-1 truncate text-xl font-semibold tracking-tight sm:text-2xl">
                     {exam?.name ?? "Examen"}
                   </h2>
-                  <p className="mt-2 text-sm text-white/90">
-                    La nota se muestra sin revelar respuestas correctas.
-                  </p>
                 </div>
                 <div className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold">
                   {resultStatus === "pass"
