@@ -24,3 +24,23 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.docs-markdown > * + * {
+  margin-top: 0.9rem;
+}
+
+.docs-markdown h1,
+.docs-markdown h2,
+.docs-markdown h3 {
+  letter-spacing: -0.01em;
+  color: #18181b;
+}
+
+.docs-markdown p {
+  text-wrap: pretty;
+}
+
+.docs-markdown ul li::marker,
+.docs-markdown ol li::marker {
+  color: #3f3f46;
+}

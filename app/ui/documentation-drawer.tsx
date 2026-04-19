@@ -81,11 +81,11 @@ export function DocumentationDrawer({
   return (
     <div className="fixed inset-0 z-50">
       <button type="button" onClick={onClose} className="absolute inset-0 bg-black/50" aria-label="Cerrar" />
-      <div className="absolute inset-y-0 right-0 w-full bg-white shadow-2xl">
-        <div className="flex h-14 items-center justify-between gap-3 border-b border-zinc-200 px-4">
+      <div className="absolute inset-y-0 right-0 w-full bg-zinc-50 shadow-2xl">
+        <div className="flex h-14 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-zinc-950">{title}</p>
-            <p className="truncate text-xs text-zinc-500">Usa la navegación para ir a secciones.</p>
+            <p className="truncate text-xs text-zinc-500">Lectura guiada con navegación por secciones.</p>
           </div>
           <button
             type="button"
@@ -98,7 +98,7 @@ export function DocumentationDrawer({
         </div>
 
         <div className="grid h-[calc(100vh-3.5rem)] grid-cols-1 lg:grid-cols-[320px_1fr]">
-          <aside className="hidden overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4 lg:block">
+          <aside className="hidden overflow-y-auto border-r border-zinc-200 bg-white p-4 lg:block">
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Contenido</p>
             <div className="mt-3 space-y-2">
               <input
@@ -133,7 +133,7 @@ export function DocumentationDrawer({
                       const el = document.getElementById(item.id);
                       el?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
-                    className={`w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-800 hover:bg-white ${
+                    className={`w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-50 ${
                       item.level === 1 ? "font-semibold" : item.level === 2 ? "pl-4" : "pl-6"
                     }`}
                   >
@@ -147,7 +147,7 @@ export function DocumentationDrawer({
           </aside>
 
           <main className="overflow-y-auto px-4 py-5 lg:px-8">
-            <div className="mx-auto w-full max-w-4xl">
+            <div className="mx-auto w-full max-w-4xl rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm lg:p-8">
               <MarkdownViewer markdown={markdown} />
             </div>
           </main>
