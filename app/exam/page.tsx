@@ -98,6 +98,24 @@ function toNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function toMillis(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  try {
+    if ("toMillis" in value && typeof (value as { toMillis?: unknown }).toMillis === "function") {
+      const ms = Number((value as { toMillis: () => number }).toMillis());
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if ("toDate" in value && typeof (value as { toDate?: unknown }).toDate === "function") {
+      const d = (value as { toDate: () => Date }).toDate();
+      const ms = d?.getTime?.();
+      return typeof ms === "number" && Number.isFinite(ms) ? ms : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function formatRemaining(ms: number) {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
   const min = Math.floor(totalSec / 60);
@@ -213,6 +231,8 @@ export default function ExamPublicPage() {
   const [annulled, setAnnulled] = useState(false);
   const [annulReason, setAnnulReason] = useState<string | null>(null);
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
+  const [adminMessageKey, setAdminMessageKey] = useState<string | null>(null);
+  const [dismissedAdminMessageKey, setDismissedAdminMessageKey] = useState<string | null>(null);
 
   const [fraudTabSwitches, setFraudTabSwitches] = useState(0);
   const [fraudClipboardAttempts, setFraudClipboardAttempts] = useState(0);
@@ -621,12 +641,15 @@ export default function ExamPublicPage() {
       const row = snap.data() as Record<string, unknown>;
       const status = toString(row.status, "in_progress");
       const msg = toString(row.adminMessage, "") || null;
+      const msgAtMs = toMillis(row.adminMessageAt);
+      const nextKey = msg ? `${msgAtMs ?? "na"}:${msg}` : null;
       setAdminMessage(msg);
+      setAdminMessageKey(nextKey);
 
       const startedAt = row.startedAt as unknown;
-      if (!attemptStartMs && startedAt && typeof startedAt === "object" && "toMillis" in (startedAt as any)) {
-        const ms = Number((startedAt as any).toMillis());
-        if (Number.isFinite(ms) && ms > 0) setAttemptStartMs(ms);
+      if (!attemptStartMs) {
+        const ms = toMillis(startedAt);
+        if (typeof ms === "number" && ms > 0) setAttemptStartMs(ms);
       }
 
       if (status === "annulled" && step !== "result") {
@@ -662,6 +685,14 @@ export default function ExamPublicPage() {
     });
     return () => unsub();
   }, [attemptId, step, questions]);
+
+  useEffect(() => {
+    if (!attemptId) return;
+    try {
+      const raw = localStorage.getItem(`zse:adminMsgDismissed:${attemptId}`);
+      if (raw && typeof raw === "string") setDismissedAdminMessageKey(raw);
+    } catch {}
+  }, [attemptId]);
 
   useEffect(() => {
     if (!attemptId || step !== "exam" || submitted) return;
@@ -1535,10 +1566,47 @@ export default function ExamPublicPage() {
               </div>
             </div>
 
-            {adminMessage ? (
-              <div className="mx-auto w-full max-w-4xl rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
-                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Mensaje del docente</p>
-                <p className="mt-2">{adminMessage}</p>
+            {adminMessage && adminMessageKey && dismissedAdminMessageKey !== adminMessageKey && !submitted ? (
+              <div className="fixed inset-0 z-[70]">
+                <div className="absolute inset-0 bg-black/60" />
+                <div className="absolute inset-0 grid place-items-center px-4 py-10">
+                  <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-2xl">
+                    <div className="flex items-start gap-3 bg-rose-600 px-5 py-4 text-white">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/15">
+                        <OctagonAlert className="h-5 w-5 animate-pulse" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-white/90">
+                          Advertencia del docente
+                        </p>
+                        <p className="mt-1 text-base font-semibold tracking-tight">
+                          Debes confirmar para continuar
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-5">
+                      <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-800">
+                        {adminMessage}
+                      </p>
+
+                      <div className="mt-5 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDismissedAdminMessageKey(adminMessageKey);
+                            try {
+                              if (attemptId) localStorage.setItem(`zse:adminMsgDismissed:${attemptId}`, adminMessageKey);
+                            } catch {}
+                          }}
+                          className="h-11 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white hover:bg-rose-700"
+                        >
+                          Entendido
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : null}
 

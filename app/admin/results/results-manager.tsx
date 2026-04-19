@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, getDocs, limit, query } from "firebase/firestore";
-import { Download, FileDown, FileSpreadsheet, Loader2 } from "lucide-react";
+import { collection, deleteDoc, doc, getDoc, getDocs, limit, query } from "firebase/firestore";
+import { Eye, Trash2, Download, FileDown, FileSpreadsheet, Loader2, ArrowUpDown } from "lucide-react";
 import { firestore } from "@/lib/firebase/client";
+import { MinimalPagination } from "@/app/admin/ui/minimal-pagination";
 
 type SnapshotQuestion = {
   id: string;
@@ -92,6 +93,29 @@ function toTextPreview(value: string, max = 120) {
   const compact = value.replace(/\s+/g, " ").trim();
   if (compact.length <= max) return compact;
   return `${compact.slice(0, max - 1)}...`;
+}
+
+function parseWrongDetail(value: string) {
+  const s = value.trim();
+  const m = s.match(/^P(\d+):\s*(.*?)\s*\|\s*Respuesta:\s*(.*?)\s*\|\s*Motivo:\s*(.*)$/);
+  if (!m) {
+    return { number: null as number | null, statement: s, answer: "", reason: "" };
+  }
+  return {
+    number: Number(m[1]),
+    statement: m[2]?.trim() ?? "",
+    answer: m[3]?.trim() ?? "",
+    reason: m[4]?.trim() ?? "",
+  };
+}
+
+function statusTone(status: string) {
+  const s = status.toLowerCase();
+  if (s.includes("fraud")) return "bg-rose-50 text-rose-700";
+  if (s.includes("expired")) return "bg-amber-50 text-amber-800";
+  if (s.includes("submitted")) return "bg-emerald-50 text-emerald-700";
+  if (s.includes("annul")) return "bg-zinc-100 text-zinc-700";
+  return "bg-zinc-100 text-zinc-700";
 }
 
 function resolveOptionText(q: SnapshotQuestion, optionId: string) {
@@ -236,8 +260,21 @@ export function ResultsManager() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [examCodeFilter, setExamCodeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "submitted" | "in_progress" | "annulled" | "fraud">("all");
+  const [onlyWithWrong, setOnlyWithWrong] = useState(false);
+  const [onlyWithFraud, setOnlyWithFraud] = useState(false);
+  const [sortKey, setSortKey] = useState<
+    "submittedAt" | "examName" | "examCode" | "studentFullName" | "status" | "grade0to5" | "fraudTotal" | "wrongCount"
+  >("submittedAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Record<string, true>>({});
   const [exporting, setExporting] = useState<"" | "csv" | "excel" | "pdf">("");
   const [selectedRow, setSelectedRow] = useState<ResultRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ResultRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -368,13 +405,63 @@ export function ResultsManager() {
           field.toLowerCase().includes(q),
         );
       const byCode = !code || r.examCode.includes(code);
-      return bySearch && byCode;
+      const byStatus =
+        statusFilter === "all"
+          ? true
+          : statusFilter === "fraud"
+            ? r.status.toLowerCase().includes("fraud")
+            : statusFilter === "submitted"
+              ? r.status.toLowerCase().includes("submitted")
+              : statusFilter === "annulled"
+                ? r.status.toLowerCase().includes("annul")
+                : r.status.toLowerCase().includes("in_progress");
+      const byWrong = !onlyWithWrong || r.wrongCount > 0;
+      const byFraud = !onlyWithFraud || r.fraudTotal > 0;
+      return bySearch && byCode && byStatus && byWrong && byFraud;
     });
-  }, [rows, search, examCodeFilter]);
+  }, [rows, search, examCodeFilter, statusFilter, onlyWithWrong, onlyWithFraud]);
+
+  const visibleRows = useMemo(() => {
+    const copy = [...filteredRows];
+    const dir = sortDir === "asc" ? 1 : -1;
+    const get = (r: ResultRow) => {
+      if (sortKey === "submittedAt") return r.submittedAt?.getTime?.() ?? 0;
+      if (sortKey === "grade0to5") return r.grade0to5;
+      if (sortKey === "fraudTotal") return r.fraudTotal;
+      if (sortKey === "wrongCount") return r.wrongCount;
+      if (sortKey === "examName") return r.examName.toLowerCase();
+      if (sortKey === "examCode") return r.examCode.toLowerCase();
+      if (sortKey === "studentFullName") return r.studentFullName.toLowerCase();
+      return r.status.toLowerCase();
+    };
+    copy.sort((a, b) => {
+      const av = get(a);
+      const bv = get(b);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), "es") * dir;
+    });
+    return copy;
+  }, [filteredRows, sortKey, sortDir]);
+
+  const pageSize = 12;
+  const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const pagedRows = useMemo(() => {
+    const start = page * pageSize;
+    return visibleRows.slice(start, start + pageSize);
+  }, [visibleRows, page]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search, examCodeFilter, statusFilter, onlyWithWrong, onlyWithFraud, sortKey, sortDir]);
+
+  useEffect(() => {
+    if (page <= pageCount - 1) return;
+    setPage(Math.max(0, pageCount - 1));
+  }, [page, pageCount]);
 
   const exportRows = useMemo(
     () =>
-      filteredRows.map((r) => ({
+      visibleRows.map((r) => ({
         examen: r.examName,
         codigo_examen: r.examCode,
         estudiante: r.studentFullName,
@@ -390,8 +477,39 @@ export function ResultsManager() {
         preguntas_malas_cantidad: r.wrongCount,
         preguntas_malas_detalle: r.wrongDetails.join(" || "),
       })),
-    [filteredRows],
+    [visibleRows],
   );
+
+  const selectedWrong = useMemo(() => {
+    if (!selectedRow) return [];
+    return selectedRow.wrongDetails.map(parseWrongDetail);
+  }, [selectedRow]);
+
+  const selectedCount = useMemo(() => Object.keys(selectedIds).length, [selectedIds]);
+  const allVisibleSelected = useMemo(() => {
+    if (!pagedRows.length) return false;
+    return pagedRows.every((r) => Boolean(selectedIds[r.id]));
+  }, [pagedRows, selectedIds]);
+
+  async function confirmBulkDelete() {
+    const ids = Object.keys(selectedIds);
+    if (!ids.length) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      for (const id of ids) {
+        await deleteDoc(doc(firestore, "attempts", id));
+      }
+      setRows((prev) => prev.filter((r) => !selectedIds[r.id]));
+      setSelectedIds({});
+      setBulkDeleteOpen(false);
+      setSelectedRow((prev) => (prev && selectedIds[prev.id] ? null : prev));
+    } catch {
+      setDeleteError("No fue posible eliminar en masa. Revisa reglas/permisos de Firestore.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   function downloadBlob(content: BlobPart, filename: string, type: string) {
     const blob = new Blob([content], { type });
@@ -401,6 +519,22 @@ export function ResultsManager() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function confirmDeleteAttempt() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteDoc(doc(firestore, "attempts", deleteTarget.id));
+      setRows((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      setSelectedRow((prev) => (prev?.id === deleteTarget.id ? null : prev));
+    } catch {
+      setDeleteError("No fue posible eliminar este intento. Revisa reglas/permisos de Firestore.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function exportCsv() {
@@ -422,7 +556,7 @@ export function ResultsManager() {
     ];
     const lines = [
       headers.map(normalizeCsvCell).join(","),
-      ...filteredRows.map((r) =>
+      ...visibleRows.map((r) =>
         [
           r.examName,
           r.studentFullName,
@@ -468,7 +602,7 @@ export function ResultsManager() {
     ws.getRow(1).height = 26;
 
     ws.mergeCells("A2:K2");
-    ws.getCell("A2").value = `Generado: ${new Date().toLocaleString("es-CO")} • Registros: ${filteredRows.length}`;
+    ws.getCell("A2").value = `Generado: ${new Date().toLocaleString("es-CO")} • Registros: ${visibleRows.length}`;
     ws.getCell("A2").font = { size: 11, color: { argb: "FF334155" } };
     ws.getCell("A2").alignment = { horizontal: "left", vertical: "middle" };
     ws.getRow(2).height = 20;
@@ -500,7 +634,7 @@ export function ResultsManager() {
     });
     ws.getRow(4).height = 24;
 
-    filteredRows.forEach((r) => {
+    visibleRows.forEach((r) => {
       const risk = fraudRiskLabel(r.fraudTotal);
       const row = ws.addRow([
         r.examName,
@@ -567,7 +701,7 @@ export function ResultsManager() {
       cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
     });
 
-    filteredRows.forEach((r) => {
+    visibleRows.forEach((r) => {
       if (!r.wrongDetails.length) {
         detail.addRow([r.examName, r.examCode, r.studentFullName, r.documentId, r.fraudTotal, "-", "Sin preguntas malas detectadas."]);
       } else {
@@ -616,7 +750,7 @@ export function ResultsManager() {
     doc.setFontSize(16);
     doc.text("Reporte de Resultados de Exámenes", 24, 30);
     doc.setFontSize(10);
-    doc.text(`Generado: ${new Date().toLocaleString("es-CO")} • Registros: ${filteredRows.length}`, 24, 48);
+    doc.text(`Generado: ${new Date().toLocaleString("es-CO")} • Registros: ${visibleRows.length}`, 24, 48);
     doc.setTextColor(17, 24, 39);
 
     autoTable(doc, {
@@ -633,7 +767,7 @@ export function ResultsManager() {
         "Fecha",
         "Malas",
       ]],
-      body: filteredRows.map((r) => [
+      body: visibleRows.map((r) => [
         r.examName,
         r.examCode,
         r.studentFullName,
@@ -680,7 +814,7 @@ export function ResultsManager() {
     autoTable(doc, {
       startY: 78,
       head: [["Estudiante", "Examen", "Código", "Fraude", "Preguntas malas"]],
-      body: filteredRows.map((r) => [
+      body: visibleRows.map((r) => [
         r.studentFullName,
         r.examName,
         r.examCode,
@@ -720,7 +854,7 @@ export function ResultsManager() {
           <button
             type="button"
             onClick={() => void handleExport("csv")}
-            disabled={loading || !filteredRows.length || exporting !== ""}
+            disabled={loading || !visibleRows.length || exporting !== ""}
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
           >
             <Download className="h-4 w-4" />
@@ -729,7 +863,7 @@ export function ResultsManager() {
           <button
             type="button"
             onClick={() => void handleExport("excel")}
-            disabled={loading || !filteredRows.length || exporting !== ""}
+            disabled={loading || !visibleRows.length || exporting !== ""}
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
           >
             <FileSpreadsheet className="h-4 w-4" />
@@ -738,7 +872,7 @@ export function ResultsManager() {
           <button
             type="button"
             onClick={() => void handleExport("pdf")}
-            disabled={loading || !filteredRows.length || exporting !== ""}
+            disabled={loading || !visibleRows.length || exporting !== ""}
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
           >
             <FileDown className="h-4 w-4" />
@@ -748,8 +882,9 @@ export function ResultsManager() {
       </div>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex w-full max-w-3xl flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex w-full max-w-4xl flex-col gap-2 sm:flex-row">
             <input
               value={examCodeFilter}
               onChange={(e) => setExamCodeFilter(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -762,10 +897,65 @@ export function ResultsManager() {
               placeholder="Buscar por examen, estudiante, documento, correo o estado..."
               className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
             />
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "all" || v === "submitted" || v === "in_progress" || v === "annulled" || v === "fraud") {
+                  setStatusFilter(v);
+                }
+              }}
+              className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400 sm:w-[210px]"
+            >
+              <option value="all">Todos</option>
+              <option value="submitted">Enviados</option>
+              <option value="in_progress">En progreso</option>
+              <option value="fraud">Fraude</option>
+              <option value="annulled">Anulados</option>
+            </select>
           </div>
-          <p className="text-sm text-zinc-600">
-            {loading ? "Cargando..." : `${filteredRows.length} resultados`}
-          </p>
+            <p className="text-sm text-zinc-600">
+              {loading ? "Cargando..." : `${visibleRows.length} resultados`}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
+                <input type="checkbox" checked={onlyWithWrong} onChange={(e) => setOnlyWithWrong(e.target.checked)} />
+                Solo con malas
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
+                <input type="checkbox" checked={onlyWithFraud} onChange={(e) => setOnlyWithFraud(e.target.checked)} />
+                Solo con fraude
+              </label>
+            </div>
+
+            {selectedCount ? (
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <div className="text-sm font-semibold text-zinc-800">{selectedCount} seleccionados</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setBulkDeleteOpen(true);
+                  }}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                  aria-label="Eliminar seleccionados"
+                  title="Eliminar seleccionados"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds({})}
+                  className="inline-flex h-10 items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                >
+                  Limpiar selección
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {error ? (
@@ -781,70 +971,216 @@ export function ResultsManager() {
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[980px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500">
-                  <th className="px-3 py-2">Examen</th>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Estudiante</th>
-                  <th className="px-3 py-2">Documento</th>
-                  <th className="px-3 py-2">Estado</th>
-                  <th className="px-3 py-2">0-5</th>
-                  <th className="px-3 py-2">0-50</th>
-                  <th className="px-3 py-2">Fraude</th>
-                  <th className="px-3 py-2">Malas</th>
-                  <th className="px-3 py-2">Detalle</th>
-                  <th className="px-3 py-2">Fecha</th>
+                <tr className="border-b border-zinc-200 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                  <th className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds((prev) => {
+                            const next = { ...prev };
+                            pagedRows.forEach((r) => {
+                              next[r.id] = true;
+                            });
+                            return next;
+                          });
+                        } else {
+                          setSelectedIds((prev) => {
+                            const next = { ...prev };
+                            pagedRows.forEach((r) => {
+                              delete next[r.id];
+                            });
+                            return next;
+                          });
+                        }
+                      }}
+                      aria-label="Seleccionar todo"
+                      title="Seleccionar todo"
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("examName");
+                        setSortDir((d) => (sortKey === "examName" ? (d === "asc" ? "desc" : "asc") : "asc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      Examen <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("examCode");
+                        setSortDir((d) => (sortKey === "examCode" ? (d === "asc" ? "desc" : "asc") : "asc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      Código <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("studentFullName");
+                        setSortDir((d) => (sortKey === "studentFullName" ? (d === "asc" ? "desc" : "asc") : "asc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      Estudiante <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("status");
+                        setSortDir((d) => (sortKey === "status" ? (d === "asc" ? "desc" : "asc") : "asc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      Estado <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("grade0to5");
+                        setSortDir((d) => (sortKey === "grade0to5" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      0-5 <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("fraudTotal");
+                        setSortDir((d) => (sortKey === "fraudTotal" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      Fraude <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("wrongCount");
+                        setSortDir((d) => (sortKey === "wrongCount" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      Malas <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("submittedAt");
+                        setSortDir((d) => (sortKey === "submittedAt" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                      }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      Fecha <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-right">Acción</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((r) => (
+                {pagedRows.map((r) => (
                   <tr key={r.id} className="border-b border-zinc-100 align-top">
-                    <td className="px-3 py-2 text-zinc-900">{r.examName}</td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedIds[r.id])}
+                        onChange={(e) => {
+                          setSelectedIds((prev) => {
+                            const next = { ...prev };
+                            if (e.target.checked) next[r.id] = true;
+                            else delete next[r.id];
+                            return next;
+                          });
+                        }}
+                        aria-label="Seleccionar"
+                        title="Seleccionar"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-zinc-900">
+                      <div className="max-w-[360px] truncate font-medium">{r.examName}</div>
+                    </td>
                     <td className="px-3 py-2 text-zinc-700">{r.examCode}</td>
                     <td className="px-3 py-2">
-                      <p className="font-medium text-zinc-900">{r.studentFullName}</p>
-                      <p className="text-xs text-zinc-500">{r.email}</p>
-                    </td>
-                    <td className="px-3 py-2 text-zinc-700">{r.documentId}</td>
-                    <td className="px-3 py-2">
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-700">{r.status}</span>
-                    </td>
-                    <td className="px-3 py-2 font-semibold text-zinc-900">{r.grade0to5.toFixed(2)}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-900">{r.grade0to50.toFixed(2)}</td>
-                    <td className="px-3 py-2">
-                      <p className="font-semibold text-zinc-900">{r.fraudTotal}</p>
-                      <p className="text-xs text-zinc-500">
-                        Pestaña {r.fraudTabSwitches} • Copiar/Pegar {r.fraudClipboardAttempts}
-                      </p>
+                      <div className="max-w-[260px] truncate font-medium text-zinc-900">{r.studentFullName}</div>
+                      <div className="max-w-[260px] truncate text-xs text-zinc-500">{r.documentId}</div>
                     </td>
                     <td className="px-3 py-2">
-                      <p className="font-semibold text-zinc-900">{r.wrongCount}</p>
-                      {r.wrongDetails.length ? (
-                        <p className="mt-1 max-w-[360px] text-xs text-zinc-500">{r.wrongDetails.slice(0, 2).join(" || ")}</p>
-                      ) : (
-                        <p className="mt-1 text-xs text-emerald-700">Sin preguntas malas detectadas.</p>
-                      )}
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${statusTone(r.status)}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-semibold text-zinc-900 tabular-nums">{r.grade0to5.toFixed(2)}</td>
+                    <td className="px-3 py-2">
+                      <span className="font-semibold text-zinc-900 tabular-nums">{r.fraudTotal}</span>
                     </td>
                     <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedRow(r)}
-                        className="inline-flex h-8 items-center rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          r.wrongCount > 0 ? "text-emerald-700" : "text-zinc-500"
+                        }`}
                       >
-                        Ver detalle
-                      </button>
+                        {r.wrongCount}
+                      </span>
                     </td>
-                    <td className="px-3 py-2 text-zinc-600">{formatDate(r.submittedAt)}</td>
+                    <td className="px-3 py-2 text-xs text-zinc-600">{formatDate(r.submittedAt)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="inline-flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRow(r)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                          aria-label="Ver detalle"
+                          title="Ver detalle"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleteTarget(r);
+                          }}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                          aria-label="Eliminar intento"
+                          title="Eliminar intento"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
-                {!filteredRows.length ? (
+                {!visibleRows.length ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center text-sm text-zinc-500">
+                    <td colSpan={10} className="px-3 py-8 text-center text-sm text-zinc-500">
                       No hay resultados para mostrar.
                     </td>
                   </tr>
                 ) : null}
               </tbody>
             </table>
+            <MinimalPagination pageCount={pageCount} page={page} onChange={setPage} />
           </div>
         )}
       </section>
@@ -864,53 +1200,190 @@ export function ResultsManager() {
                 <p className="mt-1 text-sm text-zinc-600">
                   {selectedRow.studentFullName} • {selectedRow.examName} • Código {selectedRow.examCode}
                 </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {selectedRow.documentId} • {selectedRow.email} • {formatDate(selectedRow.submittedAt)}
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedRow(null)}
-                className="inline-flex h-9 items-center rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-              >
-                Cerrar
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteTarget(selectedRow);
+                  }}
+                  className="inline-flex h-9 items-center rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                >
+                  Eliminar intento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRow(null)}
+                  className="inline-flex h-9 items-center rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <div className="rounded-xl bg-zinc-50 px-3 py-2">
-                <p className="text-xs text-zinc-500">Nota 0-5</p>
-                <p className="text-base font-semibold text-zinc-900">{selectedRow.grade0to5.toFixed(2)}</p>
-              </div>
-              <div className="rounded-xl bg-zinc-50 px-3 py-2">
-                <p className="text-xs text-zinc-500">Nota 0-50</p>
-                <p className="text-base font-semibold text-zinc-900">{selectedRow.grade0to50.toFixed(2)}</p>
-              </div>
-              <div className="rounded-xl bg-zinc-50 px-3 py-2">
-                <p className="text-xs text-zinc-500">Fraude total</p>
-                <p className="text-base font-semibold text-zinc-900">{selectedRow.fraudTotal}</p>
-                <p className="text-[11px] text-zinc-500">
-                  Pestaña {selectedRow.fraudTabSwitches} • Copiar/Pegar {selectedRow.fraudClipboardAttempts}
+              <div className="rounded-2xl border border-zinc-200 bg-white px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Nota 0-5</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950 tabular-nums">
+                  {selectedRow.grade0to5.toFixed(2)}
                 </p>
               </div>
-              <div className="rounded-xl bg-zinc-50 px-3 py-2">
-                <p className="text-xs text-zinc-500">Preguntas malas</p>
-                <p className="text-base font-semibold text-zinc-900">{selectedRow.wrongCount}</p>
+              <div className="rounded-2xl border border-zinc-200 bg-white px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Nota 0-50</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950 tabular-nums">
+                  {selectedRow.grade0to50.toFixed(2)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-zinc-200 bg-white px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Malas</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-emerald-700 tabular-nums">
+                  {selectedRow.wrongCount}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">Solo se detallan al abrir cada pregunta.</p>
+              </div>
+              <div className="rounded-2xl border border-zinc-200 bg-white px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Fraude</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950 tabular-nums">
+                  {selectedRow.fraudTotal}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Riesgo: <span className="font-semibold text-zinc-800">{fraudRiskLabel(selectedRow.fraudTotal)}</span> •{" "}
+                  Pestaña {selectedRow.fraudTabSwitches} • Copiar/Pegar {selectedRow.fraudClipboardAttempts}
+                </p>
               </div>
             </div>
 
             <div className="mt-4 max-h-[58vh] overflow-y-auto rounded-2xl border border-zinc-200">
-              {selectedRow.wrongDetails.length ? (
+              {selectedWrong.length ? (
                 <div className="divide-y divide-zinc-100">
-                  {selectedRow.wrongDetails.map((item, idx) => (
-                    <div key={`${selectedRow.id}-${idx}`} className="px-4 py-3 text-sm text-zinc-800">
-                      <p className="font-semibold text-zinc-900">Pregunta mala #{idx + 1}</p>
-                      <p className="mt-1 whitespace-pre-wrap text-xs leading-6 text-zinc-700">{item}</p>
-                    </div>
+                  {selectedWrong.map((d, idx) => (
+                    <details key={`${selectedRow.id}-${idx}`} className="group px-4 py-3">
+                      <summary className="cursor-pointer list-none">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-zinc-950">
+                              {d.number ? `Pregunta ${d.number}` : `Pregunta ${idx + 1}`}
+                            </p>
+                            <p className="mt-1 line-clamp-2 text-xs text-zinc-600">{toTextPreview(d.statement, 220)}</p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-semibold text-zinc-700 group-open:hidden">
+                            Ver
+                          </span>
+                          <span className="hidden shrink-0 rounded-full bg-zinc-900 px-2 py-1 text-[11px] font-semibold text-white group-open:inline-flex">
+                            Ocultar
+                          </span>
+                        </div>
+                      </summary>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Respuesta</p>
+                          <p className="mt-1 text-sm text-zinc-900">{d.answer || "Sin respuesta"}</p>
+                        </div>
+                        <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Motivo</p>
+                          <p className="mt-1 text-sm text-zinc-900">{d.reason || "Sin motivo"}</p>
+                        </div>
+                      </div>
+                    </details>
                   ))}
                 </div>
               ) : (
-                <div className="px-4 py-8 text-center text-sm text-emerald-700">
+                <div className="px-4 py-10 text-center text-sm text-emerald-700">
                   Sin preguntas malas detectadas en este intento.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-[60]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => (deleting ? null : setDeleteTarget(null))}
+            aria-label="Cerrar confirmación"
+          />
+          <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-lg rounded-t-3xl bg-white p-5 shadow-2xl sm:inset-y-16 sm:bottom-auto sm:rounded-3xl">
+            <h3 className="text-lg font-semibold text-zinc-950">Eliminar intento</h3>
+            <p className="mt-2 text-sm text-zinc-600">
+              Esto eliminará definitivamente el intento presentado de{" "}
+              <span className="font-semibold text-zinc-900">{deleteTarget.studentFullName}</span>{" "}
+              en{" "}
+              <span className="font-semibold text-zinc-900">{deleteTarget.examName}</span>. No se puede deshacer.
+            </p>
+
+            {deleteError ? (
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {deleteError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteAttempt()}
+                disabled={deleting}
+                className="inline-flex h-10 items-center justify-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bulkDeleteOpen ? (
+        <div className="fixed inset-0 z-[60]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => (deleting ? null : setBulkDeleteOpen(false))}
+            aria-label="Cerrar confirmación"
+          />
+          <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-lg rounded-t-3xl bg-white p-5 shadow-2xl sm:inset-y-16 sm:bottom-auto sm:rounded-3xl">
+            <h3 className="text-lg font-semibold text-zinc-950">Eliminar en masa</h3>
+            <p className="mt-2 text-sm text-zinc-600">
+              Esto eliminará definitivamente <span className="font-semibold text-zinc-900">{selectedCount}</span>{" "}
+              intentos seleccionados. No se puede deshacer.
+            </p>
+
+            {deleteError ? (
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {deleteError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={deleting}
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmBulkDelete()}
+                disabled={deleting}
+                className="inline-flex h-10 items-center justify-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {deleting ? "Eliminando..." : "Eliminar seleccionados"}
+              </button>
             </div>
           </div>
         </div>

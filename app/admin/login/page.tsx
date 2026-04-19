@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   GoogleAuthProvider,
@@ -19,9 +19,9 @@ export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   const canRedirect = useMemo(() => !loading && user && isAdmin, [loading, user, isAdmin]);
-  if (canRedirect) {
-    router.replace("/admin");
-  }
+  useEffect(() => {
+    if (canRedirect) router.replace("/admin");
+  }, [canRedirect, router]);
 
   async function loginEmailPassword() {
     setSubmitting(true);

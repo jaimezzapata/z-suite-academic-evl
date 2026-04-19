@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   doc,
@@ -54,7 +54,6 @@ export function LiveManager() {
   const [quickCode, setQuickCode] = useState("");
   const [quickCodeError, setQuickCodeError] = useState<string | null>(null);
   const [quickCodeLoading, setQuickCodeLoading] = useState(false);
-  const quickCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [attemptsOpen, setAttemptsOpen] = useState(false);
   const [attemptsExam, setAttemptsExam] = useState<PublishedExamRow | null>(null);
   const [attempts, setAttempts] = useState<AttemptRow[]>([]);
@@ -109,19 +108,16 @@ export function LiveManager() {
     return rows.filter((r) => r.name.toLowerCase().includes(q) || r.accessCode.includes(q));
   }, [rows, search]);
 
+  const quickSuggestions = useMemo(() => filtered.slice(0, 8), [filtered]);
+
   function normalizeOtp(value: string) {
     return value.replace(/[^\d]/g, "").slice(0, 6);
-  }
-
-  function focusQuickCode() {
-    quickCodeInputRef.current?.focus();
   }
 
   async function openByQuickCode() {
     const code = normalizeOtp(quickCode);
     if (!/^\d{6}$/.test(code)) {
       setQuickCodeError("El codigo debe tener 6 digitos.");
-      focusQuickCode();
       return;
     }
 
@@ -164,24 +160,6 @@ export function LiveManager() {
     } finally {
       setQuickCodeLoading(false);
     }
-  }
-
-  function quickDigit(d: string) {
-    setQuickCodeError(null);
-    setQuickCode((prev) => normalizeOtp(prev + d));
-    focusQuickCode();
-  }
-
-  function quickBackspace() {
-    setQuickCodeError(null);
-    setQuickCode((prev) => prev.slice(0, -1));
-    focusQuickCode();
-  }
-
-  function quickClear() {
-    setQuickCodeError(null);
-    setQuickCode("");
-    focusQuickCode();
   }
 
   async function closeExam(row: PublishedExamRow) {
@@ -445,7 +423,7 @@ export function LiveManager() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-zinc-950">Acceso rápido por código</p>
                   <p className="mt-1 text-xs text-zinc-600">
-                    Ingresa el código de 6 dígitos para abrir el examen sin buscar ni hacer scroll.
+                    Escribe el código de 6 dígitos y presiona Enter para abrir el examen.
                   </p>
                 </div>
                 <div className="flex items-center justify-end gap-2">
@@ -459,7 +437,10 @@ export function LiveManager() {
                   </button>
                   <button
                     type="button"
-                    onClick={quickClear}
+                    onClick={() => {
+                      setQuickCode("");
+                      setQuickCodeError(null);
+                    }}
                     className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
                   >
                     Limpiar
@@ -467,82 +448,53 @@ export function LiveManager() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_220px]">
-                <div>
-                  <input
-                    ref={quickCodeInputRef}
-                    value={quickCode}
-                    onChange={(e) => {
-                      setQuickCodeError(null);
-                      setQuickCode(normalizeOtp(e.target.value));
-                    }}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    className="sr-only"
-                    aria-label="Código de examen"
-                  />
-                  <button
-                    type="button"
-                    onClick={focusQuickCode}
-                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-4"
-                    aria-label="Editar código"
-                  >
-                    <div className="grid grid-cols-6 gap-2">
-                      {Array.from({ length: 6 }, (_, i) => {
-                        const digit = quickCode[i] ?? "";
-                        return (
-                          <div
-                            key={i}
-                            className={`flex h-12 items-center justify-center rounded-xl border text-lg font-semibold ${
-                              digit ? "border-zinc-200 bg-white text-zinc-900" : "border-zinc-200 bg-white text-zinc-300"
-                            }`}
-                          >
-                            {digit || "•"}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </button>
-                  {quickCodeError ? (
-                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      {quickCodeError}
-                    </div>
-                  ) : null}
-                </div>
+              <div className="mt-4">
+                <input
+                  value={quickCode}
+                  onChange={(e) => {
+                    setQuickCodeError(null);
+                    setQuickCode(normalizeOtp(e.target.value));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void openByQuickCode();
+                  }}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="Ej: 123456"
+                  className="h-12 w-full rounded-2xl border border-zinc-200 bg-white px-4 text-base font-semibold tracking-[0.2em] text-zinc-900 outline-none focus:border-zinc-400"
+                  aria-label="Código de examen"
+                />
 
-                <div className="grid grid-cols-3 gap-2">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => quickDigit(d)}
-                      className="h-12 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                    >
-                      {d}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={quickClear}
-                    className="h-12 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                  >
-                    Limpiar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => quickDigit("0")}
-                    className="h-12 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                  >
-                    0
-                  </button>
-                  <button
-                    type="button"
-                    onClick={quickBackspace}
-                    className="h-12 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                  >
-                    Borrar
-                  </button>
-                </div>
+                {quickCodeError ? (
+                  <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {quickCodeError}
+                  </div>
+                ) : null}
+
+                {quickSuggestions.length ? (
+                  <div className="mt-3">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Códigos recientes
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {quickSuggestions.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          onClick={() => {
+                            setQuickCode(row.accessCode);
+                            setQuickCodeError(null);
+                            openAttempts(row);
+                          }}
+                          className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-semibold tracking-[0.18em] text-zinc-800 hover:bg-zinc-100"
+                          title={`Abrir ${row.name}`}
+                        >
+                          {row.accessCode}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
 
