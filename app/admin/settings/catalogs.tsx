@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
 import { normalizeSentenceText } from "@/lib/text/normalize";
-import { Plus, Save, Power } from "lucide-react";
+import { Building2, ClipboardList, GraduationCap, Layers, Plus, Save, Users, Power } from "lucide-react";
 import { IconButton } from "@/app/admin/ui/icon-button";
 
 type Row = {
@@ -43,10 +43,12 @@ function CollectionPanel({
   title,
   description,
   collectionName,
+  compactHeader = false,
 }: {
   title: string;
   description: string;
   collectionName: string;
+  compactHeader?: boolean;
 }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,40 +161,48 @@ function CollectionPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate text-sm font-semibold tracking-tight text-zinc-950">{title}</h2>
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-700">
-              {rows.length}
-            </span>
+        {!compactHeader ? (
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-sm font-semibold tracking-tight text-zinc-950">{title}</h2>
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-700">
+                {rows.length}
+              </span>
+            </div>
+            <p className="mt-0.5 hidden text-[11px] text-zinc-500 sm:block">{description}</p>
           </div>
-          <p className="mt-0.5 hidden text-[11px] text-zinc-500 sm:block">{description}</p>
-        </div>
+        ) : (
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              {rows.length} registros
+            </p>
+          </div>
+        )}
 
-        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[220px_1fr_auto] sm:items-center">
+        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[240px_1fr_auto] sm:items-center">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void create();
             }}
-            className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-[220px]"
+            className="h-10 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-[240px]"
             placeholder={`Nuevo ${title.toLowerCase()}`}
             disabled={savingId === "__new__"}
           />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-56"
+            className="h-10 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-64"
             placeholder="Buscar"
           />
           <IconButton
             variant="primary"
             onClick={create}
             disabled={!newName.trim() || savingId === "__new__"}
-            className="h-8 w-8"
+            className="h-10 w-10"
             aria-label={`Crear ${title}`}
             title={`Crear ${title}`}
           >
@@ -213,8 +223,8 @@ function CollectionPanel({
             Cargando...
           </div>
         ) : filtered.length ? (
-          <div className="overflow-hidden rounded-xl border border-zinc-200">
-            <div className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-2 py-2 text-[11px] font-semibold text-zinc-600 sm:grid-cols-[1fr_110px_120px]">
+          <div className="overflow-hidden rounded-2xl border border-zinc-200">
+            <div className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-600 sm:grid-cols-[1fr_110px_120px]">
               <div className="text-zinc-600">Nombre</div>
               <div className="text-zinc-600">Activo</div>
               <div className="text-right text-zinc-600">Acciones</div>
@@ -227,12 +237,12 @@ function CollectionPanel({
                 return (
                   <div
                     key={r.id}
-                    className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-100 px-2 py-2 sm:grid-cols-[1fr_110px_120px]"
+                    className="grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-zinc-100 px-3 py-2 sm:grid-cols-[1fr_110px_120px]"
                   >
                     <input
                       value={draft}
                       onChange={(e) => setDraftNames((p) => ({ ...p, [r.id]: e.target.value }))}
-                      className="h-8 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
+                      className="h-10 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
                       disabled={disabled}
                     />
 
@@ -250,7 +260,7 @@ function CollectionPanel({
                       <IconButton
                         onClick={() => saveName(r.id)}
                         disabled={disabled}
-                        className="h-8 w-8"
+                        className="h-10 w-10"
                         aria-label="Guardar"
                         title="Guardar"
                       >
@@ -260,7 +270,7 @@ function CollectionPanel({
                         variant={r.active ? "danger" : "secondary"}
                         onClick={() => toggleActive(r.id, !r.active)}
                         disabled={disabled}
-                        className="h-8 w-8"
+                        className="h-10 w-10"
                         aria-label={r.active ? "Inactivar" : "Activar"}
                         title={r.active ? "Inactivar" : "Activar"}
                       >
@@ -278,7 +288,7 @@ function CollectionPanel({
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -291,30 +301,35 @@ export function CatalogsPage() {
           title: "Materias",
           description: "Materias o asignaturas (por ejemplo Front 1).",
           collectionName: "subjects",
+          icon: GraduationCap,
         },
         {
           key: "sites",
           title: "Sedes",
           description: "Lugares o sedes disponibles para examenes.",
           collectionName: "sites",
+          icon: Building2,
         },
         {
           key: "shifts",
           title: "Jornadas",
           description: "Jornada o turno (manana, tarde, noche).",
           collectionName: "shifts",
+          icon: Layers,
         },
         {
           key: "moments",
           title: "Momentos",
           description: "Momentos de evaluacion (M1, M2, recuperacion).",
           collectionName: "moments",
+          icon: ClipboardList,
         },
         {
           key: "groups",
           title: "Grupos",
           description: "Grupos o cursos (por ejemplo 10A Manana).",
           collectionName: "groups",
+          icon: Users,
         },
       ] as const,
     [],
@@ -322,44 +337,65 @@ export function CatalogsPage() {
 
   const [activeKey, setActiveKey] = useState<(typeof catalogs)[number]["key"]>("subjects");
   const active = catalogs.find((c) => c.key === activeKey) ?? catalogs[0];
+  const ActiveIcon = active.icon;
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-950">Catalogos</h1>
-          <p className="mt-1 text-sm text-zinc-600">Gestiona datos base de la app.</p>
-        </div>
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-950">Catálogos</h1>
+        <p className="mt-1 text-sm text-zinc-600">Datos base para segmentación de exámenes y banco.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_1fr]">
-        <aside className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
-          <div className="grid gap-1">
-            {catalogs.map((c) => {
-              const active = c.key === activeKey;
-              return (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={() => setActiveKey(c.key)}
-                  className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
-                    active ? "bg-zinc-950 text-white" : "text-zinc-800 hover:bg-zinc-50"
-                  }`}
-                >
-                  {c.title}
-                </button>
-              );
-            })}
-          </div>
-        </aside>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {catalogs.map((c) => {
+          const selected = c.key === activeKey;
+          const Icon = c.icon;
+          return (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => setActiveKey(c.key)}
+              className={`rounded-2xl border p-4 text-left shadow-sm transition ${
+                selected
+                  ? "border-zinc-900 bg-zinc-900 text-white"
+                  : "border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{c.title}</p>
+                  <p className={`mt-1 text-xs ${selected ? "text-zinc-200" : "text-zinc-600"}`}>{c.description}</p>
+                </div>
+                <div className={`grid h-10 w-10 place-items-center rounded-2xl ${selected ? "bg-white/10" : "bg-zinc-100"}`}>
+                  <Icon className={`h-5 w-5 ${selected ? "text-white" : "text-zinc-700"}`} />
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
-        <div className="min-w-0">
-          <CollectionPanel
-            title={active.title}
-            description={active.description}
-            collectionName={active.collectionName}
-          />
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-zinc-900 text-white">
+                <ActiveIcon className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-zinc-950">{active.title}</p>
+                <p className="text-xs text-zinc-500">{active.description}</p>
+              </div>
+            </div>
+          </div>
         </div>
+
+        <CollectionPanel
+          title={active.title}
+          description={active.description}
+          collectionName={active.collectionName}
+          compactHeader
+        />
       </div>
     </div>
   );

@@ -19,7 +19,19 @@ import {
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
 import { normalizeSentenceText } from "@/lib/text/normalize";
-import { Pencil, Plus, Save, X, Power, Trash2, Send, KeyRound } from "lucide-react";
+import {
+  LayoutGrid,
+  Table2,
+  Filter,
+  SquarePen,
+  Plus,
+  Save,
+  X,
+  Power,
+  Trash2,
+  SendHorizontal,
+  KeyRound,
+} from "lucide-react";
 import { IconButton } from "@/app/admin/ui/icon-button";
 
 type CatalogItem = {
@@ -235,6 +247,22 @@ export function ExamManager() {
   const [creating, setCreating] = useState(false);
 
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"cards" | "table">(() => {
+    try {
+      const raw = localStorage.getItem("zse:adminTemplatesView");
+      return raw === "cards" ? "cards" : "table";
+    } catch {
+      return "table";
+    }
+  });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterSubjectId, setFilterSubjectId] = useState("");
+  const [filterGroupId, setFilterGroupId] = useState("");
+  const [filterMomentId, setFilterMomentId] = useState("");
+  const [filterSiteId, setFilterSiteId] = useState("");
+  const [filterShiftId, setFilterShiftId] = useState("");
+  const [filterActive, setFilterActive] = useState<"all" | "active" | "inactive">("all");
+  const [filterPublished, setFilterPublished] = useState<"all" | "published" | "not_published">("all");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [pendingCounts, setPendingCounts] = useState<Record<string, string>>({});
   const [createOpen, setCreateOpen] = useState(false);
@@ -764,8 +792,19 @@ export function ExamManager() {
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((r) => {
+      const pub = publishedByTemplate[r.id];
+      if (filterSubjectId && r.subjectId !== filterSubjectId) return false;
+      if (filterGroupId && r.groupId !== filterGroupId) return false;
+      if (filterMomentId && r.momentId !== filterMomentId) return false;
+      if (filterSiteId && r.siteId !== filterSiteId) return false;
+      if (filterShiftId && r.shiftId !== filterShiftId) return false;
+      if (filterActive === "active" && !r.active) return false;
+      if (filterActive === "inactive" && r.active) return false;
+      if (filterPublished === "published" && !pub) return false;
+      if (filterPublished === "not_published" && pub) return false;
+
+      if (!q) return true;
       const subject = namesById.get(`subjects:${r.subjectId}`) ?? r.subjectId;
       const group = namesById.get(`groups:${r.groupId}`) ?? r.groupId;
       const moment = namesById.get(`moments:${r.momentId}`) ?? r.momentId;
@@ -780,7 +819,70 @@ export function ExamManager() {
         shift.toLowerCase().includes(q)
       );
     });
-  }, [rows, search, namesById]);
+  }, [
+    rows,
+    search,
+    namesById,
+    publishedByTemplate,
+    filterSubjectId,
+    filterGroupId,
+    filterMomentId,
+    filterSiteId,
+    filterShiftId,
+    filterActive,
+    filterPublished,
+  ]);
+
+  function clearFilters() {
+    setFilterSubjectId("");
+    setFilterGroupId("");
+    setFilterMomentId("");
+    setFilterSiteId("");
+    setFilterShiftId("");
+    setFilterActive("all");
+    setFilterPublished("all");
+  }
+
+  function ActionIconButton({
+    title,
+    onClick,
+    disabled,
+    tone,
+    children,
+  }: {
+    title: string;
+    onClick: () => void;
+    disabled?: boolean;
+    tone: "neutral" | "primary" | "danger";
+    children: React.ReactNode;
+  }) {
+    const base =
+      "inline-flex h-8 w-8 items-center justify-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-50";
+    const variant =
+      tone === "danger"
+        ? "text-rose-600 hover:bg-rose-50"
+        : tone === "primary"
+          ? "text-zinc-900 hover:bg-zinc-100"
+          : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900";
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={`${base} ${variant}`}
+        aria-label={title}
+        title={title}
+      >
+        {children}
+      </button>
+    );
+  }
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("zse:adminTemplatesView", viewMode);
+    } catch {}
+  }, [viewMode]);
 
   return (
     <div className="space-y-6">
@@ -801,6 +903,38 @@ export function ExamManager() {
               className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-72"
             />
           </label>
+          <div className="inline-flex items-center rounded-xl border border-zinc-200 bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
+                viewMode === "table" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"
+              }`}
+              aria-pressed={viewMode === "table"}
+            >
+              <Table2 className="h-4 w-4" />
+              Tabla
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("cards")}
+              className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
+                viewMode === "cards" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"
+              }`}
+              aria-pressed={viewMode === "cards"}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Cards
+            </button>
+          </div>
+          <IconButton
+            onClick={() => setFiltersOpen((v) => !v)}
+            className="h-11 w-11"
+            aria-label="Filtros"
+            title="Filtros"
+          >
+            <Filter className="h-5 w-5" />
+          </IconButton>
           <IconButton
             variant="primary"
             onClick={() => {
@@ -817,6 +951,130 @@ export function ExamManager() {
           </IconButton>
         </div>
       </div>
+
+      {filtersOpen ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-zinc-700">Materia</span>
+              <select
+                value={filterSubjectId}
+                onChange={(e) => setFilterSubjectId(e.target.value)}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="">Todas</option>
+                {subjects.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-zinc-700">Grupo</span>
+              <select
+                value={filterGroupId}
+                onChange={(e) => setFilterGroupId(e.target.value)}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="">Todos</option>
+                {groups.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-zinc-700">Momento</span>
+              <select
+                value={filterMomentId}
+                onChange={(e) => setFilterMomentId(e.target.value)}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="">Todos</option>
+                {moments.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-zinc-700">Sede</span>
+              <select
+                value={filterSiteId}
+                onChange={(e) => setFilterSiteId(e.target.value)}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="">Todas</option>
+                {sites.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-zinc-700">Jornada</span>
+              <select
+                value={filterShiftId}
+                onChange={(e) => setFilterShiftId(e.target.value)}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="">Todas</option>
+                {shifts.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-zinc-700">Activo</span>
+              <select
+                value={filterActive}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "all" || v === "active" || v === "inactive") setFilterActive(v);
+                }}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="all">Todos</option>
+                <option value="active">Solo activos</option>
+                <option value="inactive">Solo inactivos</option>
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-zinc-700">Publicado</span>
+              <select
+                value={filterPublished}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "all" || v === "published" || v === "not_published") setFilterPublished(v);
+                }}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="all">Todos</option>
+                <option value="published">Publicados</option>
+                <option value="not_published">Sin publicar</option>
+              </select>
+            </label>
+            <div className="flex items-end justify-end gap-2">
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+              >
+                Limpiar filtros
+              </button>
+              <IconButton onClick={() => setFiltersOpen(false)} className="h-11 w-11" aria-label="Cerrar filtros" title="Cerrar filtros">
+                <X className="h-5 w-5" />
+              </IconButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -835,128 +1093,224 @@ export function ExamManager() {
             Cargando examenes...
           </div>
         ) : filteredRows.length ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {filteredRows.map((row) => {
-              const subject = (namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId) || "N/A";
-              const group = (namesById.get(`groups:${row.groupId}`) ?? row.groupId) || "N/A";
-              const moment = (namesById.get(`moments:${row.momentId}`) ?? row.momentId) || "N/A";
-              const site = (namesById.get(`sites:${row.siteId}`) ?? row.siteId) || "N/A";
-              const shift = (namesById.get(`shifts:${row.shiftId}`) ?? row.shiftId) || "N/A";
-              const pending = pendingCounts[row.id] ?? String(row.questionCount);
-              const disabled = savingId === row.id;
-              const pub = publishedByTemplate[row.id];
+          viewMode === "cards" ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {filteredRows.map((row) => {
+                const subject = (namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId) || "N/A";
+                const group = (namesById.get(`groups:${row.groupId}`) ?? row.groupId) || "N/A";
+                const moment = (namesById.get(`moments:${row.momentId}`) ?? row.momentId) || "N/A";
+                const site = (namesById.get(`sites:${row.siteId}`) ?? row.siteId) || "N/A";
+                const shift = (namesById.get(`shifts:${row.shiftId}`) ?? row.shiftId) || "N/A";
+                const pending = pendingCounts[row.id] ?? String(row.questionCount);
+                const disabled = savingId === row.id;
+                const pub = publishedByTemplate[row.id];
 
-              return (
-                <article
-                  key={row.id}
-                  className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold tracking-tight text-zinc-950">
-                        {row.name}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-zinc-600">
-                        {subject} • {group}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-zinc-500">
-                        {moment} • {shift} • {site}
-                      </p>
-                      {pub ? (
-                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
-                          <KeyRound className="h-3.5 w-3.5" />
-                          <span>{pub.accessCode}</span>
-                          <span className="text-zinc-500">•</span>
-                          <span className="uppercase">{pub.status}</span>
-                        </div>
-                      ) : null}
-                      {row.documentationMarkdown.trim() ? (
-                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
-                          Docs
-                        </div>
-                      ) : null}
+                return (
+                  <article
+                    key={row.id}
+                    className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold tracking-tight text-zinc-950">
+                          {row.name}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-zinc-600">
+                          {subject} • {group}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-zinc-500">
+                          {moment} • {shift} • {site}
+                        </p>
+                        {pub ? (
+                          <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
+                            <KeyRound className="h-3.5 w-3.5" />
+                            <span>{pub.accessCode}</span>
+                            <span className="text-zinc-500">•</span>
+                            <span className="uppercase">{pub.status}</span>
+                          </div>
+                        ) : null}
+                        {row.documentationMarkdown.trim() ? (
+                          <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                            Docs
+                          </div>
+                        ) : null}
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
+                          row.active
+                            ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                            : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                        }`}
+                      >
+                        {row.active ? "Activo" : "Inactivo"}
+                      </span>
                     </div>
-                    <span
-                      className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
-                        row.active
-                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                          : "bg-zinc-100 text-zinc-700 ring-zinc-200"
-                      }`}
-                    >
-                      {row.active ? "Activo" : "Inactivo"}
-                    </span>
-                  </div>
 
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <label className="grid gap-1">
-                      <span className="text-xs font-semibold text-zinc-700">Preguntas</span>
-                      <input
-                        value={pending}
-                        onChange={(e) =>
-                          setPendingCounts((prev) => ({ ...prev, [row.id]: e.target.value }))
-                        }
-                        onBlur={() => void saveQuestionCount(row.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            (e.target as HTMLInputElement).blur();
-                            void saveQuestionCount(row.id);
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <label className="grid gap-1">
+                        <span className="text-xs font-semibold text-zinc-700">Preguntas</span>
+                        <input
+                          value={pending}
+                          onChange={(e) =>
+                            setPendingCounts((prev) => ({ ...prev, [row.id]: e.target.value }))
                           }
-                        }}
-                        className="h-8 w-20 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
-                        disabled={disabled}
-                        inputMode="numeric"
-                      />
-                    </label>
+                          onBlur={() => void saveQuestionCount(row.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              (e.target as HTMLInputElement).blur();
+                              void saveQuestionCount(row.id);
+                            }
+                          }}
+                          className="h-8 w-20 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
+                          disabled={disabled}
+                          inputMode="numeric"
+                        />
+                      </label>
 
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <IconButton
-                        onClick={() => openEdit(row)}
-                        disabled={disabled}
-                        className="h-8 w-8"
-                        aria-label="Editar"
-                        title="Editar"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </IconButton>
-
-                      <IconButton
-                        variant={row.active ? "danger" : "secondary"}
-                        onClick={() => toggleActive(row.id, !row.active)}
-                        disabled={disabled}
-                        className="h-8 w-8"
-                        aria-label={row.active ? "Inactivar" : "Activar"}
-                        title={row.active ? "Inactivar" : "Activar"}
-                      >
-                        <Power className="h-4 w-4" />
-                      </IconButton>
-
-                      <IconButton
-                        variant="primary"
-                        onClick={() => openPublish(row)}
-                        disabled={disabled || !row.active}
-                        className="h-8 w-8"
-                        aria-label="Publicar"
-                        title="Publicar"
-                      >
-                        <Send className="h-4 w-4" />
-                      </IconButton>
-
-                      <IconButton
-                        variant="danger"
-                        onClick={() => void openDelete(row)}
-                        disabled={disabled}
-                        className="h-8 w-8"
-                        aria-label="Eliminar"
-                        title="Eliminar"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </IconButton>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <ActionIconButton title="Editar" tone="neutral" onClick={() => openEdit(row)} disabled={disabled}>
+                          <SquarePen className="h-4 w-4" />
+                        </ActionIconButton>
+                        <ActionIconButton
+                          title={row.active ? "Inactivar" : "Activar"}
+                          tone={row.active ? "danger" : "neutral"}
+                          onClick={() => toggleActive(row.id, !row.active)}
+                          disabled={disabled}
+                        >
+                          <Power className="h-4 w-4" />
+                        </ActionIconButton>
+                        <ActionIconButton
+                          title="Publicar"
+                          tone="primary"
+                          onClick={() => openPublish(row)}
+                          disabled={disabled || !row.active}
+                        >
+                          <SendHorizontal className="h-4 w-4" />
+                        </ActionIconButton>
+                        <ActionIconButton title="Eliminar" tone="danger" onClick={() => void openDelete(row)} disabled={disabled}>
+                          <Trash2 className="h-4 w-4" />
+                        </ActionIconButton>
+                      </div>
                     </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              <table className="w-full min-w-[1100px] table-fixed text-left text-sm">
+                <thead className="bg-zinc-50">
+                  <tr className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    <th className="w-[34%] px-3 py-2">Nombre</th>
+                    <th className="w-[24%] px-3 py-2">Segmentación</th>
+                    <th className="w-[16%] px-3 py-2">Publicado</th>
+                    <th className="w-[10%] px-3 py-2">Activo</th>
+                    <th className="w-[8%] px-3 py-2">Preg.</th>
+                    <th className="w-[10%] px-3 py-2 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.map((row) => {
+                    const subject = (namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId) || "N/A";
+                    const group = (namesById.get(`groups:${row.groupId}`) ?? row.groupId) || "N/A";
+                    const moment = (namesById.get(`moments:${row.momentId}`) ?? row.momentId) || "N/A";
+                    const site = (namesById.get(`sites:${row.siteId}`) ?? row.siteId) || "N/A";
+                    const shift = (namesById.get(`shifts:${row.shiftId}`) ?? row.shiftId) || "N/A";
+                    const pending = pendingCounts[row.id] ?? String(row.questionCount);
+                    const disabled = savingId === row.id;
+                    const pub = publishedByTemplate[row.id];
+                    return (
+                      <tr key={row.id} className="border-t border-zinc-100 align-top">
+                        <td className="px-3 py-2">
+                          <div className="whitespace-normal break-words font-medium text-zinc-950" title={row.name}>
+                            {row.name}
+                          </div>
+                          {row.documentationMarkdown.trim() ? (
+                            <div className="mt-1 inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                              Docs
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-zinc-600">
+                          <div className="whitespace-normal break-words">
+                            {subject} • {group}
+                          </div>
+                          <div className="mt-1 whitespace-normal break-words text-zinc-500">
+                            {moment} • {shift} • {site}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-zinc-700">
+                          {pub ? (
+                            <div className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
+                              <KeyRound className="h-3.5 w-3.5" />
+                              <span>{pub.accessCode}</span>
+                              <span className="text-zinc-500">•</span>
+                              <span className="uppercase">{pub.status}</span>
+                            </div>
+                          ) : (
+                            <span className="text-zinc-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
+                              row.active
+                                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                                : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                            }`}
+                          >
+                            {row.active ? "Activo" : "Inactivo"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            value={pending}
+                            onChange={(e) => setPendingCounts((prev) => ({ ...prev, [row.id]: e.target.value }))}
+                            onBlur={() => void saveQuestionCount(row.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                (e.target as HTMLInputElement).blur();
+                                void saveQuestionCount(row.id);
+                              }
+                            }}
+                            className="h-9 w-20 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 disabled:opacity-50"
+                            disabled={disabled}
+                            inputMode="numeric"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <ActionIconButton title="Editar" tone="neutral" onClick={() => openEdit(row)} disabled={disabled}>
+                              <SquarePen className="h-4 w-4" />
+                            </ActionIconButton>
+                            <ActionIconButton
+                              title={row.active ? "Inactivar" : "Activar"}
+                              tone={row.active ? "danger" : "neutral"}
+                              onClick={() => toggleActive(row.id, !row.active)}
+                              disabled={disabled}
+                            >
+                              <Power className="h-4 w-4" />
+                            </ActionIconButton>
+                            <ActionIconButton
+                              title="Publicar"
+                              tone="primary"
+                              onClick={() => openPublish(row)}
+                              disabled={disabled || !row.active}
+                            >
+                              <SendHorizontal className="h-4 w-4" />
+                            </ActionIconButton>
+                            <ActionIconButton title="Eliminar" tone="danger" onClick={() => void openDelete(row)} disabled={disabled}>
+                              <Trash2 className="h-4 w-4" />
+                            </ActionIconButton>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         ) : (
           <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-500 shadow-sm">
             No hay examenes creados aun.
@@ -1451,7 +1805,7 @@ export function ExamManager() {
                 title={publishing ? "Publicando..." : "Publicar"}
                 disabled={publishing}
               >
-                <Send className="h-4 w-4" />
+                <SendHorizontal className="h-4 w-4" />
               </IconButton>
             </div>
           </div>

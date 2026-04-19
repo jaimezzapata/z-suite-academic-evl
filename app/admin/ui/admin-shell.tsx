@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Menu,
   Settings2,
+  Wrench,
   ClipboardList,
 } from "lucide-react";
 
@@ -22,13 +23,19 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
 };
 
-const navItems: NavItem[] = [
-  { label: "Dashboard", href: "/admin", hint: "Metricas generales", icon: LayoutDashboard },
-  { label: "Banco", href: "/admin/bank", hint: "Preguntas y carga", icon: BookOpen },
-  { label: "Examenes", href: "/admin/templates", hint: "Creacion y control", icon: ClipboardList },
-  { label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },
-  { label: "Resultados", href: "/admin/results", hint: "Notas y exportaciones", icon: BarChart3 },
-  { label: "Catalogos", href: "/admin/settings", hint: "Sedes, grupos, jornadas", icon: Settings2 },
+type NavEntry =
+  | ({ type: "link" } & NavItem)
+  | { type: "section"; label: string };
+
+const navItems: NavEntry[] = [
+  { type: "link", label: "Dashboard", href: "/admin", hint: "Metricas generales", icon: LayoutDashboard },
+  { type: "link", label: "Banco", href: "/admin/bank", hint: "Preguntas y carga", icon: BookOpen },
+  { type: "link", label: "Examenes", href: "/admin/templates", hint: "Creacion y control", icon: ClipboardList },
+  { type: "link", label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },
+  { type: "link", label: "Resultados", href: "/admin/results", hint: "Notas y exportaciones", icon: BarChart3 },
+  { type: "section", label: "Ajustes" },
+  { type: "link", label: "Catalogos", href: "/admin/settings", hint: "Materias, grupos y momentos", icon: Settings2 },
+  { type: "link", label: "Firebase", href: "/admin/settings/firebase", hint: "Herramientas y limpieza", icon: Wrench },
 ];
 
 function getInitials(name: string | null, email: string | null) {
@@ -44,6 +51,16 @@ function Sidebar({
   onNavigate?: () => void;
   pathname: string;
 }) {
+  const activeHref = useMemo(() => {
+    const links = navItems.filter((i): i is Extract<NavEntry, { type: "link" }> => i.type === "link");
+    const matches = links.filter((item) => {
+      if (item.href === "/admin") return pathname === "/admin";
+      return pathname === item.href || pathname.startsWith(`${item.href}/`);
+    });
+    if (!matches.length) return null;
+    return matches.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
+  }, [pathname]);
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-zinc-200 px-5 py-5">
@@ -58,7 +75,14 @@ function Sidebar({
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {navItems.map((item) => {
-          const active = item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
+          if (item.type === "section") {
+            return (
+              <div key={item.label} className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                {item.label}
+              </div>
+            );
+          }
+          const active = item.href === activeHref;
           const Icon = item.icon;
           return (
             <Link
