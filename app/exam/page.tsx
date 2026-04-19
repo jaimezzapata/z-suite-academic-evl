@@ -975,7 +975,7 @@ export default function ExamPublicPage() {
   }
 
   function isQuestionFullyCorrect(q: SnapshotQuestion) {
-    const earned = evaluateQuestion(q, answers[q.questionId]);
+    const earned = evaluateQuestion(q, answersRef.current[q.questionId]);
     if (!Number.isFinite(earned)) return false;
     if (q.type === "open_concept") return earned > 0;
     return earned >= q.points && q.points > 0;
@@ -989,6 +989,7 @@ export default function ExamPublicPage() {
     setSubmitting(true);
     setError(null);
     try {
+      const currentAnswers = answersRef.current;
       const totalQuestionsLocal = displayQuestions.length;
       const correctCount = displayQuestions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
       const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
@@ -1008,7 +1009,7 @@ export default function ExamPublicPage() {
 
       await updateDoc(doc(firestore, "attempts", attemptId), {
         status: opts?.forcedStatus ?? (expired ? "submitted_expired" : "submitted"),
-        answers,
+        answers: currentAnswers,
         correctCount,
         questionCount: totalQuestionsLocal,
         questionOrder,

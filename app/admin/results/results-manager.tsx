@@ -264,7 +264,15 @@ export function ResultsManager() {
   const [onlyWithWrong, setOnlyWithWrong] = useState(false);
   const [onlyWithFraud, setOnlyWithFraud] = useState(false);
   const [sortKey, setSortKey] = useState<
-    "submittedAt" | "examName" | "examCode" | "studentFullName" | "status" | "grade0to5" | "fraudTotal" | "wrongCount"
+    | "submittedAt"
+    | "examName"
+    | "examCode"
+    | "studentFullName"
+    | "status"
+    | "grade0to5"
+    | "grade0to50"
+    | "fraudTotal"
+    | "wrongCount"
   >("submittedAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
@@ -427,6 +435,7 @@ export function ResultsManager() {
     const get = (r: ResultRow) => {
       if (sortKey === "submittedAt") return r.submittedAt?.getTime?.() ?? 0;
       if (sortKey === "grade0to5") return r.grade0to5;
+      if (sortKey === "grade0to50") return r.grade0to50;
       if (sortKey === "fraudTotal") return r.fraudTotal;
       if (sortKey === "wrongCount") return r.wrongCount;
       if (sortKey === "examName") return r.examName.toLowerCase();
@@ -1054,9 +1063,21 @@ export function ResultsManager() {
                         setSortKey("grade0to5");
                         setSortDir((d) => (sortKey === "grade0to5" ? (d === "asc" ? "desc" : "asc") : "desc"));
                       }}
-                      className="inline-flex items-center gap-1"
+                      className="inline-flex items-center gap-1 whitespace-nowrap"
                     >
                       0-5 <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortKey("grade0to50");
+                        setSortDir((d) => (sortKey === "grade0to50" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                      }}
+                      className="inline-flex items-center gap-1 whitespace-nowrap"
+                    >
+                      0-50 <ArrowUpDown className="h-3.5 w-3.5" />
                     </button>
                   </th>
                   <th className="px-3 py-2">
@@ -1130,7 +1151,12 @@ export function ResultsManager() {
                         {r.status}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-semibold text-zinc-900 tabular-nums">{r.grade0to5.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-zinc-900 tabular-nums">
+                      {r.grade0to5.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-zinc-900 tabular-nums">
+                      {r.grade0to50.toFixed(0)}
+                    </td>
                     <td className="px-3 py-2">
                       <span className="font-semibold text-zinc-900 tabular-nums">{r.fraudTotal}</span>
                     </td>
@@ -1173,7 +1199,7 @@ export function ResultsManager() {
                 ))}
                 {!visibleRows.length ? (
                   <tr>
-                    <td colSpan={10} className="px-3 py-8 text-center text-sm text-zinc-500">
+                    <td colSpan={11} className="px-3 py-8 text-center text-sm text-zinc-500">
                       No hay resultados para mostrar.
                     </td>
                   </tr>
