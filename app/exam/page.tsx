@@ -203,6 +203,7 @@ export default function ExamPublicPage() {
   const [lastName, setLastName] = useState("");
   const [documentId, setDocumentId] = useState("");
   const [email, setEmail] = useState("");
+  const [studentFieldIndex, setStudentFieldIndex] = useState(0);
 
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const answersRef = useRef<Record<string, unknown>>({});
@@ -292,42 +293,40 @@ export default function ExamPublicPage() {
         return;
       }
 
-      const snap = await getDocs(
-        query(collection(firestore, "publishedExams"), where("accessCode", "==", c), limit(5)),
-      );
-      const found = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
-        .find((row) => {
-          const r = row as Record<string, unknown>;
-          return toString(r.status, "published") === "published";
-        });
-
-      if (!found) {
-        setError("No se encontro un examen publicado con ese codigo.");
+      const res = await fetch("/api/exam/access", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: c }),
+      });
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        setError(typeof data?.error === "string" ? data.error : "No fue posible cargar el examen.");
         return;
       }
-      const foundRow = found as Record<string, unknown> & { id: string };
 
+      const examRow = (data?.exam ?? null) as Record<string, unknown> | null;
       const nextExam: PublishedExam = {
-        id: foundRow.id,
-        templateId: toString(foundRow.templateId, ""),
-        name: toString(foundRow.name, "Examen"),
-        accessCode: toString(foundRow.accessCode),
-        status: toString(foundRow.status, "published"),
-        questionCount: toNumber(foundRow.questionCount, 0),
-        timeLimitMinutes: toNumber(foundRow.timeLimitMinutes, 60),
-        documentationMarkdown: toString(foundRow.documentationMarkdown, ""),
+        id: toString(examRow?.id, ""),
+        templateId: toString(examRow?.templateId, ""),
+        name: toString(examRow?.name, "Examen"),
+        accessCode: toString(examRow?.accessCode, c),
+        status: toString(examRow?.status, "published"),
+        questionCount: toNumber(examRow?.questionCount, 0),
+        timeLimitMinutes: toNumber(examRow?.timeLimitMinutes, 60),
+        documentationMarkdown: toString(examRow?.documentationMarkdown, ""),
       };
+      if (!nextExam.id) {
+        setError("No fue posible cargar el examen.");
+        return;
+      }
       setExam(nextExam);
 
-      const qSnap = await getDocs(
-        query(collection(firestore, "publishedExams", foundRow.id, "questions"), orderBy("order", "asc"), limit(300)),
-      );
-      const loadedQuestions = qSnap.docs.map((d) => {
-        const row = d.data() as Record<string, unknown>;
+      const qs = Array.isArray(data?.questions) ? (data?.questions as unknown[]) : [];
+      const loadedQuestions = qs.map((raw) => {
+        const row = (raw ?? {}) as Record<string, unknown>;
         return {
-          id: d.id,
-          questionId: toString(row.questionId, d.id),
+          id: toString(row.id, ""),
+          questionId: toString(row.questionId, toString(row.id, "")),
           order: toNumber(row.order, 0),
           type: toString(row.type, "single_choice"),
           statement: toString(row.statement, ""),
@@ -369,7 +368,7 @@ export default function ExamPublicPage() {
           };
           const resumeExamId = typeof parsed.publishedExamId === "string" ? parsed.publishedExamId : "";
           const resumeAttemptId = typeof parsed.attemptId === "string" ? parsed.attemptId : "";
-          if (resumeExamId === foundRow.id && resumeAttemptId) {
+          if (resumeExamId === nextExam.id && resumeAttemptId) {
             const attemptSnap = await getDoc(doc(firestore, "attempts", resumeAttemptId));
             if (attemptSnap.exists()) {
               const attempt = attemptSnap.data() as Record<string, unknown>;
@@ -1265,6 +1264,60 @@ export default function ExamPublicPage() {
   }, [answers, fraudPenaltyPreview0to5, displayQuestions]);
   const hasAnyWrongAnswer = scorePreview.correctCount < scorePreview.totalQuestions;
   const hasFraudPenalty = fraudPenaltyPreview0to5 > 0;
+  const studentFields = [
+    {
+      key: "firstName",
+      title: "¿Cuál es tu nombre?",
+      hint: "Escribe tu primer nombre tal como aparece en tu registro.",
+      value: firstName,
+      onChange: setFirstName,
+      placeholder: "Ej: JAIME",
+      type: "text" as const,
+      inputMode: "text" as const,
+      isValid: firstName.trim().length >= 2,
+    },
+    {
+      key: "lastName",
+      title: "¿Cuál es tu apellido?",
+      hint: "Esto se usará para validar tu intento.",
+      value: lastName,
+      onChange: setLastName,
+      placeholder: "Ej: ZAPATA",
+      type: "text" as const,
+      inputMode: "text" as const,
+      isValid: lastName.trim().length >= 2,
+    },
+    {
+      key: "documentId",
+      title: "Ingresa tu documento",
+      hint: "Puedes usar número o alfanumérico.",
+      value: documentId,
+      onChange: setDocumentId,
+      placeholder: "Ej: 123456789",
+      type: "text" as const,
+      inputMode: "text" as const,
+      isValid: documentId.trim().length >= 4,
+    },
+    {
+      key: "email",
+      title: "Ingresa tu correo",
+      hint: "Debe ser un correo válido para el intento único.",
+      value: email,
+      onChange: setEmail,
+      placeholder: "correo@ejemplo.com",
+      type: "email" as const,
+      inputMode: "email" as const,
+      isValid: email.trim().includes("@") && email.trim().includes("."),
+    },
+  ];
+  const safeStudentFieldIndex = Math.min(Math.max(studentFieldIndex, 0), studentFields.length - 1);
+  const currentStudentField = studentFields[safeStudentFieldIndex];
+  const studentProgressPct = Math.round(((safeStudentFieldIndex + 1) / studentFields.length) * 100);
+
+  useEffect(() => {
+    if (step !== "student") return;
+    setStudentFieldIndex(0);
+  }, [step]);
 
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-6 sm:px-6">
@@ -1350,6 +1403,10 @@ export default function ExamPublicPage() {
 
         {step === "rules" && exam ? (
           <section className="mx-auto w-full max-w-2xl rounded-3xl border border-indigo-200 bg-white p-4 shadow-sm">
+            {(() => {
+              const penaltyPerEvent0to50 = FRAUD_PENALTY_PER_EVENT_0TO5 * 10;
+              return (
+                <>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <h2 className="truncate text-lg font-semibold tracking-tight text-zinc-950">
@@ -1373,25 +1430,46 @@ export default function ExamPublicPage() {
                   <li>Al llegar a 0, el examen se <strong>cierra automaticamente</strong> y se envia lo registrado.</li>
                   <li><strong>Solo un intento</strong> por estudiante: se valida por correo y documento.</li>
                   <li>El examen es <strong>individual</strong>.</li>
-                  <li>
-                    Esta <strong>prohibido copiar y pegar</strong>. Cada intento de copiar/pegar se registra como fraude.
-                  </li>
-                  <li>
-                    Cambiar de <strong>pestaña o ventana</strong> tambien se registra como fraude.
-                  </li>
-                  <li>
-                    Penalizacion por fraude: <strong>-{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)}</strong> en escala 0-5 por cada evento (pestaña o copiar/pegar).
-                  </li>
-                  <li>
-                    Si el fraude total llega a <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong>, el intento se marca como <strong>perdido</strong> (nota 0).
-                  </li>
+                  <li>El docente/profesor puede <strong>anular el examen</strong> si detecta irregularidades.</li>
                   <li>Al finalizar, solo veras tu <strong>nota</strong>. Las preguntas y respuestas se habilitan despues.</li>
                   <li>Recuperacion solo si la nota final esta entre <strong>2.0 y 2.9</strong>.</li>
                   <li>Si obtienes <strong>3.0 o superior</strong>, esa es tu nota definitiva.</li>
-                  <li>
-                    El docente puede <strong>anular tu intento</strong> de forma remota si detecta copia. En ese caso la nota sera <strong>0</strong> sin recuperacion.
-                  </li>
                 </ul>
+              </div>
+
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <div className="flex items-center gap-2">
+                  <OctagonAlert className="h-5 w-5 text-rose-700" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                    Penalizaciones (en rojo)
+                  </p>
+                </div>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl border border-rose-200 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold text-zinc-900">Copiar / pegar detectado</p>
+                    <p className="mt-1 text-[12px] text-zinc-700">Cada evento descuenta puntos.</p>
+                    <p className="mt-1 text-sm font-semibold text-rose-700">
+                      -{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} (0-5) / -{penaltyPerEvent0to50.toFixed(0)} (0-50)
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-rose-200 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold text-zinc-900">Cambio de pestaña / ventana</p>
+                    <p className="mt-1 text-[12px] text-zinc-700">También cuenta como evento de fraude.</p>
+                    <p className="mt-1 text-sm font-semibold text-rose-700">
+                      -{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} (0-5) / -{penaltyPerEvent0to50.toFixed(0)} (0-50)
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 sm:col-span-2">
+                    <p className="text-xs font-semibold text-zinc-900">Límite de fraude alcanzado</p>
+                    <p className="mt-1 text-[12px] text-zinc-700">
+                      Si el total llega a <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong> eventos, el intento se marca como perdido.
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-rose-700">Reducción final: nota 0 (0-5 y 0-50)</p>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -1404,90 +1482,126 @@ export default function ExamPublicPage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setRulesAccepted((v) => !v)}
-                className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left ${
-                  rulesAccepted ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"
+              <label
+                className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                  rulesAccepted ? "border-emerald-300 bg-emerald-50" : "border-zinc-300 bg-white"
                 }`}
               >
+                <input
+                  type="checkbox"
+                  checked={rulesAccepted}
+                  onChange={(e) => setRulesAccepted(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                />
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-zinc-900">He leido y acepto las reglas</p>
-                  <p className="truncate text-xs text-zinc-600">Incluye intento unico, tiempo limite y politica de nota.</p>
+                  <p className="text-sm font-semibold text-zinc-900">Confirmo que leí y acepto las reglas</p>
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Incluye intento único, tiempo límite, penalizaciones por fraude y pérdida con nota 0 por límite de eventos.
+                  </p>
                 </div>
-                <CheckCircle2 className={`h-5 w-5 ${rulesAccepted ? "text-emerald-600" : "text-zinc-300"}`} />
-              </button>
+                <CheckCircle2 className={`h-5 w-5 shrink-0 ${rulesAccepted ? "text-emerald-600" : "text-zinc-300"}`} />
+              </label>
             </div>
 
-            <div className="mt-4 flex justify-end">
-              <IconButton
-                variant="primary"
+            <div className="mt-4 flex items-center justify-between gap-3">
+              {!rulesAccepted ? (
+                <p className="text-xs font-semibold text-rose-700">Debes activar la confirmación para iniciar.</p>
+              ) : (
+                <p className="text-xs font-semibold text-emerald-700">Confirmación aceptada. Ya puedes iniciar.</p>
+              )}
+              <button
+                type="button"
                 onClick={startAttempt}
-                className="h-11 w-11"
+                disabled={!rulesAccepted || submitting}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Aceptar e iniciar"
                 title="Aceptar e iniciar"
-                disabled={!rulesAccepted || submitting}
               >
-                <ArrowRight className="h-5 w-5" />
-              </IconButton>
+                Aceptar e iniciar
+                <ArrowRight className="h-4 w-4" />
+              </button>
             </div>
+                </>
+              );
+            })()}
           </section>
         ) : null}
 
         {step === "student" && exam ? (
-          <section className="mx-auto w-full max-w-md rounded-3xl border border-indigo-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-zinc-900">{exam.name}</p>
-            <p className="mt-1 text-xs text-zinc-500">
-              {questions.length} preguntas • {exam.timeLimitMinutes} min
-            </p>
-            <div className="mt-4 grid gap-3">
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Nombre</span>
-                <input
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
-                  placeholder="Ej: Jaime"
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Apellido</span>
-                <input
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
-                  placeholder="Ej: Zapata"
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Documento</span>
-                <input
-                  value={documentId}
-                  onChange={(e) => setDocumentId(e.target.value)}
-                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
-                  placeholder="Solo numeros o alfanumerico"
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Correo</span>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="h-10 rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-indigo-400"
-                  placeholder="correo@ejemplo.com"
-                />
-              </label>
+          <section className="mx-auto w-full max-w-3xl rounded-3xl border border-indigo-200 bg-white p-5 shadow-sm sm:p-8">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Registro del estudiante</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">{exam.name}</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {questions.length} preguntas • {exam.timeLimitMinutes} min
+                </p>
+              </div>
+              <div className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700">
+                {safeStudentFieldIndex + 1}/{studentFields.length}
+              </div>
             </div>
-            <div className="mt-4 flex justify-end">
-              <IconButton
-                variant="primary"
-                onClick={() => setStep("rules")}
-                className="h-10 w-10"
-                aria-label="Continuar"
-                title="Continuar a confirmacion"
+
+            <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+              <div className="h-full rounded-full bg-indigo-600 transition-[width]" style={{ width: `${studentProgressPct}%` }} />
+            </div>
+
+            <div className="mt-8">
+              <p className="text-2xl font-semibold tracking-tight text-zinc-950 sm:text-3xl">
+                {currentStudentField.title}
+              </p>
+              <p className="mt-2 text-sm text-zinc-600">{currentStudentField.hint}</p>
+
+              <input
+                value={currentStudentField.value}
+                onChange={(e) => currentStudentField.onChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  if (!currentStudentField.isValid) return;
+                  if (safeStudentFieldIndex < studentFields.length - 1) {
+                    setStudentFieldIndex((i) => Math.min(studentFields.length - 1, i + 1));
+                  } else {
+                    setStep("rules");
+                  }
+                }}
+                type={currentStudentField.type}
+                inputMode={currentStudentField.inputMode}
+                className="mt-4 h-14 w-full rounded-2xl border border-zinc-300 bg-white px-4 text-lg text-zinc-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                placeholder={currentStudentField.placeholder}
+                autoFocus
+              />
+              {!currentStudentField.isValid ? (
+                <p className="mt-2 text-xs font-semibold text-rose-700">Completa este campo para continuar.</p>
+              ) : null}
+            </div>
+
+            <div className="mt-8 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setStudentFieldIndex((i) => Math.max(0, i - 1))}
+                disabled={safeStudentFieldIndex === 0}
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
+                <ArrowLeft className="h-4 w-4" />
+                Anterior
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!currentStudentField.isValid) return;
+                  if (safeStudentFieldIndex < studentFields.length - 1) {
+                    setStudentFieldIndex((i) => Math.min(studentFields.length - 1, i + 1));
+                  } else {
+                    setStep("rules");
+                  }
+                }}
+                disabled={!currentStudentField.isValid}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {safeStudentFieldIndex < studentFields.length - 1 ? "Siguiente" : "Continuar"}
                 <ArrowRight className="h-4 w-4" />
-              </IconButton>
+              </button>
             </div>
           </section>
         ) : null}

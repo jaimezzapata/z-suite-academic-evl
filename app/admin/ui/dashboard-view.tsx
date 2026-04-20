@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   collection,
   getCountFromServer,
@@ -11,6 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
+import { BookOpen, ClipboardList, BarChart3, Activity, Bot, Settings2 } from "lucide-react";
 
 type GroupProgress = {
   group: string;
@@ -255,6 +257,20 @@ function Donut({
 }
 
 export function DashboardView() {
+  const quickLinks: Array<{
+    href: string;
+    label: string;
+    hint: string;
+    icon: typeof BookOpen;
+  }> = [
+    { href: "/admin/bank", label: "Banco", hint: "Preguntas e importación", icon: BookOpen },
+    { href: "/admin/templates", label: "Exámenes", hint: "Plantillas y gestión", icon: ClipboardList },
+    { href: "/admin/results", label: "Resultados", hint: "Notas y trazabilidad", icon: BarChart3 },
+    { href: "/admin/live", label: "Activos", hint: "Códigos y monitoreo", icon: Activity },
+    { href: "/admin/settings/ai-docs", label: "IA", hint: "README y JSON", icon: Bot },
+    { href: "/admin/settings", label: "Ajustes", hint: "Catálogos y configuración", icon: Settings2 },
+  ];
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DashboardData>({
@@ -612,6 +628,35 @@ export function DashboardView() {
           {error}
         </div>
       ) : null}
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold tracking-tight text-zinc-950">Accesos directos</h2>
+          <p className="text-sm text-zinc-500">Navega rápido a los módulos clave del panel.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {quickLinks.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="group rounded-xl border border-zinc-200 bg-white px-4 py-3 transition hover:border-zinc-300 hover:bg-zinc-50"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-zinc-900">{item.label}</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">{item.hint}</p>
+                  </div>
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-100 text-zinc-700 group-hover:bg-zinc-900 group-hover:text-white">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <article className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">

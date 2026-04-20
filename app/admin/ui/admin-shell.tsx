@@ -8,6 +8,7 @@ import { useAuth } from "@/app/providers";
 import {
   Activity,
   BarChart3,
+  Bot,
   BookOpen,
   LayoutDashboard,
   Menu,
@@ -31,10 +32,13 @@ const navItems: NavEntry[] = [
   { type: "link", label: "Dashboard", href: "/admin", hint: "Metricas generales", icon: LayoutDashboard },
   { type: "link", label: "Banco", href: "/admin/bank", hint: "Preguntas y carga", icon: BookOpen },
   { type: "link", label: "Examenes", href: "/admin/templates", hint: "Creacion y control", icon: ClipboardList },
+  { type: "link", label: "Documentacion", href: "/admin/documentation", hint: "Central de publicación", icon: BookOpen },
+  { type: "link", label: "IA Documentación", href: "/admin/settings/ai-docs", hint: "Generar y publicar", icon: Bot },
   { type: "link", label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },
   { type: "link", label: "Resultados", href: "/admin/results", hint: "Notas y exportaciones", icon: BarChart3 },
   { type: "section", label: "Ajustes" },
   { type: "link", label: "Catalogos", href: "/admin/settings", hint: "Materias, grupos y momentos", icon: Settings2 },
+  { type: "link", label: "IA Test", href: "/admin/settings/ia-test", hint: "Probar Gemini", icon: Bot },
   { type: "link", label: "Firebase", href: "/admin/settings/firebase", hint: "Herramientas y limpieza", icon: Wrench },
 ];
 
