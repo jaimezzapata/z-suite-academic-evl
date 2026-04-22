@@ -12,7 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
-import { BookOpen, ClipboardList, BarChart3, Activity, Bot, Settings2 } from "lucide-react";
+import { BookOpen, ClipboardList, BarChart3, Activity, Bot, Settings2, Folder } from "lucide-react";
 
 type GroupProgress = {
   group: string;
@@ -265,6 +265,7 @@ export function DashboardView() {
   }> = [
     { href: "/admin/bank", label: "Banco", hint: "Preguntas e importación", icon: BookOpen },
     { href: "/admin/templates", label: "Exámenes", hint: "Plantillas y gestión", icon: ClipboardList },
+    { href: "/admin/drive", label: "Drive", hint: "Archivos y estructura", icon: Folder },
     { href: "/admin/results", label: "Resultados", hint: "Notas y trazabilidad", icon: BarChart3 },
     { href: "/admin/live", label: "Activos", hint: "Códigos y monitoreo", icon: Activity },
     { href: "/admin/settings/ai-docs", label: "IA", hint: "README y JSON", icon: Bot },
