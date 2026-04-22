@@ -93,32 +93,48 @@ async function assertAdmin(req: Request) {
 }
 
 function buildPrompts({
+  templateId,
   topics,
   criteria,
   audience,
   context,
   lengthHint,
 }: {
+  templateId: string;
   topics: string;
   criteria: string;
   audience: string;
   context: string;
   lengthHint: string;
 }) {
-  const systemPrompt = [
-    "Eres un generador experto de README académico para exámenes.",
-    "Debes responder solo en Markdown válido.",
-    "Estructura mínima obligatoria:",
-    "1) Título",
-    "2) Objetivo",
-    "3) Alcance y prerequisitos",
-    "4) Desarrollo por temas",
-    "5) Ejemplos prácticos",
-    "6) Criterios de evaluación/resumen",
-    "7) Recomendaciones finales",
-    "Usa lenguaje claro, didáctico y accionable.",
-    "Incluye tablas/listas cuando mejore la comprensión.",
-  ].join("\n");
+  const systemPrompt =
+    templateId === "standard_detailed_v1"
+      ? [
+          "Eres un generador experto de capítulos para un cuadernillo académico.",
+          "Debes responder solo en Markdown válido.",
+          "Regla de código: todo bloque de código debe declarar lenguaje en el fence (ej: ```json, ```javascript, ```html, ```css, ```sql, ```bash, ```text).",
+          "Salida esperada: UN (1) capítulo autocontenido, diseñado para leerse como página independiente.",
+          "Estructura obligatoria (en este orden):",
+          "1) # Título del capítulo",
+          "2) > Resumen (1–2 líneas)",
+          "3) ## Objetivos de aprendizaje (3–6 bullets)",
+          "4) ## Antes de empezar (prerrequisitos + checklist corto)",
+          "5) ## Explicación (en bloques cortos con '###')",
+          "6) ## Ejemplos (mínimo 2, con código si aplica)",
+          "7) ## Errores comunes y cómo evitarlos",
+          "8) ## Resumen (tabla o bullets)",
+          "9) ## Referencias (3–6 recursos)",
+          "No incluyas tabla de contenidos global.",
+          "Evita relleno: cada párrafo debe aportar valor didáctico.",
+        ].join("\n")
+      : [
+          "Eres un generador experto de README académico (documento estructurado).",
+          "Debes responder solo en Markdown válido.",
+          "Regla de código: todo bloque de código debe declarar lenguaje en el fence (ej: ```json, ```javascript, ```html, ```css, ```sql, ```bash, ```text).",
+          "Regla: respeta estrictamente la plantilla indicada en 'Criterios'.",
+          "Incluye tabla de contenidos y secciones numeradas si la plantilla lo exige.",
+          "No agregues secciones extra fuera de la plantilla.",
+        ].join("\n");
 
   const userPrompt = [
     `Temas:\n${topics}`,
@@ -257,6 +273,7 @@ export async function POST(req: Request) {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  const templateId = toString(body?.readmeTemplate, "custom").trim();
   const topics = toString(body?.topics, "").trim();
   const criteria = toString(body?.criteria, "").trim();
   const audience = toString(body?.audience, "Estudiantes y docentes").trim();
@@ -268,7 +285,7 @@ export async function POST(req: Request) {
   if (!topics) return NextResponse.json({ error: "Debes indicar al menos un tema." }, { status: 400 });
   if (!criteria) return NextResponse.json({ error: "Debes indicar criterios de generación." }, { status: 400 });
 
-  const { systemPrompt, userPrompt } = buildPrompts({ topics, criteria, audience, context, lengthHint });
+  const { systemPrompt, userPrompt } = buildPrompts({ templateId, topics, criteria, audience, context, lengthHint });
 
   try {
     const result = await generateWithGemini(systemPrompt, userPrompt, geminiVariant);

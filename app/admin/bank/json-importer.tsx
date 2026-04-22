@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { firebaseAuth } from "@/lib/firebase/client";
 import { IconButton } from "@/app/admin/ui/icon-button";
-import { FileUp, RefreshCcw } from "lucide-react";
+import { Copy, FileUp, RefreshCcw } from "lucide-react";
 
 function toNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -12,34 +12,35 @@ function toNumber(value: unknown, fallback = 0) {
 export function JsonImporter() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
+  const [rawJson, setRawJson] = useState("");
+  const [sourceJson, setSourceJson] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const summary = useMemo(() => {
-    const questions = Array.isArray(payload?.questions) ? payload?.questions.length : 0;
-    const templates = Array.isArray(payload?.examTemplates) ? payload?.examTemplates.length : 0;
-    const catalog = (payload?.catalog as Record<string, unknown> | null) ?? {};
-    const subjects = Array.isArray(catalog.subjects) ? catalog.subjects.length : 0;
-    const groups = Array.isArray(catalog.groups) ? catalog.groups.length : 0;
-    const moments = Array.isArray(catalog.moments) ? catalog.moments.length : 0;
-    const sites = Array.isArray(catalog.sites) ? catalog.sites.length : 0;
-    const shifts = Array.isArray(catalog.shifts) ? catalog.shifts.length : 0;
-    return { questions, templates, subjects, groups, moments, sites, shifts };
-  }, [payload]);
-
-  async function onPickFile(file: File | null) {
+  function clearAll() {
     setError(null);
     setResult(null);
     setPayload(null);
-    setFileName(file ? file.name : null);
-    if (!file) return;
+    setFileName(null);
+    setRawJson("");
+    setSourceJson("");
+    setCopied(false);
+  }
+
+  function parseAndSetPayload(text: string, sourceName: string) {
+    setError(null);
+    setResult(null);
+    setPayload(null);
+    setSourceJson("");
+    setCopied(false);
+    setFileName(sourceName);
     try {
-      const text = await file.text();
       const parsed = JSON.parse(text) as Record<string, unknown>;
       if (!parsed || typeof parsed !== "object") {
-        setError("El archivo no contiene un JSON válido.");
+        setError("El contenido no contiene un JSON válido.");
         return;
       }
       if (typeof parsed.schemaVersion !== "string") {
@@ -63,6 +64,58 @@ export function JsonImporter() {
         return;
       }
       setPayload(parsed);
+      setSourceJson(JSON.stringify(parsed, null, 2));
+    } catch {
+      setError("No fue posible parsear el JSON.");
+    }
+  }
+
+  async function copyLoadedJson() {
+    if (!sourceJson) return;
+    setError(null);
+    setCopied(false);
+    try {
+      await navigator.clipboard.writeText(sourceJson);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError("No fue posible copiar el JSON.");
+    }
+  }
+
+  const summary = useMemo(() => {
+    const questions = Array.isArray(payload?.questions) ? payload?.questions.length : 0;
+    const templates = Array.isArray(payload?.examTemplates) ? payload?.examTemplates.length : 0;
+    const catalog = (payload?.catalog as Record<string, unknown> | null) ?? {};
+    const subjects = Array.isArray(catalog.subjects) ? catalog.subjects.length : 0;
+    const groups = Array.isArray(catalog.groups) ? catalog.groups.length : 0;
+    const moments = Array.isArray(catalog.moments) ? catalog.moments.length : 0;
+    const sites = Array.isArray(catalog.sites) ? catalog.sites.length : 0;
+    const shifts = Array.isArray(catalog.shifts) ? catalog.shifts.length : 0;
+    return { questions, templates, subjects, groups, moments, sites, shifts };
+  }, [payload]);
+
+  const importSummary = useMemo(() => {
+    const stats = (result?.stats as Record<string, unknown> | null) ?? null;
+    const questions = (stats?.questions as Record<string, unknown> | null) ?? null;
+    const examTemplates = (stats?.examTemplates as Record<string, unknown> | null) ?? null;
+    return {
+      questionsCreated: toNumber(questions?.created, 0),
+      questionsSkipped: toNumber(questions?.skipped, 0),
+      templatesCreated: toNumber(examTemplates?.created, 0),
+    };
+  }, [result]);
+
+  async function onPickFile(file: File | null) {
+    setError(null);
+    setResult(null);
+    setPayload(null);
+    setFileName(file ? file.name : null);
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setRawJson("");
+      parseAndSetPayload(text, file.name);
     } catch {
       setError("No fue posible leer o parsear el archivo JSON.");
     }
@@ -108,7 +161,7 @@ export function JsonImporter() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold tracking-tight text-zinc-950">Importar JSON</h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Sube un lote JSON (append_only) y cárgalo a Firestore desde la interfaz.
+            Sube un lote JSON (append_only) o pégalo como texto para cargarlo a Firestore desde la interfaz.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -123,18 +176,59 @@ export function JsonImporter() {
             />
           </label>
           <IconButton
-            onClick={() => {
-              setError(null);
-              setResult(null);
-              setPayload(null);
-              setFileName(null);
-            }}
+            onClick={() => void copyLoadedJson()}
+            className="h-10 w-10"
+            aria-label="Copiar JSON"
+            title={copied ? "Copiado" : "Copiar JSON"}
+            disabled={!sourceJson}
+          >
+            <Copy className="h-4 w-4" />
+          </IconButton>
+          <IconButton
+            onClick={clearAll}
             className="h-10 w-10"
             aria-label="Limpiar"
             title="Limpiar"
           >
             <RefreshCcw className="h-4 w-4" />
           </IconButton>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3">
+        <p className="text-sm font-semibold text-zinc-900">Pegar JSON</p>
+        <p className="mt-1 text-xs text-zinc-500">Pega el lote completo y cárgalo sin necesidad de archivo.</p>
+        <textarea
+          value={rawJson}
+          onChange={(e) => setRawJson(e.target.value)}
+          placeholder='{"schemaVersion":"...","batch":{...},"catalog":{...},"questions":[...],"examTemplates":[...]}'
+          className="mt-3 min-h-[180px] w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-900 outline-none focus:border-zinc-400"
+        />
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setRawJson("")}
+            disabled={!rawJson.trim()}
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Limpiar texto
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyLoadedJson()}
+            disabled={!sourceJson}
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {copied ? "Copiado" : "Copiar JSON"}
+          </button>
+          <button
+            type="button"
+            onClick={() => parseAndSetPayload(rawJson, "pegado.json")}
+            disabled={!rawJson.trim()}
+            className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cargar JSON pegado
+          </button>
         </div>
       </div>
 
@@ -173,7 +267,7 @@ export function JsonImporter() {
         </div>
       ) : (
         <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
-          Selecciona un archivo JSON para ver el resumen e importar.
+          Selecciona un archivo JSON o pega el contenido para ver el resumen e importar.
         </div>
       )}
 
@@ -206,19 +300,19 @@ export function JsonImporter() {
             <div className="rounded-xl bg-zinc-50 px-3 py-2">
               <p className="text-xs text-zinc-500">Preguntas creadas</p>
               <p className="text-lg font-semibold text-zinc-900">
-                {toNumber((result.stats as Record<string, unknown> | null)?.questions && (result.stats as any).questions.created, 0)}
+                {importSummary.questionsCreated}
               </p>
             </div>
             <div className="rounded-xl bg-zinc-50 px-3 py-2">
               <p className="text-xs text-zinc-500">Preguntas omitidas</p>
               <p className="text-lg font-semibold text-zinc-900">
-                {toNumber((result.stats as Record<string, unknown> | null)?.questions && (result.stats as any).questions.skipped, 0)}
+                {importSummary.questionsSkipped}
               </p>
             </div>
             <div className="rounded-xl bg-zinc-50 px-3 py-2">
               <p className="text-xs text-zinc-500">Plantillas creadas</p>
               <p className="text-lg font-semibold text-zinc-900">
-                {toNumber((result.stats as Record<string, unknown> | null)?.examTemplates && (result.stats as any).examTemplates.created, 0)}
+                {importSummary.templatesCreated}
               </p>
             </div>
           </div>

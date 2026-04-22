@@ -1,14 +1,42 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 
+function toString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+const ALLOWED_COLLECTIONS = [
+  "attempts",
+  "examTemplates",
+  "groups",
+  "moments",
+  "publishedExams",
+  "questions",
+  "shifts",
+  "sites",
+  "subjects",
+  "studyDocs",
+] as const;
+
+type AllowedCollection = (typeof ALLOWED_COLLECTIONS)[number];
+
+function isAllowedCollection(value: string): value is AllowedCollection {
+  return (ALLOWED_COLLECTIONS as readonly string[]).includes(value);
+}
+
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-  if (confirm.trim().toUpperCase() !== "ELIMINAR TODO") {
+  const name = toString(body?.name, "").trim();
+  const confirm = toString(body?.confirm, "");
+
+  if (!name || !isAllowedCollection(name)) {
+    return NextResponse.json({ error: "Colección inválida." }, { status: 400 });
+  }
+  if (confirm.trim().toUpperCase() !== "ELIMINAR") {
     return NextResponse.json({ error: "Confirm inválido" }, { status: 400 });
   }
 
@@ -34,27 +62,13 @@ export async function POST(req: Request) {
   const adminSnap = await adminDb.collection("admins").doc(uid).get();
   if (!adminSnap.exists) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const collections = [
-    "attempts",
-    "examTemplates",
-    "groups",
-    "moments",
-    "publishedExams",
-    "questions",
-    "shifts",
-    "sites",
-    "subjects",
-    "studyDocs",
-  ];
-
-  for (const name of collections) {
-    try {
-      await adminDb.recursiveDelete(adminDb.collection(name));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error desconocido.";
-      return NextResponse.json({ error: `No fue posible eliminar ${name}. ${msg}` }, { status: 500 });
-    }
+  try {
+    await adminDb.recursiveDelete(adminDb.collection(name));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Error desconocido.";
+    return NextResponse.json({ error: `No fue posible eliminar ${name}. ${msg}` }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, deleted: collections }, { status: 200 });
+  return NextResponse.json({ ok: true, deleted: name }, { status: 200 });
 }
+

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { collection, deleteDoc, doc, getDoc, getDocs, limit, query } from "firebase/firestore";
-import { Eye, Trash2, Download, FileDown, FileSpreadsheet, Loader2, ArrowUpDown } from "lucide-react";
+import { Eye, Trash2, Download, FileDown, FileSpreadsheet, Loader2, ArrowUpDown, Printer, FileArchive } from "lucide-react";
 import { firestore } from "@/lib/firebase/client";
 import { MinimalPagination } from "@/app/admin/ui/minimal-pagination";
 
@@ -95,6 +95,17 @@ function toTextPreview(value: string, max = 120) {
   return `${compact.slice(0, max - 1)}...`;
 }
 
+function safeFilenamePart(value: string) {
+  const compact = value.trim().replace(/\s+/g, " ");
+  return compact
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036F]/g, "")
+    .replace(/[^a-zA-Z0-9 _.-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 64) || "archivo";
+}
+
 function parseWrongDetail(value: string) {
   const s = value.trim();
   const m = s.match(/^P(\d+):\s*(.*?)\s*\|\s*Respuesta:\s*(.*?)\s*\|\s*Motivo:\s*(.*)$/);
@@ -174,6 +185,80 @@ function reasonWrong(q: SnapshotQuestion, answer: unknown) {
   if (q.type === "puzzle_match") return "Hay emparejamientos incorrectos.";
   if (q.type === "puzzle_cloze") return "Hay opciones incorrectas en los espacios.";
   return "Respuesta incorrecta según reglas de calificación.";
+}
+
+function expectedAnswerPreview(q: SnapshotQuestion) {
+  if (q.type === "single_choice") {
+    const correct = q.options?.find((o) => o.isCorrect);
+    return correct ? toTextPreview(correct.text, 120) : "No disponible";
+  }
+  if (q.type === "multiple_choice") {
+    const correct = (q.options ?? []).filter((o) => o.isCorrect);
+    if (!correct.length) return "No disponible";
+    return correct.map((o) => toTextPreview(o.text, 60)).join(", ");
+  }
+  if (q.type === "open_concept") {
+    const rules = q.answerRules;
+    const keywords = (rules?.keywords ?? []).map((k) => k.term).filter(Boolean);
+    const parts = [
+      keywords.length ? `Palabras clave: ${keywords.slice(0, 14).join(", ")}${keywords.length > 14 ? "…" : ""}` : null,
+      typeof rules?.maxWords === "number" ? `Máximo palabras: ${rules.maxWords}` : null,
+      typeof rules?.passThreshold === "number" ? `Umbral: ${(rules.passThreshold * 100).toFixed(0)}%` : null,
+    ].filter(Boolean);
+    return parts.length ? parts.join(" • ") : "Respuesta abierta (sin criterio configurado)";
+  }
+  if (q.type === "puzzle_order") {
+    const items = ((q.puzzle?.items as Array<Record<string, unknown>>) ?? []);
+    const pairs = items
+      .slice(0, 10)
+      .map((it) => `${toString(it.id)}→${toNumber(it.correctPosition, -1)}`)
+      .filter((x) => !x.endsWith("→-1"));
+    return pairs.length ? `Orden esperado: ${pairs.join(", ")}${items.length > 10 ? "…" : ""}` : "Orden esperado: (no disponible)";
+  }
+  if (q.type === "puzzle_match") {
+    const pairs = ((q.puzzle?.pairs as Array<Record<string, unknown>>) ?? []);
+    const preview = pairs
+      .slice(0, 10)
+      .map((p) => `${toString(p.leftId)}→${toString(p.rightId)}`)
+      .filter((x) => !x.endsWith("→"));
+    return preview.length ? `Pares esperados: ${preview.join(", ")}${pairs.length > 10 ? "…" : ""}` : "Pares esperados: (no disponible)";
+  }
+  if (q.type === "puzzle_cloze") {
+    const slots = ((q.puzzle?.slots as Array<Record<string, unknown>>) ?? []);
+    const preview = slots
+      .slice(0, 10)
+      .map((s) => `${toString(s.slotId)}→${toString(s.correctOptionId)}`)
+      .filter((x) => !x.endsWith("→"));
+    return preview.length ? `Respuestas: ${preview.join(", ")}${slots.length > 10 ? "…" : ""}` : "Respuestas: (no disponible)";
+  }
+  return "No disponible";
+}
+
+function isAnswered(q: SnapshotQuestion, answer: unknown) {
+  if (q.type === "single_choice") return typeof answer === "string" && answer.trim().length > 0;
+  if (q.type === "multiple_choice") return Array.isArray(answer) && answer.length > 0;
+  if (q.type === "open_concept") return typeof answer === "string" && answer.trim().length > 0;
+  if (q.type === "puzzle_order") return Boolean(answer && typeof answer === "object" && Object.keys(answer as object).length > 0);
+  if (q.type === "puzzle_match") return Boolean(answer && typeof answer === "object" && Object.keys(answer as object).length > 0);
+  if (q.type === "puzzle_cloze") return Boolean(answer && typeof answer === "object" && Object.keys(answer as object).length > 0);
+  return Boolean(answer);
+}
+
+function openConceptFeedback(q: SnapshotQuestion, answer: unknown) {
+  const text = toString(answer, "").trim();
+  if (!text) return "Sin respuesta.";
+  const rules = q.answerRules;
+  const maxWords = rules?.maxWords ?? 120;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > maxWords) return `Supera el máximo de palabras permitido (${maxWords}). Reduce la extensión y responde de forma más concreta.`;
+  const keywords = (rules?.keywords ?? []).map((k) => k.term).filter(Boolean);
+  if (!keywords.length) return "Respuesta abierta: revisa que el concepto esté bien definido y sustentado.";
+  const lower = text.toLowerCase();
+  const matched = keywords.filter((k) => lower.includes(k.toLowerCase()));
+  const missing = keywords.filter((k) => !lower.includes(k.toLowerCase()));
+  const matchedHint = `Coincidencias: ${matched.length}/${keywords.length}.`;
+  const missingHint = missing.length ? `Faltan: ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? "…" : ""}.` : "";
+  return [matchedHint, missingHint].filter(Boolean).join(" ");
 }
 
 function evaluateQuestion(q: SnapshotQuestion, answer: unknown) {
@@ -278,6 +363,8 @@ export function ResultsManager() {
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Record<string, true>>({});
   const [exporting, setExporting] = useState<"" | "csv" | "excel" | "pdf">("");
+  const [exportingAttemptId, setExportingAttemptId] = useState<string | null>(null);
+  const [exportingBulkZip, setExportingBulkZip] = useState(false);
   const [selectedRow, setSelectedRow] = useState<ResultRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ResultRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -495,6 +582,7 @@ export function ResultsManager() {
   }, [selectedRow]);
 
   const selectedCount = useMemo(() => Object.keys(selectedIds).length, [selectedIds]);
+  const selectedRows = useMemo(() => visibleRows.filter((r) => Boolean(selectedIds[r.id])), [visibleRows, selectedIds]);
   const allVisibleSelected = useMemo(() => {
     if (!pagedRows.length) return false;
     return pagedRows.every((r) => Boolean(selectedIds[r.id]));
@@ -839,6 +927,252 @@ export function ResultsManager() {
     doc.save(`reporte-resultados-${Date.now()}.pdf`);
   }
 
+  async function buildAttemptPdf(row: ResultRow): Promise<{ filename: string; blob: Blob }> {
+    const attemptSnap = await getDoc(doc(firestore, "attempts", row.id));
+    if (!attemptSnap.exists()) throw new Error("No se encontró el intento en Firestore.");
+
+    const attempt = attemptSnap.data() as Record<string, unknown>;
+    const publishedExamId = toString(attempt.publishedExamId, "");
+    const examName = toString(attempt.examName, row.examName);
+    const student = toString(attempt.studentFullName, row.studentFullName);
+    const email = toString(attempt.email, row.email);
+    const documentId = toString(attempt.documentId, row.documentId);
+    const submittedAt = toDate(attempt.submittedAt) ?? row.submittedAt;
+    const status = toString(attempt.status, row.status);
+    const grade0to5 = toNumber(attempt.grade0to5, row.grade0to5);
+    const grade0to50 = toNumber(attempt.grade0to50, row.grade0to50);
+    const fraudTabSwitches = toNumber(attempt.fraudTabSwitches, row.fraudTabSwitches);
+    const fraudClipboardAttempts = toNumber(attempt.fraudClipboardAttempts, row.fraudClipboardAttempts);
+    const fraudTotal = fraudTabSwitches + fraudClipboardAttempts;
+    const adminMessage = toString(attempt.adminMessage, "").trim();
+
+    const examMetaSnap = publishedExamId ? await getDoc(doc(firestore, "publishedExams", publishedExamId)) : null;
+    const accessCode = examMetaSnap?.exists()
+      ? toString((examMetaSnap.data() as Record<string, unknown>).accessCode, row.examCode)
+      : row.examCode;
+
+    const qSnap = publishedExamId
+      ? await getDocs(query(collection(firestore, "publishedExams", publishedExamId, "questions"), limit(400)))
+      : null;
+    const questions: SnapshotQuestion[] = (qSnap?.docs ?? [])
+      .map((d) => {
+        const q = d.data() as Record<string, unknown>;
+        return {
+          id: d.id,
+          questionId: toString(q.questionId, d.id),
+          order: toNumber(q.order, 0),
+          type: toString(q.type, "single_choice"),
+          statement: toString(q.statement, ""),
+          points: toNumber(q.points, 1),
+          options: Array.isArray(q.options) ? (q.options as SnapshotQuestion["options"]) : undefined,
+          partialCredit: Boolean(q.partialCredit),
+          answerRules: (q.answerRules as SnapshotQuestion["answerRules"]) ?? undefined,
+          puzzle: (q.puzzle as Record<string, unknown>) ?? undefined,
+        } satisfies SnapshotQuestion;
+      })
+      .sort((a, b) => a.order - b.order);
+
+    const answers = (attempt.answers as Record<string, unknown>) ?? {};
+    const order = Array.isArray(attempt.questionOrder)
+      ? (attempt.questionOrder as unknown[]).map((x) => toString(x)).filter(Boolean)
+      : [];
+    const byId = new Map(questions.map((q) => [q.questionId, q] as const));
+    const orderedQuestions =
+      order.length > 0
+        ? [
+            ...order.map((id) => byId.get(id)).filter((q): q is SnapshotQuestion => Boolean(q)),
+            ...questions.filter((q) => !order.includes(q.questionId)),
+          ]
+        : questions;
+
+    let totalPoints = 0;
+    let earnedPoints = 0;
+    let correctCount = 0;
+    let wrongCount = 0;
+    let unansweredCount = 0;
+
+    const detailRows = orderedQuestions.map((q, idx) => {
+      const ans = answers[q.questionId];
+      const earned = evaluateQuestion(q, ans);
+      const correct = isFullyCorrect(q, ans);
+      const answered = isAnswered(q, ans);
+      totalPoints += q.points;
+      earnedPoints += earned;
+      if (!answered) unansweredCount += 1;
+      if (correct) correctCount += 1;
+      else wrongCount += 1;
+      const feedback =
+        correct ? "Correcto." : q.type === "open_concept" ? openConceptFeedback(q, ans) : reasonWrong(q, ans);
+      return {
+        idx: idx + 1,
+        statement: toTextPreview(q.statement, 260) || "-",
+        studentAnswer: answerPreview(q, ans),
+        expected: expectedAnswerPreview(q),
+        score: `${Number.isFinite(earned) ? earned.toFixed(2) : "0.00"} / ${q.points.toFixed(2)}`,
+        result: correct ? "Bien" : "Por mejorar",
+        feedback,
+      };
+    });
+
+    const jsPDFModule = await import("jspdf");
+    const autoTableModule = await import("jspdf-autotable");
+    const jsPDF = jsPDFModule.default;
+    const autoTable = autoTableModule.default;
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(109, 94, 246);
+    pdf.rect(0, 0, pageWidth, 82, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(16);
+    pdf.text("Resultado del Examen", 32, 36);
+    pdf.setFontSize(10);
+    pdf.text("Z-Suite Eval", 32, 58);
+
+    pdf.setTextColor(15, 23, 42);
+    pdf.setFontSize(11);
+    pdf.text(`Estudiante: ${student}`, 32, 112);
+    pdf.text(`Documento: ${documentId} • Correo: ${email}`, 32, 132);
+    pdf.text(`Examen: ${examName} • Código: ${accessCode}`, 32, 152);
+    pdf.text(`Estado: ${status} • Enviado: ${formatDate(submittedAt)}`, 32, 172);
+
+    const statY = 200;
+    const cardW = (pageWidth - 32 * 2 - 12 * 3) / 4;
+    const cardH = 64;
+    const cards = [
+      { label: "Nota (0-5)", value: grade0to5.toFixed(2) },
+      { label: "Correctas", value: String(correctCount) },
+      { label: "Por mejorar", value: String(wrongCount) },
+      { label: "Fraude", value: String(fraudTotal) },
+    ];
+    cards.forEach((c, i) => {
+      const x = 32 + i * (cardW + 12);
+      pdf.setFillColor(255, 255, 255);
+      (pdf as unknown as { roundedRect?: (...args: any[]) => void }).roundedRect?.(x, statY, cardW, cardH, 14, 14, "F");
+      pdf.setDrawColor(230, 232, 240);
+      (pdf as unknown as { roundedRect?: (...args: any[]) => void }).roundedRect?.(x, statY, cardW, cardH, 14, 14, "S");
+      pdf.setTextColor(71, 85, 105);
+      pdf.setFontSize(9);
+      pdf.text(c.label, x + 14, statY + 22);
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(18);
+      pdf.text(c.value, x + 14, statY + 48);
+    });
+
+    const generalLines: string[] = [];
+    generalLines.push(`Puntaje: ${earnedPoints.toFixed(2)} / ${totalPoints.toFixed(2)} • Sin responder: ${unansweredCount}`);
+    if (fraudTotal > 0) {
+      generalLines.push(`Se detectaron eventos de fraude: pestaña ${fraudTabSwitches}, copiar/pegar ${fraudClipboardAttempts}.`);
+    }
+    if (adminMessage) {
+      generalLines.push(`Mensaje del profesor: ${adminMessage}`);
+    }
+    if (!generalLines.length) {
+      generalLines.push("Sin observaciones adicionales.");
+    }
+
+    pdf.setFontSize(12);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text("Retroalimentación general", 32, 296);
+    pdf.setFontSize(10);
+    pdf.setTextColor(71, 85, 105);
+    const wrap = pdf.splitTextToSize(generalLines.join("\n"), pageWidth - 64);
+    pdf.text(wrap, 32, 316);
+
+    pdf.addPage();
+    pdf.setFillColor(15, 23, 42);
+    pdf.rect(0, 0, pageWidth, 56, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(13);
+    pdf.text("Detalle por pregunta", 32, 34);
+    pdf.setFontSize(10);
+    pdf.text(`${student} • ${examName}`, 32, 50);
+
+    pdf.setTextColor(15, 23, 42);
+    autoTable(pdf, {
+      startY: 76,
+      head: [["#", "Resultado", "Pregunta", "Respuesta", "Esperada", "Puntaje", "Retroalimentación"]],
+      body: detailRows.map((r) => [
+        String(r.idx),
+        r.result,
+        r.statement,
+        r.studentAnswer,
+        r.expected,
+        r.score,
+        r.feedback,
+      ]),
+      styles: { fontSize: 8, cellPadding: 4, textColor: [31, 41, 55], overflow: "linebreak" },
+      headStyles: { fillColor: [109, 94, 246], textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [246, 247, 251] },
+      columnStyles: {
+        0: { cellWidth: 22, halign: "center" },
+        1: { cellWidth: 70 },
+        5: { cellWidth: 72, halign: "center" },
+      },
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        if (data.column.index === 1) {
+          const v = String((data.cell.raw ?? "") as string).toLowerCase();
+          if (v.includes("bien")) data.cell.styles.fillColor = [220, 252, 231];
+          if (v.includes("mejorar")) data.cell.styles.fillColor = [254, 226, 226];
+        }
+      },
+    });
+
+    const totalPages = pdf.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i += 1) {
+      pdf.setPage(i);
+      pdf.setFontSize(9);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`Z-Suite Eval • Página ${i} / ${totalPages}`, 32, pageHeight - 22);
+    }
+
+    const filename = `resultado-${safeFilenamePart(student)}-${safeFilenamePart(examName)}-${safeFilenamePart(accessCode)}.pdf`;
+    const blob = pdf.output("blob");
+    return { filename, blob };
+  }
+
+  async function exportAttemptPdf(row: ResultRow) {
+    setExportingAttemptId(row.id);
+    setError(null);
+    try {
+      const { filename, blob } = await buildAttemptPdf(row);
+      downloadBlob(blob, filename, "application/pdf");
+    } catch {
+      setError("No fue posible generar el PDF del intento.");
+    } finally {
+      setExportingAttemptId(null);
+    }
+  }
+
+  async function exportSelectedAttemptsZip() {
+    if (!selectedRows.length) return;
+    setExportingBulkZip(true);
+    setError(null);
+    try {
+      const JSZipModule = await import("jszip");
+      const JSZipCtor = (JSZipModule as unknown as { default?: new () => any }).default ?? (JSZipModule as unknown as new () => any);
+      const zip = new JSZipCtor();
+      const sorted = [...selectedRows].sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0));
+
+      for (const row of sorted) {
+        try {
+          const { filename, blob } = await buildAttemptPdf(row);
+          zip.file(filename, blob);
+        } catch {}
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+      downloadBlob(zipBlob, `resultados-${Date.now()}.zip`, "application/zip");
+    } catch {
+      setError("No fue posible generar el archivo ZIP de los seleccionados.");
+    } finally {
+      setExportingBulkZip(false);
+    }
+  }
+
   async function handleExport(format: "csv" | "excel" | "pdf") {
     setExporting(format);
     try {
@@ -854,8 +1188,8 @@ export function ResultsManager() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">Resultados</h1>
-          <p className="mt-1 text-sm text-zinc-600">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Resultados</h1>
+          <p className="mt-1 text-sm text-foreground/65">
             Exporta resultados en Excel, CSV y PDF, incluyendo reporte de preguntas incorrectas por estudiante.
           </p>
         </div>
@@ -945,6 +1279,16 @@ export function ResultsManager() {
                 <div className="text-sm font-semibold text-zinc-800">{selectedCount} seleccionados</div>
                 <button
                   type="button"
+                  onClick={() => void exportSelectedAttemptsZip()}
+                  disabled={exportingBulkZip || exportingAttemptId !== null}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                  title="Descargar ZIP de seleccionados"
+                >
+                  <FileArchive className="h-4 w-4" />
+                  ZIP
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setDeleteError(null);
                     setBulkDeleteOpen(true);
@@ -977,11 +1321,11 @@ export function ResultsManager() {
             Cargando resultados...
           </div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+          <div className="mt-4">
+            <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                  <th className="px-3 py-2">
+                  <th className="w-10 px-2 py-2">
                     <input
                       type="checkbox"
                       checked={allVisibleSelected}
@@ -1008,7 +1352,7 @@ export function ResultsManager() {
                       title="Seleccionar todo"
                     />
                   </th>
-                  <th className="px-3 py-2">
+                  <th className="w-[38%] px-2 py-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1020,19 +1364,7 @@ export function ResultsManager() {
                       Examen <ArrowUpDown className="h-3.5 w-3.5" />
                     </button>
                   </th>
-                  <th className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSortKey("examCode");
-                        setSortDir((d) => (sortKey === "examCode" ? (d === "asc" ? "desc" : "asc") : "asc"));
-                      }}
-                      className="inline-flex items-center gap-1"
-                    >
-                      Código <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </th>
-                  <th className="px-3 py-2">
+                  <th className="w-[28%] px-2 py-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1044,19 +1376,7 @@ export function ResultsManager() {
                       Estudiante <ArrowUpDown className="h-3.5 w-3.5" />
                     </button>
                   </th>
-                  <th className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSortKey("status");
-                        setSortDir((d) => (sortKey === "status" ? (d === "asc" ? "desc" : "asc") : "asc"));
-                      }}
-                      className="inline-flex items-center gap-1"
-                    >
-                      Estado <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </th>
-                  <th className="px-3 py-2">
+                  <th className="w-[12%] px-2 py-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1068,19 +1388,7 @@ export function ResultsManager() {
                       0-5 <ArrowUpDown className="h-3.5 w-3.5" />
                     </button>
                   </th>
-                  <th className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSortKey("grade0to50");
-                        setSortDir((d) => (sortKey === "grade0to50" ? (d === "asc" ? "desc" : "asc") : "desc"));
-                      }}
-                      className="inline-flex items-center gap-1 whitespace-nowrap"
-                    >
-                      0-50 <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </th>
-                  <th className="px-3 py-2">
+                  <th className="w-[10%] px-2 py-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1092,19 +1400,7 @@ export function ResultsManager() {
                       Fraude <ArrowUpDown className="h-3.5 w-3.5" />
                     </button>
                   </th>
-                  <th className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSortKey("wrongCount");
-                        setSortDir((d) => (sortKey === "wrongCount" ? (d === "asc" ? "desc" : "asc") : "desc"));
-                      }}
-                      className="inline-flex items-center gap-1"
-                    >
-                      Malas <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </th>
-                  <th className="px-3 py-2">
+                  <th className="w-[12%] px-2 py-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1116,13 +1412,13 @@ export function ResultsManager() {
                       Fecha <ArrowUpDown className="h-3.5 w-3.5" />
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-right">Acción</th>
+                  <th className="w-[120px] px-2 py-2 text-right">Acción</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedRows.map((r) => (
                   <tr key={r.id} className="border-b border-zinc-100 align-top">
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-2">
                       <input
                         type="checkbox"
                         checked={Boolean(selectedIds[r.id])}
@@ -1138,44 +1434,40 @@ export function ResultsManager() {
                         title="Seleccionar"
                       />
                     </td>
-                    <td className="px-3 py-2 text-zinc-900">
-                      <div className="max-w-[360px] truncate font-medium">{r.examName}</div>
+                    <td className="px-2 py-2 text-zinc-900">
+                      <div className="truncate font-medium">{r.examName}</div>
+                      <div className="mt-0.5 truncate text-xs text-zinc-500">
+                        Código <span className="font-semibold text-zinc-700">{r.examCode}</span> •{" "}
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone(r.status)}`}>
+                          {r.status}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-3 py-2 text-zinc-700">{r.examCode}</td>
-                    <td className="px-3 py-2">
-                      <div className="max-w-[260px] truncate font-medium text-zinc-900">{r.studentFullName}</div>
-                      <div className="max-w-[260px] truncate text-xs text-zinc-500">{r.documentId}</div>
+                    <td className="px-2 py-2">
+                      <div className="truncate font-medium text-zinc-900">{r.studentFullName}</div>
+                      <div className="mt-0.5 truncate text-xs text-zinc-500">{r.documentId}</div>
                     </td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${statusTone(r.status)}`}>
-                        {r.status}
-                      </span>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      <div className="font-semibold text-zinc-900">{r.grade0to5.toFixed(2)}</div>
+                      <div className="text-xs text-zinc-500">{r.grade0to50.toFixed(0)} / 50</div>
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold text-zinc-900 tabular-nums">
-                      {r.grade0to5.toFixed(2)}
+                    <td className="px-2 py-2">
+                      <div className="text-xs text-zinc-700">
+                        <span className="font-semibold tabular-nums text-zinc-900">{r.fraudTotal}</span>
+                        <span className="text-zinc-500"> / </span>
+                        <span className={`font-semibold tabular-nums ${r.wrongCount > 0 ? "text-rose-700" : "text-zinc-500"}`}>
+                          {r.wrongCount}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-zinc-500">Fraude / Malas</div>
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold text-zinc-900 tabular-nums">
-                      {r.grade0to50.toFixed(0)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="font-semibold text-zinc-900 tabular-nums">{r.fraudTotal}</span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`font-semibold tabular-nums ${
-                          r.wrongCount > 0 ? "text-emerald-700" : "text-zinc-500"
-                        }`}
-                      >
-                        {r.wrongCount}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-zinc-600">{formatDate(r.submittedAt)}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-xs text-zinc-600">{formatDate(r.submittedAt)}</td>
+                    <td className="px-2 py-2 text-right">
                       <div className="inline-flex items-center justify-end gap-1">
                         <button
                           type="button"
                           onClick={() => setSelectedRow(r)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
                           aria-label="Ver detalle"
                           title="Ver detalle"
                         >
@@ -1183,11 +1475,21 @@ export function ResultsManager() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => void exportAttemptPdf(r)}
+                          disabled={exportingAttemptId === r.id || exportingBulkZip}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                          aria-label="Descargar PDF"
+                          title="Descargar PDF"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => {
                             setDeleteError(null);
                             setDeleteTarget(r);
                           }}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                           aria-label="Eliminar intento"
                           title="Eliminar intento"
                         >
@@ -1199,7 +1501,7 @@ export function ResultsManager() {
                 ))}
                 {!visibleRows.length ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center text-sm text-zinc-500">
+                    <td colSpan={7} className="px-3 py-8 text-center text-sm text-zinc-500">
                       No hay resultados para mostrar.
                     </td>
                   </tr>
@@ -1231,6 +1533,15 @@ export function ResultsManager() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void exportAttemptPdf(selectedRow)}
+                  disabled={exportingAttemptId === selectedRow.id}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                >
+                  <Printer className="h-4 w-4" />
+                  PDF
+                </button>
                 <button
                   type="button"
                   onClick={() => {

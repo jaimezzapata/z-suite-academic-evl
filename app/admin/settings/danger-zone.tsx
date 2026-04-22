@@ -53,8 +53,8 @@ export function DangerZone() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold tracking-tight text-zinc-950">Danger Zone</h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Elimina datos operativos de Firestore (preguntas, plantillas, publicados, intentos y catálogos) y conserva{" "}
-            <strong>admins</strong>.
+            Elimina datos operativos de Firestore (preguntas, plantillas, publicados, intentos, catálogos y{" "}
+            documentación/cuadernillos) y conserva <strong>admins</strong>.
           </p>
         </div>
         <button
