@@ -817,7 +817,7 @@ export default function AdminAiDocsPage() {
                 <select
                   value={readmeTemplate}
                   onChange={(e) => setReadmeTemplate(e.target.value as ReadmeTemplateId)}
-                  className="h-11 min-w-64 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                  className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400 sm:w-auto"
                 >
                   {README_TEMPLATE_OPTIONS.map((tpl) => (
                     <option key={tpl.id} value={tpl.id}>
@@ -897,18 +897,18 @@ export default function AdminAiDocsPage() {
                   placeholder="Ej: estudiantes de grado 10"
                 />
               </label>
-              <label className="grid gap-1">
+              <div className="grid gap-1">
                 <span className="text-xs font-semibold text-zinc-700">Longitud</span>
                 <select
                   value={lengthHint}
-                  onChange={(e) => setLengthHint(e.target.value)}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                  onChange={(e) => setLengthHint(e.target.value as typeof lengthHint)}
+                  className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                 >
                   <option value="corta">Corta</option>
                   <option value="media">Media</option>
                   <option value="larga">Larga</option>
                 </select>
-              </label>
+              </div>
             </div>
 
             <label className="grid gap-1">
@@ -981,7 +981,7 @@ export default function AdminAiDocsPage() {
                   onChange={(e) => setSubjectId(e.target.value)}
                   className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                 >
-                  <option value="">Selecciona materia</option>
+                  <option value="">Seleccionar</option>
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -996,7 +996,7 @@ export default function AdminAiDocsPage() {
                   onChange={(e) => setGroupId(e.target.value)}
                   className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                 >
-                  <option value="">Selecciona grupo</option>
+                  <option value="">Seleccionar</option>
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
@@ -1013,7 +1013,7 @@ export default function AdminAiDocsPage() {
                 onChange={(e) => setMomentId(e.target.value)}
                 className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
               >
-                <option value="">Selecciona momento</option>
+                <option value="">Seleccionar</option>
                 {moments.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}

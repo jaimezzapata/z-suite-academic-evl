@@ -809,24 +809,25 @@ export default function ExamPublicPage() {
           {(((q.puzzle?.items as Array<Record<string, unknown>>) ?? [])).map((it) => {
             const map = (answers[q.questionId] as Record<string, number>) ?? {};
             const n = (((q.puzzle?.items as Array<Record<string, unknown>>) ?? [])).length;
+            const current = map[toString(it.id)] ?? 0;
             return (
               <div key={toString(it.id)} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]">
                 <div className="rounded-xl bg-zinc-50 px-3 py-2 text-base font-medium text-zinc-900">
                   {toString(it.text)}
                 </div>
                 <select
-                  value={String(map[toString(it.id)] ?? "")}
+                  value={String(current)}
                   onChange={(e) =>
                     setAnswer(q.questionId, {
                       ...map,
                       [toString(it.id)]: Number(e.target.value || 0),
                     })
                   }
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-base text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
+                  className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
                 >
-                  <option value="">Pos.</option>
+                  <option value="0">Pos.</option>
                   {Array.from({ length: n }, (_, i) => i + 1).map((p) => (
-                    <option key={p} value={p}>
+                    <option key={p} value={String(p)}>
                       {p}
                     </option>
                   ))}
@@ -844,22 +845,26 @@ export default function ExamPublicPage() {
           {(((q.puzzle?.leftItems as Array<Record<string, unknown>>) ?? [])).map((left) => {
             const ans = (answers[q.questionId] as Record<string, string>) ?? {};
             const rightItems = ((q.puzzle?.rightItems as Array<Record<string, unknown>>) ?? []);
+            const current = ans[toString(left.id)] ?? "";
             return (
               <div key={toString(left.id)} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr]">
                 <div className="rounded-xl bg-zinc-50 px-3 py-2 text-base font-medium text-zinc-900">
                   {toString(left.text)}
                 </div>
                 <select
-                  value={ans[toString(left.id)] ?? ""}
+                  value={current}
                   onChange={(e) => setAnswer(q.questionId, { ...ans, [toString(left.id)]: e.target.value })}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-base text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
+                  className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
                 >
                   <option value="">Selecciona</option>
-                  {rightItems.map((ri) => (
-                    <option key={toString(ri.id)} value={toString(ri.id)}>
-                      {toString(ri.text)}
-                    </option>
-                  ))}
+                  {rightItems.map((ri) => {
+                    const id = toString(ri.id);
+                    return (
+                      <option key={id} value={id}>
+                        {toString(ri.text)}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             );
@@ -873,27 +878,31 @@ export default function ExamPublicPage() {
         {(((q.puzzle?.slots as Array<Record<string, unknown>>) ?? [])).map((slot) => {
           const ans = (answers[q.questionId] as Record<string, string>) ?? {};
           const options = ((slot.options as Array<Record<string, unknown>>) ?? []);
+          const current = ans[toString(slot.slotId)] ?? "";
           return (
             <div key={toString(slot.slotId)} className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr]">
               <div className="rounded-xl bg-zinc-50 px-3 py-2 text-base font-medium text-zinc-900">
                 {toString(slot.slotId)}
               </div>
               <select
-                value={ans[toString(slot.slotId)] ?? ""}
+                value={current}
                 onChange={(e) =>
                   setAnswer(q.questionId, {
                     ...ans,
                     [toString(slot.slotId)]: e.target.value,
                   })
                 }
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-base text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-200/40"
               >
                 <option value="">Selecciona</option>
-                {options.map((o) => (
-                  <option key={toString(o.id)} value={toString(o.id)}>
-                    {toString(o.text)}
-                  </option>
-                ))}
+                {options.map((o) => {
+                  const id = toString(o.id);
+                  return (
+                    <option key={id} value={id}>
+                      {toString(o.text)}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           );

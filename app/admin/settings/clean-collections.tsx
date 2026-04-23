@@ -18,10 +18,12 @@ const COLLECTIONS: CollectionItem[] = [
   { name: "questions", label: "Banco de preguntas", description: "Preguntas y sus metadatos", tone: "danger" },
   { name: "studyDocs", label: "Documentación", description: "Cuadernillos y capítulos (entries/revisions)", tone: "danger" },
   { name: "subjects", label: "Materias", description: "Catálogo de materias", tone: "neutral" },
-  { name: "groups", label: "Grupos", description: "Catálogo de grupos", tone: "neutral" },
+  { name: "groups", label: "Grupos (CESDE)", description: "Catálogo de grupos", tone: "neutral" },
+  { name: "fichas", label: "Fichas (SENA)", description: "Catálogo de fichas (7–9 dígitos)", tone: "neutral" },
   { name: "sites", label: "Sedes", description: "Catálogo de sedes", tone: "neutral" },
   { name: "shifts", label: "Jornadas", description: "Catálogo de jornadas", tone: "neutral" },
   { name: "moments", label: "Momentos", description: "Catálogo de momentos", tone: "neutral" },
+  { name: "trimesters", label: "Trimestres (SENA)", description: "Catálogo de trimestres", tone: "neutral" },
 ];
 
 export function CleanCollections() {

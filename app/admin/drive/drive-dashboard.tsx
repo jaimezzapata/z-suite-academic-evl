@@ -10,11 +10,9 @@ import {
   limit,
   orderBy,
   query,
-  where,
 } from "firebase/firestore";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  CalendarDays,
   ExternalLink,
   FileArchive,
   FileCode2,
@@ -172,6 +170,7 @@ export function DriveDashboard() {
 
   const [subjects, setSubjects] = useState<CatalogItem[]>([]);
   const [groups, setGroups] = useState<CatalogItem[]>([]);
+  const [fichas, setFichas] = useState<CatalogItem[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [institution, setInstitution] = useState<"CESDE" | "SENA">("CESDE");
@@ -214,9 +213,10 @@ export function DriveDashboard() {
       setError(null);
       setFilesError(null);
       try {
-        const [subjectsSnap, groupsSnap, workspacesCountSnap, workspacesSnap, statsSnap] = await Promise.all([
+        const [subjectsSnap, groupsSnap, fichasSnap, workspacesCountSnap, workspacesSnap, statsSnap] = await Promise.all([
           getDocs(query(collection(firestore, "subjects"), orderBy("name"), limit(400))),
           getDocs(query(collection(firestore, "groups"), orderBy("name"), limit(400))),
+          getDocs(query(collection(firestore, "fichas"), orderBy("name"), limit(800))),
           getCountFromServer(collection(firestore, "driveWorkspaces")),
           getDocs(query(collection(firestore, "driveWorkspaces"), orderBy("updatedAt", "desc"), limit(30))),
           getDoc(doc(firestore, "driveMeta", "stats")),
@@ -225,6 +225,7 @@ export function DriveDashboard() {
 
         setSubjects(subjectsSnap.docs.map((d) => ({ id: d.id, name: toString(d.data()?.name, d.id) })));
         setGroups(groupsSnap.docs.map((d) => ({ id: d.id, name: toString(d.data()?.name, d.id) })));
+        setFichas(fichasSnap.docs.map((d) => ({ id: d.id, name: toString(d.data()?.name, d.id) })));
         setWorkspaceCount(workspacesCountSnap.data().count);
         setWorkspaces(workspacesSnap.docs.map((d) => toWorkspaceRow(d.id, d.data() as Record<string, unknown>)));
 
@@ -799,7 +800,10 @@ export function DriveDashboard() {
             </select>
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter((e.target.value as any) || "all")}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "all" || v === "doc" || v === "image" || v === "archive" || v === "code") setTypeFilter(v);
+              }}
               className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400 sm:w-[190px]"
             >
               <option value="all">Todos</option>
@@ -1080,7 +1084,11 @@ export function DriveDashboard() {
                     <span className="text-xs font-semibold text-zinc-700">Institución</span>
                     <select
                       value={institution}
-                      onChange={(e) => setInstitution(e.target.value === "SENA" ? "SENA" : "CESDE")}
+                      onChange={(e) => {
+                        const next = e.target.value === "SENA" ? "SENA" : "CESDE";
+                        setInstitution(next);
+                        setGroupId("");
+                      }}
                       className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                     >
                       <option value="CESDE">CESDE (18 semanas, M1–M3)</option>
@@ -1105,14 +1113,14 @@ export function DriveDashboard() {
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-xs font-semibold text-zinc-700">Grupo</span>
+                    <span className="text-xs font-semibold text-zinc-700">{institution === "SENA" ? "Ficha" : "Grupo"}</span>
                     <select
                       value={groupId}
                       onChange={(e) => setGroupId(e.target.value)}
                       className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                     >
-                      <option value="">Selecciona grupo</option>
-                      {groups.map((g) => (
+                      <option value="">{institution === "SENA" ? "Selecciona ficha" : "Selecciona grupo"}</option>
+                      {(institution === "SENA" ? fichas : groups).map((g) => (
                         <option key={g.id} value={g.id}>
                           {g.name}
                         </option>

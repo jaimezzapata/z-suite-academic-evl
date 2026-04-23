@@ -248,6 +248,7 @@ export default function AdminGroupsBookletsPage() {
 
   const [subjects, setSubjects] = useState<CatalogItem[]>([]);
   const [groups, setGroups] = useState<CatalogItem[]>([]);
+  const [fichas, setFichas] = useState<CatalogItem[]>([]);
   const [sites, setSites] = useState<CatalogItem[]>([]);
   const [shifts, setShifts] = useState<CatalogItem[]>([]);
   const [booklets, setBooklets] = useState<BookletRow[]>([]);
@@ -256,6 +257,7 @@ export default function AdminGroupsBookletsPage() {
   const [siteId, setSiteId] = useState("");
   const [shiftId, setShiftId] = useState("");
   const [groupId, setGroupId] = useState("");
+  const [fichaId, setFichaId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [title, setTitle] = useState("");
   const [sessionDays, setSessionDays] = useState(180);
@@ -278,9 +280,10 @@ export default function AdminGroupsBookletsPage() {
       setLoading(true);
       setError(null);
       try {
-        const [subjectsSnap, groupsSnap, sitesSnap, shiftsSnap, docsSnap] = await Promise.all([
+        const [subjectsSnap, groupsSnap, fichasSnap, sitesSnap, shiftsSnap, docsSnap] = await Promise.all([
           getDocs(query(collection(firestore, "subjects"), orderBy("name"), limit(300))),
           getDocs(query(collection(firestore, "groups"), orderBy("name"), limit(300))),
+          getDocs(query(collection(firestore, "fichas"), orderBy("name"), limit(800))),
           getDocs(query(collection(firestore, "sites"), orderBy("name"), limit(100))),
           getDocs(query(collection(firestore, "shifts"), orderBy("name"), limit(100))),
           getDocs(query(collection(firestore, "studyDocs"), where("active", "==", true), limit(800))),
@@ -288,6 +291,7 @@ export default function AdminGroupsBookletsPage() {
         if (cancelled) return;
         setSubjects(subjectsSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         setGroups(groupsSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
+        setFichas(fichasSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         setSites(sitesSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         setShifts(shiftsSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         const rows = docsSnap.docs
@@ -337,8 +341,9 @@ export default function AdminGroupsBookletsPage() {
   }, []);
 
   const canCreate = useMemo(() => {
-    return !!siteId && !!shiftId && !!groupId && !!subjectId && chapters.length > 0 && !saving;
-  }, [siteId, shiftId, groupId, subjectId, chapters.length, saving]);
+    const segmentOk = institution === "SENA" ? !!fichaId : !!groupId;
+    return !!siteId && !!shiftId && segmentOk && !!subjectId && chapters.length > 0 && !saving;
+  }, [siteId, shiftId, groupId, fichaId, subjectId, chapters.length, saving, institution]);
 
   const filteredBooklets = useMemo(() => {
     const q = normalizeKey(search);
@@ -355,9 +360,13 @@ export default function AdminGroupsBookletsPage() {
   }, [subjects, subjectId]);
 
   const previewGroupName = useMemo(() => {
+    if (institution === "SENA") {
+      const f = fichas.find((x) => x.id === fichaId);
+      return f?.name ?? "";
+    }
     const g = groups.find((x) => x.id === groupId);
     return g?.name ?? "";
-  }, [groups, groupId]);
+  }, [groups, groupId, institution, fichas, fichaId]);
 
   function addChapterDraft() {
     const md = chapterMarkdown.trim();
@@ -398,6 +407,7 @@ export default function AdminGroupsBookletsPage() {
       setError("Debes iniciar sesión como administrador.");
       return;
     }
+    const segmentId = institution === "SENA" ? fichaId : groupId;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -410,7 +420,7 @@ export default function AdminGroupsBookletsPage() {
           institution,
           siteId,
           shiftId,
-          groupId,
+          groupId: segmentId,
           subjectId,
           title: title.trim(),
           sessionDays,
@@ -769,7 +779,16 @@ export default function AdminGroupsBookletsPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="grid gap-1 text-sm">
                   <span className="text-xs font-semibold text-foreground/60">Institución</span>
-                  <select value={institution} onChange={(e) => setInstitution(e.target.value as "CESDE" | "SENA")} className="zs-input h-10">
+                  <select
+                    value={institution}
+                    onChange={(e) => {
+                      const next = e.target.value === "SENA" ? "SENA" : "CESDE";
+                      setInstitution(next);
+                      setGroupId("");
+                      setFichaId("");
+                    }}
+                    className="zs-input h-10"
+                  >
                     <option value="CESDE">CESDE</option>
                     <option value="SENA">SENA</option>
                   </select>
@@ -807,17 +826,31 @@ export default function AdminGroupsBookletsPage() {
                     ))}
                   </select>
                 </label>
-                <label className="grid gap-1 text-sm">
-                  <span className="text-xs font-semibold text-foreground/60">Grupo</span>
-                  <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="zs-input h-10">
-                    <option value="">Seleccionar</option>
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {institution === "SENA" ? (
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-xs font-semibold text-foreground/60">Ficha</span>
+                    <select value={fichaId} onChange={(e) => setFichaId(e.target.value)} className="zs-input h-10">
+                      <option value="">Seleccionar</option>
+                      {fichas.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-xs font-semibold text-foreground/60">Grupo</span>
+                    <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="zs-input h-10">
+                      <option value="">Seleccionar</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label className="grid gap-1 text-sm">
                   <span className="text-xs font-semibold text-foreground/60">Materia</span>
                   <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="zs-input h-10">

@@ -42,6 +42,7 @@ type CatalogItem = {
 type ExamTemplateRow = {
   id: string;
   name: string;
+  institution: "CESDE" | "SENA";
   subjectId: string;
   groupId: string;
   momentId: string;
@@ -95,99 +96,6 @@ function readFileAsText(file: File) {
   });
 }
 
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (val: string) => void;
-  options: CatalogItem[];
-  placeholder: string;
-}) {
-  const dup = useMemo(() => {
-    const counts = new Map<string, number>();
-    options.forEach((o) => {
-      const k = o.name.trim().toLowerCase();
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    });
-    return counts;
-  }, [options]);
-
-  return (
-    <label className="grid gap-1">
-      <span className="text-sm font-medium text-zinc-800">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-      >
-        <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt.id} value={opt.id}>
-            {dup.get(opt.name.trim().toLowerCase()) && (dup.get(opt.name.trim().toLowerCase()) ?? 0) > 1
-              ? `${opt.name} · ${opt.id.slice(0, 6)}`
-              : opt.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function TinyCreate({
-  label,
-  placeholder,
-  onCreate,
-}: {
-  label: string;
-  placeholder: string;
-  onCreate: (name: string) => Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function submit() {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setSaving(true);
-    try {
-      await onCreate(trimmed);
-      setName("");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-3">
-      <p className="text-xs font-semibold text-zinc-700">{label}</p>
-      <div className="flex items-center gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={placeholder}
-          className="h-9 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
-          disabled={saving}
-        />
-        <IconButton
-          variant="primary"
-          onClick={submit}
-          disabled={saving || !name.trim()}
-          className="h-9 w-9"
-          aria-label="Crear"
-          title="Crear"
-        >
-          <Plus className="h-4 w-4" />
-        </IconButton>
-      </div>
-    </div>
-  );
-}
-
 function Toggle({
   label,
   description,
@@ -226,6 +134,7 @@ function Toggle({
 export function ExamManager() {
   const [subjects, setSubjects] = useState<CatalogItem[]>([]);
   const [groups, setGroups] = useState<CatalogItem[]>([]);
+  const [fichas, setFichas] = useState<CatalogItem[]>([]);
   const [moments, setMoments] = useState<CatalogItem[]>([]);
   const [sites, setSites] = useState<CatalogItem[]>([]);
   const [shifts, setShifts] = useState<CatalogItem[]>([]);
@@ -236,6 +145,7 @@ export function ExamManager() {
 
   const [subjectId, setSubjectId] = useState("");
   const [groupId, setGroupId] = useState("");
+  const [institution, setInstitution] = useState<"CESDE" | "SENA">("CESDE");
   const [momentId, setMomentId] = useState("");
   const [siteId, setSiteId] = useState("");
   const [shiftId, setShiftId] = useState("");
@@ -284,14 +194,16 @@ export function ExamManager() {
     const m = new Map<string, string>();
     subjects.forEach((x) => m.set(`subjects:${x.id}`, x.name));
     groups.forEach((x) => m.set(`groups:${x.id}`, x.name));
+    fichas.forEach((x) => m.set(`fichas:${x.id}`, x.name));
     moments.forEach((x) => m.set(`moments:${x.id}`, x.name));
     sites.forEach((x) => m.set(`sites:${x.id}`, x.name));
     shifts.forEach((x) => m.set(`shifts:${x.id}`, x.name));
     return m;
-  }, [subjects, groups, moments, sites, shifts]);
+  }, [subjects, groups, fichas, moments, sites, shifts]);
 
   const subjectName = namesById.get(`subjects:${subjectId}`) ?? "";
-  const groupName = namesById.get(`groups:${groupId}`) ?? "";
+  const groupName =
+    (institution === "SENA" ? namesById.get(`fichas:${groupId}`) : namesById.get(`groups:${groupId}`)) ?? "";
   const momentName = namesById.get(`moments:${momentId}`) ?? "";
   const siteName = namesById.get(`sites:${siteId}`) ?? "";
   const shiftName = namesById.get(`shifts:${shiftId}`) ?? "";
@@ -313,9 +225,10 @@ export function ExamManager() {
     async function loadCatalog() {
       setError(null);
       try {
-        const [subjectsSnap, groupsSnap, momentsSnap, sitesSnap, shiftsSnap] = await Promise.all([
+        const [subjectsSnap, groupsSnap, fichasSnap, momentsSnap, sitesSnap, shiftsSnap] = await Promise.all([
           getDocs(query(collection(firestore, "subjects"), orderBy("name"), limit(200))),
           getDocs(query(collection(firestore, "groups"), orderBy("name"), limit(200))),
+          getDocs(query(collection(firestore, "fichas"), orderBy("name"), limit(600))),
           getDocs(query(collection(firestore, "moments"), orderBy("name"), limit(50))),
           getDocs(query(collection(firestore, "sites"), orderBy("name"), limit(50))),
           getDocs(query(collection(firestore, "shifts"), orderBy("name"), limit(50))),
@@ -325,6 +238,7 @@ export function ExamManager() {
 
         setSubjects(subjectsSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         setGroups(groupsSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
+        setFichas(fichasSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         setMoments(momentsSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         setSites(sitesSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
         setShifts(shiftsSnap.docs.map((d) => toCatalogItem(d.id, d.data())));
@@ -358,18 +272,20 @@ export function ExamManager() {
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     const q = query(collection(firestore, "examTemplates"), orderBy("createdAt", "desc"), limit(200));
     const unsub = onSnapshot(
       q,
       (snap) => {
+        setError(null);
         setRows(
           snap.docs.map((d) => {
             const row = d.data() as Record<string, unknown>;
+            const instRaw = toString(row.institution, "CESDE").toUpperCase();
+            const institution = instRaw === "SENA" ? "SENA" : "CESDE";
             return {
               id: d.id,
               name: toString(row.name, d.id),
+              institution,
               subjectId: toString(row.subjectId, ""),
               groupId: toString(row.groupId, ""),
               momentId: toString(row.momentId, ""),
@@ -392,46 +308,6 @@ export function ExamManager() {
     return () => unsub();
   }, []);
 
-  async function reloadSites() {
-    const snap = await getDocs(query(collection(firestore, "sites"), orderBy("name"), limit(50)));
-    setSites(snap.docs.map((d) => toCatalogItem(d.id, d.data())));
-  }
-
-  async function reloadShifts() {
-    const snap = await getDocs(query(collection(firestore, "shifts"), orderBy("name"), limit(50)));
-    setShifts(snap.docs.map((d) => toCatalogItem(d.id, d.data())));
-  }
-
-  async function createSite(name: string) {
-    const res = normalizeSentenceText(name);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    await addDoc(collection(firestore, "sites"), {
-      name: res.value,
-      active: true,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    await reloadSites();
-  }
-
-  async function createShift(name: string) {
-    const res = normalizeSentenceText(name);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    await addDoc(collection(firestore, "shifts"), {
-      name: res.value,
-      active: true,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    await reloadShifts();
-  }
-
   async function importDocumentationFile(file: File) {
     setError(null);
     try {
@@ -452,7 +328,7 @@ export function ExamManager() {
     setError(null);
     try {
       if (!shiftId || !siteId || !momentId || !groupId || !subjectId) {
-        setError("Completa Materia, Grupo, Momento, Sede y Jornada.");
+        setError(`Completa Materia, ${institution === "SENA" ? "Ficha" : "Grupo"}, Momento, Sede y Jornada.`);
         return;
       }
 
@@ -463,6 +339,7 @@ export function ExamManager() {
       }
       await addDoc(collection(firestore, "examTemplates"), {
         name: nameRes.value,
+        institution,
         subjectId,
         groupId,
         momentId,
@@ -620,6 +497,7 @@ export function ExamManager() {
         templateId: publishTarget.id,
         templateName: publishTarget.name,
         name: publishTarget.name,
+        institution: publishTarget.institution,
         subjectId: publishTarget.subjectId,
         groupId: publishTarget.groupId,
         momentId: publishTarget.momentId,
@@ -660,6 +538,7 @@ export function ExamManager() {
   function openEdit(row: ExamTemplateRow) {
     setError(null);
     setEditId(row.id);
+    setInstitution(row.institution);
     setSubjectId(row.subjectId);
     setGroupId(row.groupId);
     setMomentId(row.momentId);
@@ -738,7 +617,7 @@ export function ExamManager() {
     setError(null);
     try {
       if (!shiftId || !momentId || !groupId) {
-        setError("Completa Jornada, Grupo y Momento.");
+        setError(`Completa Jornada, ${institution === "SENA" ? "Ficha" : "Grupo"} y Momento.`);
         return;
       }
       if (!Number.isFinite(timeLimitMinutes) || timeLimitMinutes < 1 || timeLimitMinutes > 240) {
@@ -752,6 +631,7 @@ export function ExamManager() {
       }
       await updateDoc(doc(firestore, "examTemplates", editId), {
         name: nameRes.value,
+        institution,
         subjectId,
         groupId,
         momentId,
@@ -806,7 +686,9 @@ export function ExamManager() {
 
       if (!q) return true;
       const subject = namesById.get(`subjects:${r.subjectId}`) ?? r.subjectId;
-      const group = namesById.get(`groups:${r.groupId}`) ?? r.groupId;
+      const group =
+        (r.institution === "SENA" ? namesById.get(`fichas:${r.groupId}`) : namesById.get(`groups:${r.groupId}`)) ??
+        r.groupId;
       const moment = namesById.get(`moments:${r.momentId}`) ?? r.momentId;
       const site = namesById.get(`sites:${r.siteId}`) ?? r.siteId;
       const shift = namesById.get(`shifts:${r.shiftId}`) ?? r.shiftId;
@@ -941,6 +823,8 @@ export function ExamManager() {
               setTimeLimitMinutes(60);
               setDocumentationMarkdown("");
               setDocFileName(null);
+              setInstitution("CESDE");
+              setGroupId("");
               setCreateOpen(true);
             }}
             className="h-11 w-11 shrink-0"
@@ -960,29 +844,38 @@ export function ExamManager() {
               <select
                 value={filterSubjectId}
                 onChange={(e) => setFilterSubjectId(e.target.value)}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
               >
                 <option value="">Todas</option>
-                {subjects.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
                   </option>
                 ))}
               </select>
             </label>
             <label className="grid gap-1">
-              <span className="text-xs font-semibold text-zinc-700">Grupo</span>
+              <span className="text-xs font-semibold text-zinc-700">Grupo / Ficha</span>
               <select
                 value={filterGroupId}
                 onChange={(e) => setFilterGroupId(e.target.value)}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
               >
                 <option value="">Todos</option>
-                {groups.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                  </option>
-                ))}
+                <optgroup label="CESDE">
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="SENA">
+                  {fichas.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </label>
             <label className="grid gap-1">
@@ -990,12 +883,12 @@ export function ExamManager() {
               <select
                 value={filterMomentId}
                 onChange={(e) => setFilterMomentId(e.target.value)}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
               >
                 <option value="">Todos</option>
-                {moments.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
+                {moments.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
                   </option>
                 ))}
               </select>
@@ -1005,12 +898,12 @@ export function ExamManager() {
               <select
                 value={filterSiteId}
                 onChange={(e) => setFilterSiteId(e.target.value)}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
               >
                 <option value="">Todas</option>
-                {sites.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
+                {sites.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
                   </option>
                 ))}
               </select>
@@ -1020,12 +913,12 @@ export function ExamManager() {
               <select
                 value={filterShiftId}
                 onChange={(e) => setFilterShiftId(e.target.value)}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
               >
                 <option value="">Todas</option>
-                {shifts.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
+                {shifts.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
                   </option>
                 ))}
               </select>
@@ -1035,14 +928,14 @@ export function ExamManager() {
               <select
                 value={filterActive}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "all" || v === "active" || v === "inactive") setFilterActive(v);
+                  const id = e.target.value;
+                  if (id === "all" || id === "active" || id === "inactive") setFilterActive(id);
                 }}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
               >
                 <option value="all">Todos</option>
-                <option value="active">Solo activos</option>
-                <option value="inactive">Solo inactivos</option>
+                <option value="active">Activos</option>
+                <option value="inactive">Inactivos</option>
               </select>
             </label>
             <label className="grid gap-1">
@@ -1050,10 +943,10 @@ export function ExamManager() {
               <select
                 value={filterPublished}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "all" || v === "published" || v === "not_published") setFilterPublished(v);
+                  const id = e.target.value;
+                  if (id === "all" || id === "published" || id === "not_published") setFilterPublished(id);
                 }}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400"
               >
                 <option value="all">Todos</option>
                 <option value="published">Publicados</option>
@@ -1097,7 +990,12 @@ export function ExamManager() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {filteredRows.map((row) => {
                 const subject = (namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId) || "N/A";
-                const group = (namesById.get(`groups:${row.groupId}`) ?? row.groupId) || "N/A";
+                const group =
+                  ((row.institution === "SENA"
+                    ? namesById.get(`fichas:${row.groupId}`)
+                    : namesById.get(`groups:${row.groupId}`)) ??
+                    row.groupId) ||
+                  "N/A";
                 const moment = (namesById.get(`moments:${row.momentId}`) ?? row.momentId) || "N/A";
                 const site = (namesById.get(`sites:${row.siteId}`) ?? row.siteId) || "N/A";
                 const shift = (namesById.get(`shifts:${row.shiftId}`) ?? row.shiftId) || "N/A";
@@ -1212,7 +1110,12 @@ export function ExamManager() {
                 <tbody>
                   {filteredRows.map((row) => {
                     const subject = (namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId) || "N/A";
-                    const group = (namesById.get(`groups:${row.groupId}`) ?? row.groupId) || "N/A";
+                    const group =
+                      ((row.institution === "SENA"
+                        ? namesById.get(`fichas:${row.groupId}`)
+                        : namesById.get(`groups:${row.groupId}`)) ??
+                        row.groupId) ||
+                      "N/A";
                     const moment = (namesById.get(`moments:${row.momentId}`) ?? row.momentId) || "N/A";
                     const site = (namesById.get(`sites:${row.siteId}`) ?? row.siteId) || "N/A";
                     const shift = (namesById.get(`shifts:${row.shiftId}`) ?? row.shiftId) || "N/A";
@@ -1356,41 +1259,96 @@ export function ExamManager() {
             ) : null}
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Select
-                label="Materia"
-                value={subjectId}
-                onChange={setSubjectId}
-                options={subjects}
-                placeholder="Selecciona una materia"
-              />
-              <Select
-                label="Grupo"
-                value={groupId}
-                onChange={setGroupId}
-                options={groups}
-                placeholder="Selecciona un grupo"
-              />
-              <Select
-                label="Momento"
-                value={momentId}
-                onChange={setMomentId}
-                options={moments}
-                placeholder="Selecciona un momento"
-              />
-              <Select
-                label="Sede"
-                value={siteId}
-                onChange={setSiteId}
-                options={sites}
-                placeholder={sites.length ? "Selecciona una sede" : "Crea una sede primero"}
-              />
-              <Select
-                label="Jornada"
-                value={shiftId}
-                onChange={setShiftId}
-                options={shifts}
-                placeholder={shifts.length ? "Selecciona una jornada" : "Crea una jornada primero"}
-              />
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Institución</span>
+                <select
+                  value={institution}
+                  onChange={(e) => {
+                    const next = e.target.value === "SENA" ? "SENA" : "CESDE";
+                    setInstitution(next);
+                    setGroupId("");
+                  }}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="CESDE">CESDE</option>
+                  <option value="SENA">SENA</option>
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Materia</span>
+                <select
+                  value={subjectId}
+                  onChange={(e) => setSubjectId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">{institution === "SENA" ? "Ficha" : "Grupo"}</span>
+                <select
+                  value={groupId}
+                  onChange={(e) => setGroupId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {(institution === "SENA" ? fichas : groups).map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Momento</span>
+                <select
+                  value={momentId}
+                  onChange={(e) => setMomentId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {moments.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Sede</span>
+                <select
+                  value={siteId}
+                  onChange={(e) => setSiteId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Jornada</span>
+                <select
+                  value={shiftId}
+                  onChange={(e) => setShiftId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {shifts.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <div className="grid gap-1 sm:col-span-2">
                 <span className="text-xs font-semibold text-zinc-700">Nombre (automatico)</span>
@@ -1477,11 +1435,6 @@ export function ExamManager() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <TinyCreate label="Crear sede" placeholder="Ej: Sede Central" onCreate={createSite} />
-              <TinyCreate label="Crear jornada" placeholder="Ej: Manana / Noche" onCreate={createShift} />
-            </div>
-
             <div className="mt-4 flex items-center justify-end gap-3">
               <IconButton
                 variant="primary"
@@ -1543,34 +1496,81 @@ export function ExamManager() {
                 </div>
               </div>
 
-              <Select
-                label="Jornada"
-                value={shiftId}
-                onChange={setShiftId}
-                options={shifts}
-                placeholder={shifts.length ? "Selecciona una jornada" : "Crea una jornada primero"}
-              />
-              <Select
-                label="Grupo"
-                value={groupId}
-                onChange={setGroupId}
-                options={groups}
-                placeholder="Selecciona un grupo"
-              />
-              <Select
-                label="Momento"
-                value={momentId}
-                onChange={setMomentId}
-                options={moments}
-                placeholder="Selecciona un momento"
-              />
-              <Select
-                label="Sede"
-                value={siteId}
-                onChange={setSiteId}
-                options={sites}
-                placeholder={sites.length ? "Selecciona una sede" : "Crea una sede primero"}
-              />
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Institución</span>
+                <select
+                  value={institution}
+                  onChange={(e) => {
+                    const next = e.target.value === "SENA" ? "SENA" : "CESDE";
+                    setInstitution(next);
+                    setGroupId("");
+                  }}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="CESDE">CESDE</option>
+                  <option value="SENA">SENA</option>
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Jornada</span>
+                <select
+                  value={shiftId}
+                  onChange={(e) => setShiftId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {shifts.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">{institution === "SENA" ? "Ficha" : "Grupo"}</span>
+                <select
+                  value={groupId}
+                  onChange={(e) => setGroupId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {(institution === "SENA" ? fichas : groups).map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Momento</span>
+                <select
+                  value={momentId}
+                  onChange={(e) => setMomentId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {moments.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-zinc-700">Sede</span>
+                <select
+                  value={siteId}
+                  onChange={(e) => setSiteId(e.target.value)}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="">Seleccionar</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <label className="grid gap-1">
                 <span className="text-xs font-semibold text-zinc-700">Cantidad de preguntas</span>

@@ -37,6 +37,7 @@ export async function POST(req: Request) {
   const collections = [
     "attempts",
     "examTemplates",
+    "fichas",
     "groups",
     "moments",
     "publishedExams",
@@ -45,6 +46,7 @@ export async function POST(req: Request) {
     "sites",
     "subjects",
     "studyDocs",
+    "trimesters",
   ];
 
   for (const name of collections) {

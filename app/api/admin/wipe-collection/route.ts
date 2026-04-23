@@ -8,6 +8,7 @@ function toString(value: unknown, fallback = "") {
 const ALLOWED_COLLECTIONS = [
   "attempts",
   "examTemplates",
+  "fichas",
   "groups",
   "moments",
   "publishedExams",
@@ -16,6 +17,7 @@ const ALLOWED_COLLECTIONS = [
   "sites",
   "subjects",
   "studyDocs",
+  "trimesters",
 ] as const;
 
 type AllowedCollection = (typeof ALLOWED_COLLECTIONS)[number];
