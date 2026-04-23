@@ -541,40 +541,11 @@ export function ResultsManager() {
 
   const pageSize = 12;
   const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
   const pagedRows = useMemo(() => {
-    const start = page * pageSize;
+    const start = safePage * pageSize;
     return visibleRows.slice(start, start + pageSize);
-  }, [visibleRows, page]);
-
-  useEffect(() => {
-    setPage(0);
-  }, [search, examCodeFilter, statusFilter, onlyWithWrong, onlyWithFraud, sortKey, sortDir]);
-
-  useEffect(() => {
-    if (page <= pageCount - 1) return;
-    setPage(Math.max(0, pageCount - 1));
-  }, [page, pageCount]);
-
-  const exportRows = useMemo(
-    () =>
-      visibleRows.map((r) => ({
-        examen: r.examName,
-        codigo_examen: r.examCode,
-        estudiante: r.studentFullName,
-        documento: r.documentId,
-        correo: r.email,
-        estado: r.status,
-        nota_0_5: Number(r.grade0to5.toFixed(2)),
-        nota_0_50: Number(r.grade0to50.toFixed(2)),
-        fraude_tab: r.fraudTabSwitches,
-        fraude_clipboard: r.fraudClipboardAttempts,
-        fraude_total: r.fraudTotal,
-        fecha_envio: formatDate(r.submittedAt),
-        preguntas_malas_cantidad: r.wrongCount,
-        preguntas_malas_detalle: r.wrongDetails.join(" || "),
-      })),
-    [visibleRows],
-  );
+  }, [visibleRows, safePage]);
 
   const selectedWrong = useMemo(() => {
     if (!selectedRow) return [];
@@ -678,9 +649,35 @@ export function ResultsManager() {
   }
 
   async function exportExcel() {
-    const ExcelJSImport = await import("exceljs");
-    const WorkbookCtor = (ExcelJSImport as unknown as { Workbook?: new () => any; default?: { Workbook?: new () => any } }).Workbook
-      ?? (ExcelJSImport as unknown as { default?: { Workbook?: new () => any } }).default?.Workbook;
+    type ExcelCell = {
+      value?: unknown;
+      font?: unknown;
+      alignment?: unknown;
+      fill?: unknown;
+      border?: unknown;
+      numFmt?: unknown;
+    } & Record<string, unknown>;
+    type ExcelRow = { height?: number; eachCell: (cb: (cell: ExcelCell, col: number) => void) => void } & Record<string, unknown>;
+    type ExcelWorksheet = {
+      mergeCells: (ref: string) => void;
+      getCell: (addr: string) => ExcelCell;
+      getRow: (idx: number) => ExcelRow;
+      addRow: (vals: unknown[]) => ExcelRow;
+      columns?: Array<{ key?: string; width?: number }>;
+      autoFilter?: string;
+      eachRow: (cb: (row: ExcelRow, rowNumber: number) => void) => void;
+    } & Record<string, unknown>;
+    type ExcelWorkbook = {
+      creator?: string;
+      created?: Date;
+      addWorksheet: (name: string, opts?: Record<string, unknown>) => ExcelWorksheet;
+      xlsx: { writeBuffer: () => Promise<ArrayBuffer> };
+    } & Record<string, unknown>;
+    type ExcelJsModule = { Workbook?: new () => ExcelWorkbook; default?: { Workbook?: new () => ExcelWorkbook } };
+
+    const ExcelJSImport = (await import("exceljs")) as unknown;
+    const mod = ExcelJSImport as ExcelJsModule;
+    const WorkbookCtor = mod.Workbook ?? mod.default?.Workbook;
     if (!WorkbookCtor) throw new Error("No fue posible inicializar ExcelJS.");
 
     const workbook = new WorkbookCtor();
@@ -718,7 +715,7 @@ export function ResultsManager() {
       "Fecha envío",
     ];
     ws.addRow(headers);
-    ws.getRow(4).eachCell((cell: any) => {
+    ws.getRow(4).eachCell((cell: ExcelCell) => {
       cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF334155" } };
       cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
@@ -747,7 +744,7 @@ export function ResultsManager() {
         formatDate(r.submittedAt),
       ]);
       row.height = 22;
-      row.eachCell((cell: any, col: number) => {
+      row.eachCell((cell: ExcelCell, col: number) => {
         cell.border = {
           top: { style: "thin", color: { argb: "FFF1F5F9" } },
           left: { style: "thin", color: { argb: "FFF1F5F9" } },
@@ -792,7 +789,7 @@ export function ResultsManager() {
     detail.getRow(1).height = 24;
 
     detail.addRow(["Examen", "Código", "Estudiante", "Documento", "Fraude total", "Pregunta #", "Detalle (respuesta + motivo)"]);
-    detail.getRow(2).eachCell((cell: any) => {
+    detail.getRow(2).eachCell((cell: ExcelCell) => {
       cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4C1D95" } };
       cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
@@ -816,9 +813,9 @@ export function ResultsManager() {
       { width: 10 },
       { width: 90 },
     ];
-    detail.eachRow((row: any, rowNumber: number) => {
+    detail.eachRow((row: ExcelRow, rowNumber: number) => {
       if (rowNumber <= 2) return;
-      row.eachCell((cell: any) => {
+      row.eachCell((cell: ExcelCell) => {
         cell.alignment = { vertical: "top", wrapText: true };
         cell.border = {
           top: { style: "thin", color: { argb: "FFE2E8F0" } },
@@ -1042,7 +1039,7 @@ export function ResultsManager() {
     const cardW = (pageWidth - 32 * 2 - 12 * 3) / 4;
     const cardH = 64;
     const cards = [
-      { label: "Nota (0-5)", value: grade0to5.toFixed(2) },
+      { label: "Nota", value: `${grade0to5.toFixed(2)} (${grade0to50.toFixed(0)}/50)` },
       { label: "Correctas", value: String(correctCount) },
       { label: "Por mejorar", value: String(wrongCount) },
       { label: "Fraude", value: String(fraudTotal) },
@@ -1050,9 +1047,9 @@ export function ResultsManager() {
     cards.forEach((c, i) => {
       const x = 32 + i * (cardW + 12);
       pdf.setFillColor(255, 255, 255);
-      (pdf as unknown as { roundedRect?: (...args: any[]) => void }).roundedRect?.(x, statY, cardW, cardH, 14, 14, "F");
+      (pdf as unknown as { roundedRect?: (...args: unknown[]) => void }).roundedRect?.(x, statY, cardW, cardH, 14, 14, "F");
       pdf.setDrawColor(230, 232, 240);
-      (pdf as unknown as { roundedRect?: (...args: any[]) => void }).roundedRect?.(x, statY, cardW, cardH, 14, 14, "S");
+      (pdf as unknown as { roundedRect?: (...args: unknown[]) => void }).roundedRect?.(x, statY, cardW, cardH, 14, 14, "S");
       pdf.setTextColor(71, 85, 105);
       pdf.setFontSize(9);
       pdf.text(c.label, x + 14, statY + 22);
@@ -1152,8 +1149,11 @@ export function ResultsManager() {
     setExportingBulkZip(true);
     setError(null);
     try {
-      const JSZipModule = await import("jszip");
-      const JSZipCtor = (JSZipModule as unknown as { default?: new () => any }).default ?? (JSZipModule as unknown as new () => any);
+      type JSZipLike = { file: (name: string, data: Blob) => void; generateAsync: (opts: Record<string, unknown>) => Promise<Blob> };
+      type JSZipCtor = new () => JSZipLike;
+      const JSZipModule = (await import("jszip")) as unknown;
+      const mod = JSZipModule as { default?: JSZipCtor };
+      const JSZipCtor = mod.default ?? (JSZipModule as JSZipCtor);
       const zip = new JSZipCtor();
       const sorted = [...selectedRows].sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0));
 
@@ -1230,32 +1230,42 @@ export function ResultsManager() {
             <div className="flex w-full max-w-4xl flex-col gap-2 sm:flex-row">
             <input
               value={examCodeFilter}
-              onChange={(e) => setExamCodeFilter(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => {
+                setExamCodeFilter(e.target.value.replace(/\D/g, "").slice(0, 6));
+                setPage(0);
+              }}
               placeholder="Filtrar por código de examen (6 dígitos)..."
               className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
             />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
               placeholder="Buscar por examen, estudiante, documento, correo o estado..."
               className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
             />
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "all" || v === "submitted" || v === "in_progress" || v === "annulled" || v === "fraud") {
-                  setStatusFilter(v);
-                }
-              }}
-              className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400 sm:w-[210px]"
-            >
-              <option value="all">Todos</option>
-              <option value="submitted">Enviados</option>
-              <option value="in_progress">En progreso</option>
-              <option value="fraud">Fraude</option>
-              <option value="annulled">Anulados</option>
-            </select>
+            <div className="w-full sm:w-[360px]">
+              <select
+                aria-label="Estado"
+                value={statusFilter}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id === "all" || id === "submitted" || id === "in_progress" || id === "annulled" || id === "fraud") {
+                    setStatusFilter(id);
+                    setPage(0);
+                  }
+                }}
+                className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              >
+                <option value="all">Todos</option>
+                <option value="submitted">Enviados</option>
+                <option value="in_progress">En progreso</option>
+                <option value="fraud">Fraude</option>
+                <option value="annulled">Anulados</option>
+              </select>
+            </div>
           </div>
             <p className="text-sm text-zinc-600">
               {loading ? "Cargando..." : `${visibleRows.length} resultados`}
@@ -1265,11 +1275,25 @@ export function ResultsManager() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
-                <input type="checkbox" checked={onlyWithWrong} onChange={(e) => setOnlyWithWrong(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={onlyWithWrong}
+                  onChange={(e) => {
+                    setOnlyWithWrong(e.target.checked);
+                    setPage(0);
+                  }}
+                />
                 Solo con malas
               </label>
               <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
-                <input type="checkbox" checked={onlyWithFraud} onChange={(e) => setOnlyWithFraud(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={onlyWithFraud}
+                  onChange={(e) => {
+                    setOnlyWithFraud(e.target.checked);
+                    setPage(0);
+                  }}
+                />
                 Solo con fraude
               </label>
             </div>
@@ -1358,6 +1382,7 @@ export function ResultsManager() {
                       onClick={() => {
                         setSortKey("examName");
                         setSortDir((d) => (sortKey === "examName" ? (d === "asc" ? "desc" : "asc") : "asc"));
+                        setPage(0);
                       }}
                       className="inline-flex items-center gap-1"
                     >
@@ -1370,6 +1395,7 @@ export function ResultsManager() {
                       onClick={() => {
                         setSortKey("studentFullName");
                         setSortDir((d) => (sortKey === "studentFullName" ? (d === "asc" ? "desc" : "asc") : "asc"));
+                        setPage(0);
                       }}
                       className="inline-flex items-center gap-1"
                     >
@@ -1382,6 +1408,7 @@ export function ResultsManager() {
                       onClick={() => {
                         setSortKey("grade0to5");
                         setSortDir((d) => (sortKey === "grade0to5" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                        setPage(0);
                       }}
                       className="inline-flex items-center gap-1 whitespace-nowrap"
                     >
@@ -1394,6 +1421,7 @@ export function ResultsManager() {
                       onClick={() => {
                         setSortKey("fraudTotal");
                         setSortDir((d) => (sortKey === "fraudTotal" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                        setPage(0);
                       }}
                       className="inline-flex items-center gap-1"
                     >
@@ -1406,6 +1434,7 @@ export function ResultsManager() {
                       onClick={() => {
                         setSortKey("submittedAt");
                         setSortDir((d) => (sortKey === "submittedAt" ? (d === "asc" ? "desc" : "asc") : "desc"));
+                        setPage(0);
                       }}
                       className="inline-flex items-center gap-1"
                     >
@@ -1508,7 +1537,11 @@ export function ResultsManager() {
                 ) : null}
               </tbody>
             </table>
-            <MinimalPagination pageCount={pageCount} page={page} onChange={setPage} />
+            <MinimalPagination
+              pageCount={pageCount}
+              page={safePage}
+              onChange={(next) => setPage(Math.max(0, Math.min(pageCount - 1, next)))}
+            />
           </div>
         )}
       </section>

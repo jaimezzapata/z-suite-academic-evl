@@ -61,9 +61,11 @@ export async function POST(req: Request) {
     const sessionDays = Math.max(1, Math.min(365, sessionDaysRaw));
     const chapters = readChapters(body?.chapters);
 
+    const isSena = institution === "SENA";
+
     if (!siteId || !shiftId || !groupId || !subjectId) {
       return NextResponse.json(
-        { error: "Debes seleccionar institución, sede, jornada, grupo y materia." },
+        { error: `Debes seleccionar institución, sede, jornada, ${isSena ? "ficha" : "grupo"} y materia.` },
         { status: 400 },
       );
     }
@@ -93,15 +95,15 @@ export async function POST(req: Request) {
     const adminSnap = await adminDb.collection("admins").doc(uid).get();
     if (!adminSnap.exists) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const [subjectSnap, groupSnap, siteSnap, shiftSnap] = await Promise.all([
+    const [subjectSnap, groupOrFichaSnap, siteSnap, shiftSnap] = await Promise.all([
       adminDb.collection("subjects").doc(subjectId).get(),
-      adminDb.collection("groups").doc(groupId).get(),
+      adminDb.collection(isSena ? "fichas" : "groups").doc(groupId).get(),
       adminDb.collection("sites").doc(siteId).get(),
       adminDb.collection("shifts").doc(shiftId).get(),
     ]);
 
     const subjectName = toString(subjectSnap.data()?.name, subjectId);
-    const groupName = toString(groupSnap.data()?.name, groupId);
+    const groupName = toString(groupOrFichaSnap.data()?.name, groupId);
     const siteName = toString(siteSnap.data()?.name, siteId);
     const shiftName = toString(shiftSnap.data()?.name, shiftId);
     const bookletTitle = titleInput || `${subjectName} · ${groupName}`;
@@ -125,6 +127,7 @@ export async function POST(req: Request) {
       shiftName,
       groupId,
       groupName,
+      ...(isSena ? { fichaId: groupId, fichaNumber: groupName } : {}),
       subjectId,
       subjectName,
       slug,
@@ -153,6 +156,7 @@ export async function POST(req: Request) {
         subjectName,
         groupId,
         groupName,
+        ...(isSena ? { fichaId: groupId, fichaNumber: groupName } : {}),
         weekIndex: chapterIndex,
         weekLabel: `C${chapterIndex}`,
         chapterIndex,

@@ -117,7 +117,7 @@ export async function POST(req: Request) {
   }
 
   if (!subjectId) return NextResponse.json({ error: "Debes seleccionar una materia." }, { status: 400 });
-  if (!groupId) return NextResponse.json({ error: "Debes seleccionar un grupo." }, { status: 400 });
+  if (!groupId) return NextResponse.json({ error: "Debes seleccionar un grupo o ficha." }, { status: 400 });
   if (!institution) return NextResponse.json({ error: "Debes seleccionar una institución." }, { status: 400 });
   if (!period) return NextResponse.json({ error: "Debes indicar el periodo (ej. 2026-01)." }, { status: 400 });
   if (!campus) return NextResponse.json({ error: "Debes indicar la sede." }, { status: 400 });
@@ -128,6 +128,7 @@ export async function POST(req: Request) {
   if (endDateRaw && !endDate) return NextResponse.json({ error: "Fecha de fin inválida." }, { status: 400 });
 
   const isCesde = institution.toUpperCase() === "CESDE";
+  const isSena = institution.toUpperCase() === "SENA";
   const weekCount = isCesde ? 18 : 11;
 
   const expectedEnd = addDays(startDate, (weekCount - 1) * 7);
@@ -142,7 +143,7 @@ export async function POST(req: Request) {
 
   const subjectsSnap = await adminDb.collection("subjects").doc(subjectId).get();
   const subjectName = subjectsSnap.exists ? toString(subjectsSnap.data()?.name, subjectId) : subjectId;
-  const groupsSnap = await adminDb.collection("groups").doc(groupId).get();
+  const groupsSnap = await adminDb.collection(isSena ? "fichas" : "groups").doc(groupId).get();
   const groupName = groupsSnap.exists ? toString(groupsSnap.data()?.name, groupId) : groupId;
 
   const workspaceId = makeWorkspaceId([institution.toUpperCase(), period, campus, groupId]);
