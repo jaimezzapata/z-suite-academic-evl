@@ -33,7 +33,8 @@ const navItems: NavEntry[] = [
   { type: "link", label: "Dashboard", href: "/admin", hint: "Metricas generales", icon: LayoutDashboard },
   { type: "link", label: "Banco", href: "/admin/bank", hint: "Preguntas y carga", icon: BookOpen },
   { type: "link", label: "Examenes", href: "/admin/templates", hint: "Creacion y control", icon: ClipboardList },
-  { type: "link", label: "Documentacion", href: "/admin/documentation", hint: "Central de publicación", icon: BookOpen },
+  { type: "link", label: "Grupos", href: "/admin/groups", hint: "Cuadernillos por grupo", icon: BookOpen },
+  // { type: "link", label: "Documentacion", href: "/admin/documentation", hint: "Central de publicación", icon: BookOpen },
   { type: "link", label: "Drive", href: "/admin/drive", hint: "Archivos y estructura", icon: Folder },
   { type: "link", label: "IA Documentación", href: "/admin/settings/ai-docs", hint: "Generar y publicar", icon: Bot },
   { type: "link", label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },
@@ -69,13 +70,13 @@ function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-zinc-200 px-5 py-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-sm font-semibold text-white">
+      <div className="flex items-center gap-3 border-b border-border px-5 py-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
           ZS
         </div>
         <div>
-          <p className="text-sm font-semibold text-zinc-900">Z-Suite Eval</p>
-          <p className="text-xs text-zinc-500">Panel academico</p>
+          <p className="text-sm font-semibold text-foreground">Z-Suite Eval</p>
+          <p className="text-xs text-foreground/55">Panel academico</p>
         </div>
       </div>
 
@@ -83,7 +84,10 @@ function Sidebar({
         {navItems.map((item) => {
           if (item.type === "section") {
             return (
-              <div key={item.label} className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              <div
+                key={item.label}
+                className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-foreground/50"
+              >
                 {item.label}
               </div>
             );
@@ -95,18 +99,18 @@ function Sidebar({
               key={item.label}
               href={item.href}
               onClick={onNavigate}
-              className={`flex items-start gap-3 rounded-xl px-3 py-2.5 transition ${
+              className={`group flex items-start gap-3 rounded-xl px-3 py-2.5 transition ${
                 active
-                  ? "bg-zinc-900 text-white"
-                  : "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-950"
+                  ? "bg-primary/10 text-primary ring-1 ring-primary/15"
+                  : "text-foreground/70 hover:bg-muted hover:text-foreground"
               }`}
             >
-              <div className={`mt-0.5 shrink-0 ${active ? "text-white" : "text-zinc-500"}`}>
+              <div className={`mt-0.5 shrink-0 ${active ? "text-primary" : "text-foreground/45 group-hover:text-foreground/70"}`}>
                 <Icon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium">{item.label}</p>
-                <p className={`text-xs ${active ? "text-zinc-300" : "text-zinc-500"}`}>
+                <p className={`text-xs ${active ? "text-primary/70" : "text-foreground/45"}`}>
                   {item.hint}
                 </p>
               </div>
@@ -142,27 +146,27 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-zinc-50 text-zinc-900">
+    <div className="h-screen overflow-hidden bg-background text-foreground">
       <div className="flex h-screen">
-        <aside className="sticky top-0 hidden h-screen w-72 border-r border-zinc-200 bg-white lg:block">
+        <aside className="sticky top-0 hidden h-screen w-72 border-r border-border bg-surface lg:block">
           <Sidebar pathname={pathname} />
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/95 backdrop-blur">
+          <header className="sticky top-0 z-20 border-b border-border bg-surface/80 backdrop-blur">
             <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
               <button
                 type="button"
                 onClick={() => setMobileOpen(true)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-700 lg:hidden"
+                className="zs-btn-secondary h-10 w-10 px-0 lg:hidden"
                 aria-label="Abrir menu"
               >
                 <Menu className="h-5 w-5" />
               </button>
 
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-zinc-900">Control de examenes</p>
-                <p className="truncate text-xs text-zinc-500">
+                <p className="truncate text-sm font-semibold text-foreground">Control de examenes</p>
+                <p className="truncate text-xs text-foreground/55">
                   Monitorea actividad, resultados y estado general de la plataforma
                 </p>
               </div>
@@ -173,24 +177,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   <img
                     src={profilePhoto}
                     alt={userName}
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-zinc-200"
+                    className="h-10 w-10 rounded-full object-cover ring-1 ring-border"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900 text-xs font-semibold text-white">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-semibold text-white shadow-sm">
                     {initials}
                   </div>
                 )}
 
                 <div className="hidden sm:block">
-                  <p className="max-w-48 truncate text-sm font-medium text-zinc-900">{userName}</p>
-                  <p className="max-w-48 truncate text-xs text-zinc-500">{userEmail}</p>
+                  <p className="max-w-48 truncate text-sm font-medium text-foreground">{userName}</p>
+                  <p className="max-w-48 truncate text-xs text-foreground/55">{userEmail}</p>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                  className="zs-btn-danger-soft"
                 >
                   Cerrar sesion
                 </button>
@@ -212,13 +216,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
             className="absolute inset-0 bg-black/40"
             aria-label="Cerrar menu"
           />
-          <aside className="absolute left-0 top-0 h-full w-[85%] max-w-xs bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-4">
-              <p className="text-sm font-semibold text-zinc-900">Menu</p>
+          <aside className="absolute left-0 top-0 h-full w-[85%] max-w-xs bg-surface shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">Menu</p>
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
-                className="h-9 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-700"
+                className="zs-btn-secondary h-9"
               >
                 Cerrar
               </button>

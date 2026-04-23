@@ -15,14 +15,14 @@ export function IconButton({
   children: ReactNode;
 }) {
   const base =
-    "inline-flex items-center justify-center rounded-xl ring-1 transition disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-50";
 
   const v =
     variant === "primary"
-      ? "bg-zinc-900 text-white ring-zinc-900/10 hover:bg-zinc-800"
+      ? "border-primary bg-primary text-primary-foreground hover:opacity-95"
       : variant === "danger"
-        ? "bg-rose-50 text-rose-700 ring-rose-200 hover:bg-rose-100"
-        : "bg-white text-zinc-800 ring-zinc-200 hover:bg-zinc-100";
+        ? "border-danger/25 bg-danger/10 text-danger hover:bg-danger/15"
+        : "border-border bg-surface text-foreground/80 hover:bg-muted";
 
   return (
     <button

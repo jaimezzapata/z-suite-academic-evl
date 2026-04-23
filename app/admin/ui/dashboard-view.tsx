@@ -187,7 +187,7 @@ function MiniBars({ values }: { values: number[] }) {
       {values.map((v, idx) => (
         <div
           key={idx}
-          className="w-2 rounded-sm bg-zinc-900/90"
+          className="w-2 rounded-sm bg-primary"
           style={{ height: `${Math.round((v / max) * 100)}%` }}
         />
       ))}
@@ -625,15 +625,15 @@ export function DashboardView() {
   return (
     <div className="space-y-6">
       {error ? (
-        <div className="whitespace-pre-line rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="whitespace-pre-line rounded-2xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </div>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <section className="zs-card p-4">
         <div className="mb-3">
-          <h2 className="text-lg font-semibold tracking-tight text-zinc-950">Accesos directos</h2>
-          <p className="text-sm text-zinc-500">Navega rápido a los módulos clave del panel.</p>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Accesos directos</h2>
+          <p className="text-sm text-foreground/55">Navega rápido a los módulos clave del panel.</p>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {quickLinks.map((item) => {
@@ -642,14 +642,14 @@ export function DashboardView() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="group rounded-xl border border-zinc-200 bg-white px-4 py-3 transition hover:border-zinc-300 hover:bg-zinc-50"
+                className="group rounded-xl border border-border bg-surface px-4 py-3 transition hover:bg-muted"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-zinc-900">{item.label}</p>
-                    <p className="mt-0.5 text-xs text-zinc-500">{item.hint}</p>
+                    <p className="text-sm font-semibold text-foreground">{item.label}</p>
+                    <p className="mt-0.5 text-xs text-foreground/55">{item.hint}</p>
                   </div>
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-100 text-zinc-700 group-hover:bg-zinc-900 group-hover:text-white">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-foreground/70 group-hover:bg-primary group-hover:text-primary-foreground">
                     <Icon className="h-4 w-4" />
                   </div>
                 </div>
@@ -660,53 +660,53 @@ export function DashboardView() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <article className="zs-card p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm text-zinc-500">Exámenes publicados</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">
+              <p className="text-sm text-foreground/55">Exámenes publicados</p>
+              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
                 {loading ? "-" : formatCompactNumber(data.counts.publishedActive)}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">Activos (status: published)</p>
+              <p className="mt-1 text-xs text-foreground/55">Activos (status: published)</p>
             </div>
             <MiniSparkline values={data.activity14.values.slice(-10)} tone="indigo" />
           </div>
         </article>
 
-        <article className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-zinc-500">Plantillas de examen</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">
+        <article className="zs-card p-4">
+          <p className="text-sm text-foreground/55">Plantillas de examen</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
             {loading ? "-" : formatCompactNumber(data.counts.templatesTotal)}
           </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-zinc-600">
+          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
             <span>Activas</span>
-            <span className="font-semibold text-zinc-900">
+            <span className="font-semibold text-foreground">
               {loading ? "-" : formatCompactNumber(data.counts.templatesActive)}
             </span>
           </div>
         </article>
 
-        <article className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-zinc-500">Banco de preguntas</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">
+        <article className="zs-card p-4">
+          <p className="text-sm text-foreground/55">Banco de preguntas</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
             {loading ? "-" : formatCompactNumber(data.counts.questionsTotal)}
           </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-zinc-600">
+          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
             <span>Publicadas</span>
-            <span className="font-semibold text-zinc-900">
+            <span className="font-semibold text-foreground">
               {loading ? "-" : formatCompactNumber(data.counts.questionsPublished)}
             </span>
           </div>
         </article>
 
-        <article className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <article className="zs-card p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm text-zinc-500">Resultados (7 días)</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">
+              <p className="text-sm text-foreground/55">Resultados (7 días)</p>
+              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
                 {avgGrade7 === null ? "-" : `${formatFixed(avgGrade7, 2)} / 5`}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-foreground/55">
                 {data.summary7.submittedAttempts ? `${data.summary7.submittedAttempts} envíos` : "Sin envíos"}
               </p>
             </div>
@@ -716,44 +716,44 @@ export function DashboardView() {
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <article className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm xl:col-span-2">
-          <h2 className="text-lg font-semibold tracking-tight text-zinc-950">Estado de intentos</h2>
-          <p className="text-sm text-zinc-500">Resumen por estados y fraude.</p>
+        <article className="zs-card p-5 xl:col-span-2">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Estado de intentos</h2>
+          <p className="text-sm text-foreground/55">Resumen por estados y fraude.</p>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl bg-zinc-50 px-3 py-3">
-              <p className="text-xs text-zinc-500">En progreso</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950">
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">En progreso</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 {loading ? "-" : formatCompactNumber(data.counts.attemptsInProgress)}
               </p>
             </div>
-            <div className="rounded-xl bg-zinc-50 px-3 py-3">
-              <p className="text-xs text-zinc-500">Enviados (todos)</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950">
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Enviados (todos)</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 {loading ? "-" : formatCompactNumber(data.counts.attemptsSubmitted)}
               </p>
             </div>
-            <div className="rounded-xl bg-zinc-50 px-3 py-3">
-              <p className="text-xs text-zinc-500">Fraude (enviado)</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950">
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Fraude (enviado)</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 {loading ? "-" : formatCompactNumber(data.counts.attemptsFraudSubmitted)}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-foreground/55">
                 {fraud7 ? `${fraud7} con eventos` : "Sin eventos en recientes"}
               </p>
             </div>
-            <div className="rounded-xl bg-zinc-50 px-3 py-3">
-              <p className="text-xs text-zinc-500">Anulados</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950">
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Anulados</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 {loading ? "-" : formatCompactNumber(data.counts.attemptsAnnulled)}
               </p>
             </div>
           </div>
         </article>
 
-        <article className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold tracking-tight text-zinc-950">Banco</h2>
-          <p className="text-sm text-zinc-500">Estado de preguntas y distribución por grupo.</p>
+        <article className="zs-card p-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Banco</h2>
+          <p className="text-sm text-foreground/55">Estado de preguntas y distribución por grupo.</p>
 
           <div className="mt-4">
             <Donut
@@ -768,17 +768,17 @@ export function DashboardView() {
           <div className="mt-5 space-y-3">
             {data.completionByGroup.map((item) => (
               <div key={item.group}>
-                <div className="mb-1 flex items-center justify-between text-xs text-zinc-600">
+                <div className="mb-1 flex items-center justify-between text-xs text-foreground/65">
                   <span className="truncate">{item.group}</span>
                   <span>{item.value}%</span>
                 </div>
-                <div className="h-2 rounded-full bg-zinc-100">
-                  <div className="h-full rounded-full bg-zinc-900" style={{ width: `${item.value}%` }} />
+                <div className="h-2 rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${item.value}%` }} />
                 </div>
               </div>
             ))}
             {!data.completionByGroup.length ? (
-              <div className="rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
+              <div className="zs-card-muted px-3 py-6 text-center text-sm text-foreground/55">
                 {loading ? "Cargando análisis..." : "No hay grupos/preguntas para analizar."}
               </div>
             ) : null}
@@ -787,21 +787,21 @@ export function DashboardView() {
       </section>
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <article className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold tracking-tight text-zinc-950">Top exámenes (7 días)</h2>
-          <p className="text-sm text-zinc-500">Por cantidad de envíos y promedio de nota.</p>
+        <article className="zs-card p-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Top exámenes (7 días)</h2>
+          <p className="text-sm text-foreground/55">Por cantidad de envíos y promedio de nota.</p>
           {data.topExams7.length ? (
             <div className="mt-4 space-y-3">
               {data.topExams7.map((row) => (
-                <div key={`${row.exam}-${row.group}`} className="rounded-xl border border-zinc-200 bg-white p-3">
+                <div key={`${row.exam}-${row.group}`} className="rounded-xl border border-border bg-surface p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-zinc-950">{row.exam}</p>
-                      <p className="mt-0.5 truncate text-xs text-zinc-600">{row.group}</p>
+                      <p className="truncate text-sm font-semibold text-foreground">{row.exam}</p>
+                      <p className="mt-0.5 truncate text-xs text-foreground/65">{row.group}</p>
                     </div>
-                    <div className="text-right text-xs text-zinc-600">
+                    <div className="text-right text-xs text-foreground/65">
                       <div>
-                        <span className="font-semibold text-zinc-900">{row.submissions}</span> envíos
+                        <span className="font-semibold text-foreground">{row.submissions}</span> envíos
                       </div>
                       <div className="mt-1">{row.avg}</div>
                     </div>
@@ -810,20 +810,20 @@ export function DashboardView() {
               ))}
             </div>
           ) : (
-            <div className="mt-4 rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
+            <div className="mt-4 zs-card-muted px-3 py-6 text-center text-sm text-foreground/55">
               {loading ? "Cargando..." : "Aún no hay datos para top exámenes."}
             </div>
           )}
         </article>
 
-        <article className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold tracking-tight text-zinc-950">Últimos resultados</h2>
-          <p className="text-sm text-zinc-500">Vista rápida de envíos recientes.</p>
+        <article className="zs-card p-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Últimos resultados</h2>
+          <p className="text-sm text-foreground/55">Vista rápida de envíos recientes.</p>
           {data.latestAttempts.length ? (
-            <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200">
+            <div className="mt-4 overflow-hidden rounded-xl border border-border bg-surface">
               <table className="w-full table-fixed text-left">
-                <thead className="bg-zinc-50">
-                  <tr className="text-xs text-zinc-500">
+                <thead className="bg-muted">
+                  <tr className="text-xs text-foreground/55">
                     <th className="w-[14%] px-3 py-2 font-medium">Fecha</th>
                     <th className="w-[34%] px-3 py-2 font-medium">Examen</th>
                     <th className="w-[28%] px-3 py-2 font-medium">Estudiante</th>
@@ -833,18 +833,18 @@ export function DashboardView() {
                 </thead>
                 <tbody>
                   {data.latestAttempts.map((row) => (
-                    <tr key={`${row.when}-${row.exam}-${row.student}`} className="border-t border-zinc-100 text-sm text-zinc-700">
-                      <td className="px-3 py-2 text-xs text-zinc-600">{row.when}</td>
+                    <tr key={`${row.when}-${row.exam}-${row.student}`} className="border-t border-border/60 text-sm text-foreground/70">
+                      <td className="px-3 py-2 text-xs text-foreground/65">{row.when}</td>
                       <td className="px-3 py-2">
-                        <div className="truncate font-medium text-zinc-900">{row.exam}</div>
-                        <div className="truncate text-xs text-zinc-500">{row.status}</div>
+                        <div className="truncate font-medium text-foreground">{row.exam}</div>
+                        <div className="truncate text-xs text-foreground/55">{row.status}</div>
                       </td>
                       <td className="px-3 py-2">
                         <div className="truncate">{row.student}</div>
                       </td>
-                      <td className="px-3 py-2 font-medium text-zinc-900">{row.grade}</td>
+                      <td className="px-3 py-2 font-medium text-foreground">{row.grade}</td>
                       <td className="px-3 py-2">
-                        <span className={row.fraud > 0 ? "font-semibold text-amber-700" : "text-zinc-500"}>
+                        <span className={row.fraud > 0 ? "font-semibold text-amber-700" : "text-foreground/55"}>
                           {row.fraud}
                         </span>
                       </td>
@@ -854,7 +854,7 @@ export function DashboardView() {
               </table>
             </div>
           ) : (
-            <div className="mt-4 rounded-xl bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
+            <div className="mt-4 zs-card-muted px-3 py-6 text-center text-sm text-foreground/55">
               {loading ? "Cargando..." : "Aún no hay envíos para mostrar."}
             </div>
           )}

@@ -20,17 +20,17 @@ export function MinimalPagination({ pageCount, page, onChange }: MinimalPaginati
       onPageChange={(e) => onChange(e.selected)}
       containerClassName="mt-4 flex flex-wrap items-center justify-center gap-1"
       pageClassName=""
-      pageLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+      pageLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-foreground/70 hover:bg-muted"
       previousClassName=""
-      previousLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+      previousLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-foreground/70 hover:bg-muted"
       nextClassName=""
-      nextLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+      nextLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-foreground/70 hover:bg-muted"
       breakClassName=""
-      breakLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-500"
+      breakLinkClassName="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-foreground/45"
       activeClassName=""
-      activeLinkClassName="border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-900"
+      activeLinkClassName="border-primary bg-primary text-primary-foreground hover:bg-primary"
       disabledClassName="opacity-50"
-      disabledLinkClassName="cursor-not-allowed hover:bg-white"
+      disabledLinkClassName="cursor-not-allowed hover:bg-surface"
     />
   );
 }

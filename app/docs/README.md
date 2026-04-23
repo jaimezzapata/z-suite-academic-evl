@@ -2,7 +2,7 @@
 
 > Documentación técnica extensa y detallada sobre fundamentos de HTML, etiquetas de formularios, tablas y convenciones de nombrado de archivos y carpetas.
 
----
+***
 
 ## 📋 Tabla de Contenidos
 
@@ -15,39 +15,39 @@
    - [Etiquetas Semánticas Principales](#16-etiquetas-semánticas-principales)
 2. [Etiquetas de Formularios](#2-etiquetas-de-formularios)
    - [¿Qué es un Formulario?](#21-qué-es-un-formulario)
-   - [Etiqueta `<form>`](#22-etiqueta-form)
-   - [Etiqueta `<input>` y sus tipos](#23-etiqueta-input-y-sus-tipos)
-   - [Etiqueta `<label>`](#24-etiqueta-label)
-   - [Etiqueta `<textarea>`](#25-etiqueta-textarea)
-   - [Etiqueta `<select>` y `<option>`](#26-etiqueta-select-y-option)
-   - [Etiqueta `<optgroup>`](#27-etiqueta-optgroup)
-   - [Etiqueta `<button>`](#28-etiqueta-button)
-   - [Etiqueta `<fieldset>` y `<legend>`](#29-etiqueta-fieldset-y-legend)
-   - [Etiqueta `<datalist>`](#210-etiqueta-datalist)
-   - [Etiqueta `<output>`](#211-etiqueta-output)
-   - [Etiqueta `<progress>`](#212-etiqueta-progress)
-   - [Etiqueta `<meter>`](#213-etiqueta-meter)
+   - [Etiqueta](#22-etiqueta-form) [`<form>`](#22-etiqueta-form)
+   - [Etiqueta](#23-etiqueta-input-y-sus-tipos) [`<input>`](#23-etiqueta-input-y-sus-tipos) [y sus tipos](#23-etiqueta-input-y-sus-tipos)
+   - [Etiqueta](#24-etiqueta-label) [`<label>`](#24-etiqueta-label)
+   - [Etiqueta](#25-etiqueta-textarea) [`<textarea>`](#25-etiqueta-textarea)
+   - [Etiqueta](#26-etiqueta-select-y-option) [`<select>`](#26-etiqueta-select-y-option) [y](#26-etiqueta-select-y-option) [`<option>`](#26-etiqueta-select-y-option)
+   - [Etiqueta](#27-etiqueta-optgroup) [`<optgroup>`](#27-etiqueta-optgroup)
+   - [Etiqueta](#28-etiqueta-button) [`<button>`](#28-etiqueta-button)
+   - [Etiqueta](#29-etiqueta-fieldset-y-legend) [`<fieldset>`](#29-etiqueta-fieldset-y-legend) [y](#29-etiqueta-fieldset-y-legend) [`<legend>`](#29-etiqueta-fieldset-y-legend)
+   - [Etiqueta](#210-etiqueta-datalist) [`<datalist>`](#210-etiqueta-datalist)
+   - [Etiqueta](#211-etiqueta-output) [`<output>`](#211-etiqueta-output)
+   - [Etiqueta](#212-etiqueta-progress) [`<progress>`](#212-etiqueta-progress)
+   - [Etiqueta](#213-etiqueta-meter) [`<meter>`](#213-etiqueta-meter)
 3. [Etiquetas de Tablas](#3-etiquetas-de-tablas)
    - [¿Qué es una Tabla en HTML?](#31-qué-es-una-tabla-en-html)
-   - [Etiqueta `<table>`](#32-etiqueta-table)
-   - [Etiqueta `<thead>`](#33-etiqueta-thead)
-   - [Etiqueta `<tbody>`](#34-etiqueta-tbody)
-   - [Etiqueta `<tfoot>`](#35-etiqueta-tfoot)
-   - [Etiqueta `<tr>`](#36-etiqueta-tr)
-   - [Etiqueta `<th>`](#37-etiqueta-th)
-   - [Etiqueta `<td>`](#38-etiqueta-td)
-   - [Etiqueta `<caption>`](#39-etiqueta-caption)
-   - [Etiqueta `<colgroup>` y `<col>`](#310-etiqueta-colgroup-y-col)
+   - [Etiqueta](#32-etiqueta-table) [`<table>`](#32-etiqueta-table)
+   - [Etiqueta](#33-etiqueta-thead) [`<thead>`](#33-etiqueta-thead)
+   - [Etiqueta](#34-etiqueta-tbody) [`<tbody>`](#34-etiqueta-tbody)
+   - [Etiqueta](#35-etiqueta-tfoot) [`<tfoot>`](#35-etiqueta-tfoot)
+   - [Etiqueta](#36-etiqueta-tr) [`<tr>`](#36-etiqueta-tr)
+   - [Etiqueta](#37-etiqueta-th) [`<th>`](#37-etiqueta-th)
+   - [Etiqueta](#38-etiqueta-td) [`<td>`](#38-etiqueta-td)
+   - [Etiqueta](#39-etiqueta-caption) [`<caption>`](#39-etiqueta-caption)
+   - [Etiqueta](#310-etiqueta-colgroup-y-col) [`<colgroup>`](#310-etiqueta-colgroup-y-col) [y](#310-etiqueta-colgroup-y-col) [`<col>`](#310-etiqueta-colgroup-y-col)
    - [Estructura Completa de una Tabla](#311-estructura-completa-de-una-tabla)
 4. [Nomenclatura de Carpetas y Archivos](#4-nomenclatura-de-carpetas-y-archivos)
    - [¿Por qué importa la nomenclatura?](#41-por-qué-importa-la-nomenclatura)
    - [kebab-case](#42-kebab-case)
-   - [snake_case](#43-snake_case)
+   - [snake\_case](#43-snake_case)
    - [PascalCase](#44-pascalcase)
    - [camelCase](#45-camelcase)
    - [Tabla Comparativa](#46-tabla-comparativa)
 
----
+***
 
 ## 1. HTML — Fundamentos y Semántica
 
@@ -83,7 +83,7 @@ Cuando un navegador como Chrome, Firefox o Safari recibe un archivo HTML, lo int
 - `<head>` — Sección que contiene metadatos del documento: título, codificación de caracteres, referencias a CSS y scripts externos, entre otros. El contenido de `<head>` no se muestra directamente al usuario.
 - `<body>` — Sección que contiene todo el contenido visible de la página: texto, imágenes, videos, formularios, etc.
 
----
+***
 
 ### 1.2 Semántica en HTML
 
@@ -94,11 +94,8 @@ Antes de HTML5, era muy común construir páginas enteras usando únicamente eti
 **¿Por qué usar HTML semántico?**
 
 1. **Accesibilidad:** Los lectores de pantalla y otras tecnologías de asistencia utilizan la estructura semántica del HTML para navegar el contenido y ofrecerlo de forma comprensible a personas con discapacidades visuales. Un `<nav>` le dice al lector de pantalla que hay un área de navegación; un `<main>` indica el contenido principal.
-
 2. **SEO (Optimización para motores de búsqueda):** Los motores de búsqueda como Google analizan el HTML para entender de qué trata una página. Un `<h1>` semántico dentro de un `<article>` transmite más información relevante que un `<div class="titulo">`.
-
 3. **Mantenibilidad del código:** El código semántico es más fácil de leer, entender y mantener. Cuando otro desarrollador (o tú mismo en el futuro) lee el código, puede comprender rápidamente la estructura de la página sin necesidad de analizar en detalle las clases CSS.
-
 4. **Estandarización:** El uso de etiquetas semánticas promueve buenas prácticas y compatibilidad con estándares internacionales definidos por el W3C (World Wide Web Consortium).
 
 **Ejemplo de código NO semántico vs semántico:**
@@ -141,7 +138,7 @@ Antes de HTML5, era muy común construir páginas enteras usando únicamente eti
 </footer>
 ```
 
----
+***
 
 ### 1.3 Estructura de una Etiqueta
 
@@ -153,14 +150,14 @@ Una **etiqueta HTML** (también llamada elemento o tag) es la unidad fundamental
 
 Desglose de cada parte:
 
-| Parte | Descripción |
-|---|---|
-| `<` | Carácter de apertura del delimitador de etiqueta |
-| `nombre-etiqueta` | Nombre del elemento (por ejemplo: `p`, `div`, `h1`, `a`, `img`) |
-| `atributo="valor"` | Información adicional asociada al elemento (opcional) |
-| `>` | Carácter de cierre del delimitador de etiqueta |
-| `Contenido` | El texto, otros elementos o datos que la etiqueta envuelve |
-| `</nombre-etiqueta>` | Etiqueta de cierre del elemento |
+| Parte                | Descripción                                                     |
+| -------------------- | --------------------------------------------------------------- |
+| `<`                  | Carácter de apertura del delimitador de etiqueta                |
+| `nombre-etiqueta`    | Nombre del elemento (por ejemplo: `p`, `div`, `h1`, `a`, `img`) |
+| `atributo="valor"`   | Información adicional asociada al elemento (opcional)           |
+| `>`                  | Carácter de cierre del delimitador de etiqueta                  |
+| `Contenido`          | El texto, otros elementos o datos que la etiqueta envuelve      |
+| `</nombre-etiqueta>` | Etiqueta de cierre del elemento                                 |
 
 **Ejemplo detallado:**
 
@@ -171,12 +168,13 @@ Desglose de cada parte:
 ```
 
 En este ejemplo:
+
 - `a` es el nombre de la etiqueta (ancla/enlace)
 - `href`, `target` y `rel` son atributos
 - `"https://www.ejemplo.com"`, `"_blank"` y `"noopener noreferrer"` son los valores de dichos atributos
 - `"Visita nuestro sitio"` es el contenido visible del enlace
 
----
+***
 
 ### 1.4 Etiquetas de Apertura y Cierre
 
@@ -222,24 +220,24 @@ Algunas etiquetas no tienen contenido propio y por lo tanto **no necesitan etiqu
 
 Lista completa de elementos vacíos en HTML5:
 
-| Etiqueta | Descripción |
-|---|---|
-| `<area>` | Área en un mapa de imagen |
-| `<base>` | URL base del documento |
-| `<br>` | Salto de línea |
-| `<col>` | Columna en una tabla |
-| `<embed>` | Contenido externo embebido |
-| `<hr>` | Separación temática (línea horizontal) |
-| `<img>` | Imagen |
-| `<input>` | Campo de formulario |
-| `<link>` | Vínculo a recursos externos |
-| `<meta>` | Metadatos |
-| `<param>` | Parámetro para un elemento `<object>` |
-| `<source>` | Fuente de media |
-| `<track>` | Pista de texto para media |
-| `<wbr>` | Oportunidad de salto de línea |
+| Etiqueta   | Descripción                            |
+| ---------- | -------------------------------------- |
+| `<area>`   | Área en un mapa de imagen              |
+| `<base>`   | URL base del documento                 |
+| `<br>`     | Salto de línea                         |
+| `<col>`    | Columna en una tabla                   |
+| `<embed>`  | Contenido externo embebido             |
+| `<hr>`     | Separación temática (línea horizontal) |
+| `<img>`    | Imagen                                 |
+| `<input>`  | Campo de formulario                    |
+| `<link>`   | Vínculo a recursos externos            |
+| `<meta>`   | Metadatos                              |
+| `<param>`  | Parámetro para un elemento `<object>`  |
+| `<source>` | Fuente de media                        |
+| `<track>`  | Pista de texto para media              |
+| `<wbr>`    | Oportunidad de salto de línea          |
 
----
+***
 
 ### 1.5 Atributos
 
@@ -272,69 +270,69 @@ Los **atributos** son pares clave-valor que se añaden a la etiqueta de apertura
 
 Los atributos globales son aquellos que pueden utilizarse en **cualquier elemento HTML**, independientemente del tipo de etiqueta:
 
-| Atributo | Descripción |
-|---|---|
-| `id` | Identificador único del elemento en el documento. No debe repetirse. Usado para CSS y JavaScript. |
-| `class` | Una o más clases CSS separadas por espacios. Puede repetirse en múltiples elementos. |
-| `style` | Estilos CSS en línea aplicados directamente al elemento. |
-| `title` | Texto informativo que aparece como tooltip al pasar el cursor por encima. |
-| `lang` | Idioma del contenido del elemento (ej: `"es"`, `"en"`, `"fr"`). |
-| `dir` | Dirección del texto: `ltr` (izquierda a derecha) o `rtl` (derecha a izquierda). |
-| `hidden` | Oculta el elemento visualmente y del árbol de accesibilidad. |
-| `tabindex` | Controla el orden de tabulación con el teclado. |
-| `data-*` | Atributos de datos personalizados para almacenar información extra. Ej: `data-id="42"`. |
-| `contenteditable` | Permite al usuario editar el contenido directamente en el navegador. |
-| `draggable` | Indica si el elemento puede ser arrastrado. |
-| `role` | Define el rol del elemento para tecnologías de asistencia (ARIA). |
-| `aria-*` | Atributos de Accessible Rich Internet Applications para accesibilidad. |
+| Atributo          | Descripción                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `id`              | Identificador único del elemento en el documento. No debe repetirse. Usado para CSS y JavaScript. |
+| `class`           | Una o más clases CSS separadas por espacios. Puede repetirse en múltiples elementos.              |
+| `style`           | Estilos CSS en línea aplicados directamente al elemento.                                          |
+| `title`           | Texto informativo que aparece como tooltip al pasar el cursor por encima.                         |
+| `lang`            | Idioma del contenido del elemento (ej: `"es"`, `"en"`, `"fr"`).                                   |
+| `dir`             | Dirección del texto: `ltr` (izquierda a derecha) o `rtl` (derecha a izquierda).                   |
+| `hidden`          | Oculta el elemento visualmente y del árbol de accesibilidad.                                      |
+| `tabindex`        | Controla el orden de tabulación con el teclado.                                                   |
+| `data-*`          | Atributos de datos personalizados para almacenar información extra. Ej: `data-id="42"`.           |
+| `contenteditable` | Permite al usuario editar el contenido directamente en el navegador.                              |
+| `draggable`       | Indica si el elemento puede ser arrastrado.                                                       |
+| `role`            | Define el rol del elemento para tecnologías de asistencia (ARIA).                                 |
+| `aria-*`          | Atributos de Accessible Rich Internet Applications para accesibilidad.                            |
 
----
+***
 
 ### 1.6 Etiquetas Semánticas Principales
 
 #### Estructura del documento
 
-| Etiqueta | Definición | Dónde se usa | Por qué usarla |
-|---|---|---|---|
-| `<header>` | Representa el encabezado introductorio de una página o sección. Puede contener el logotipo, título principal, navegación, buscador. | Al inicio del `<body>` o dentro de `<article>`, `<section>` | Indica claramente al navegador y a los lectores de pantalla dónde está el encabezado. Mejora la estructura del documento. |
-| `<nav>` | Define un bloque de enlaces de navegación principal, como menús, índices, breadcrumbs. | Dentro de `<header>` o en otros lugares del cuerpo | Permite a lectores de pantalla saltar rápidamente a la navegación. Ayuda al SEO a identificar los enlaces principales. |
-| `<main>` | Contiene el contenido principal y único de la página. Solo debe haber uno por documento. | Dentro de `<body>`, generalmente entre `<header>` y `<footer>` | Define inequívocamente el contenido central de la página. Permite a tecnologías asistivas saltar directamente al contenido principal. |
-| `<footer>` | Representa el pie de página de la sección o del documento. Contiene información de copyright, contacto, enlaces legales. | Al final del `<body>` o dentro de `<article>`, `<section>` | Estructura el cierre del documento de manera significativa. |
-| `<aside>` | Contenido relacionado tangencialmente con el contenido principal, como sidebars, anuncios, notas al pie, citas destacadas. | Junto al `<main>` o dentro de `<article>` | Diferencia claramente el contenido complementario del principal. |
-| `<section>` | Agrupa contenido temáticamente relacionado que formaría parte de un documento más amplio. Generalmente tiene un encabezado propio. | Dentro de `<main>` o `<article>` | Divide el contenido en bloques lógicos y temáticos, mejorando la estructura del documento. |
-| `<article>` | Contenido independiente y autocontenido que podría redistribuirse o reutilizarse por sí solo, como una publicación de blog, noticia, comentario. | Dentro de `<main>` o `<section>` | Indica que el contenido es completo por sí mismo. Muy útil para RSS, scrapers y SEO. |
+| Etiqueta    | Definición                                                                                                                                       | Dónde se usa                                                   | Por qué usarla                                                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `<header>`  | Representa el encabezado introductorio de una página o sección. Puede contener el logotipo, título principal, navegación, buscador.              | Al inicio del `<body>` o dentro de `<article>`, `<section>`    | Indica claramente al navegador y a los lectores de pantalla dónde está el encabezado. Mejora la estructura del documento.             |
+| `<nav>`     | Define un bloque de enlaces de navegación principal, como menús, índices, breadcrumbs.                                                           | Dentro de `<header>` o en otros lugares del cuerpo             | Permite a lectores de pantalla saltar rápidamente a la navegación. Ayuda al SEO a identificar los enlaces principales.                |
+| `<main>`    | Contiene el contenido principal y único de la página. Solo debe haber uno por documento.                                                         | Dentro de `<body>`, generalmente entre `<header>` y `<footer>` | Define inequívocamente el contenido central de la página. Permite a tecnologías asistivas saltar directamente al contenido principal. |
+| `<footer>`  | Representa el pie de página de la sección o del documento. Contiene información de copyright, contacto, enlaces legales.                         | Al final del `<body>` o dentro de `<article>`, `<section>`     | Estructura el cierre del documento de manera significativa.                                                                           |
+| `<aside>`   | Contenido relacionado tangencialmente con el contenido principal, como sidebars, anuncios, notas al pie, citas destacadas.                       | Junto al `<main>` o dentro de `<article>`                      | Diferencia claramente el contenido complementario del principal.                                                                      |
+| `<section>` | Agrupa contenido temáticamente relacionado que formaría parte de un documento más amplio. Generalmente tiene un encabezado propio.               | Dentro de `<main>` o `<article>`                               | Divide el contenido en bloques lógicos y temáticos, mejorando la estructura del documento.                                            |
+| `<article>` | Contenido independiente y autocontenido que podría redistribuirse o reutilizarse por sí solo, como una publicación de blog, noticia, comentario. | Dentro de `<main>` o `<section>`                               | Indica que el contenido es completo por sí mismo. Muy útil para RSS, scrapers y SEO.                                                  |
 
 #### Etiquetas de contenido
 
-| Etiqueta | Definición | Por qué usarla |
-|---|---|---|
-| `<h1>` a `<h6>` | Encabezados de seis niveles de importancia jerárquica. `<h1>` es el más importante, `<h6>` el menos. | Crear jerarquía textual clara. Fundamental para SEO. `<h1>` debe usarse una vez por página. |
-| `<p>` | Define un párrafo de texto. El navegador añade margen superior e inferior automáticamente. | Estructurar bloques de texto corrido. |
-| `<ul>` | Lista desordenada (con viñetas). Los ítems no tienen un orden particular. | Listas donde el orden no importa: ingredientes, características, opciones. |
-| `<ol>` | Lista ordenada (numerada). Los ítems tienen una secuencia definida. | Pasos de un proceso, rankings, instrucciones. |
-| `<li>` | Ítem de lista. Debe ser hijo directo de `<ul>` u `<ol>`. | Cada elemento individual dentro de una lista. |
-| `<dl>` | Lista de definición. Contiene pares de término y descripción. | Glosarios, diccionarios, metadatos. |
-| `<dt>` | Término en una lista de definición. | Definir el término en un glosario. |
-| `<dd>` | Descripción de un término en una lista de definición. | Describir el término en un glosario. |
-| `<a>` | Ancla o enlace. Permite crear hipervínculos a otras páginas, recursos o secciones del mismo documento. | Cualquier texto o imagen que debe ser un enlace. |
-| `<img>` | Inserta una imagen en el documento. Requiere `src` (ruta) y `alt` (descripción alternativa). | Mostrar imágenes. El `alt` es obligatorio para accesibilidad. |
-| `<strong>` | Indica importancia semántica fuerte. Visualmente se muestra en negrita, pero su significado va más allá del estilo. | Resaltar texto de alta importancia semántica (advertencias, términos clave). |
-| `<em>` | Énfasis en el texto. Visualmente se muestra en cursiva. | Indicar énfasis en la pronunciación o en el significado de una palabra. |
-| `<blockquote>` | Cita larga extraída de otra fuente. | Citar párrafos completos de otros textos. |
-| `<q>` | Cita corta en línea. | Citas breves dentro de un párrafo. |
-| `<cite>` | Referencia al título de una obra creativa. | Títulos de libros, películas, canciones, artículos. |
-| `<code>` | Representa un fragmento de código de computadora. | Mostrar código inline en la documentación. |
-| `<pre>` | Texto preformateado que preserva espacios y saltos de línea. | Bloques de código, poesía con formato específico. |
-| `<figure>` | Contenido independiente que puede moverse del flujo principal, como imágenes, gráficos, tablas con sus leyendas. | Agrupar imágenes con su leyenda. |
-| `<figcaption>` | Leyenda o descripción de un `<figure>`. | Describir el contenido de una figura. |
-| `<time>` | Representa una fecha, hora o duración. | Fechas de publicación, eventos, duraciones. Mejora SEO y accesibilidad. |
-| `<mark>` | Texto marcado o resaltado por su relevancia en el contexto actual. | Resultados de búsqueda, texto resaltado por el usuario. |
-| `<abbr>` | Abreviación o acrónimo, con una expansión opcional en el atributo `title`. | Definir abreviaturas la primera vez que aparecen. |
-| `<address>` | Información de contacto del autor o propietario del documento o sección. | Datos de contacto en `<footer>`. |
-| `<div>` | Contenedor de bloque genérico sin significado semántico. | Agrupar elementos para aplicar estilos CSS o manipular con JavaScript cuando ninguna otra etiqueta semántica aplica. |
-| `<span>` | Contenedor en línea genérico sin significado semántico. | Aplicar estilos o scripts a una porción de texto cuando no existe etiqueta semántica apropiada. |
+| Etiqueta        | Definición                                                                                                          | Por qué usarla                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `<h1>` a `<h6>` | Encabezados de seis niveles de importancia jerárquica. `<h1>` es el más importante, `<h6>` el menos.                | Crear jerarquía textual clara. Fundamental para SEO. `<h1>` debe usarse una vez por página.                          |
+| `<p>`           | Define un párrafo de texto. El navegador añade margen superior e inferior automáticamente.                          | Estructurar bloques de texto corrido.                                                                                |
+| `<ul>`          | Lista desordenada (con viñetas). Los ítems no tienen un orden particular.                                           | Listas donde el orden no importa: ingredientes, características, opciones.                                           |
+| `<ol>`          | Lista ordenada (numerada). Los ítems tienen una secuencia definida.                                                 | Pasos de un proceso, rankings, instrucciones.                                                                        |
+| `<li>`          | Ítem de lista. Debe ser hijo directo de `<ul>` u `<ol>`.                                                            | Cada elemento individual dentro de una lista.                                                                        |
+| `<dl>`          | Lista de definición. Contiene pares de término y descripción.                                                       | Glosarios, diccionarios, metadatos.                                                                                  |
+| `<dt>`          | Término en una lista de definición.                                                                                 | Definir el término en un glosario.                                                                                   |
+| `<dd>`          | Descripción de un término en una lista de definición.                                                               | Describir el término en un glosario.                                                                                 |
+| `<a>`           | Ancla o enlace. Permite crear hipervínculos a otras páginas, recursos o secciones del mismo documento.              | Cualquier texto o imagen que debe ser un enlace.                                                                     |
+| `<img>`         | Inserta una imagen en el documento. Requiere `src` (ruta) y `alt` (descripción alternativa).                        | Mostrar imágenes. El `alt` es obligatorio para accesibilidad.                                                        |
+| `<strong>`      | Indica importancia semántica fuerte. Visualmente se muestra en negrita, pero su significado va más allá del estilo. | Resaltar texto de alta importancia semántica (advertencias, términos clave).                                         |
+| `<em>`          | Énfasis en el texto. Visualmente se muestra en cursiva.                                                             | Indicar énfasis en la pronunciación o en el significado de una palabra.                                              |
+| `<blockquote>`  | Cita larga extraída de otra fuente.                                                                                 | Citar párrafos completos de otros textos.                                                                            |
+| `<q>`           | Cita corta en línea.                                                                                                | Citas breves dentro de un párrafo.                                                                                   |
+| `<cite>`        | Referencia al título de una obra creativa.                                                                          | Títulos de libros, películas, canciones, artículos.                                                                  |
+| `<code>`        | Representa un fragmento de código de computadora.                                                                   | Mostrar código inline en la documentación.                                                                           |
+| `<pre>`         | Texto preformateado que preserva espacios y saltos de línea.                                                        | Bloques de código, poesía con formato específico.                                                                    |
+| `<figure>`      | Contenido independiente que puede moverse del flujo principal, como imágenes, gráficos, tablas con sus leyendas.    | Agrupar imágenes con su leyenda.                                                                                     |
+| `<figcaption>`  | Leyenda o descripción de un `<figure>`.                                                                             | Describir el contenido de una figura.                                                                                |
+| `<time>`        | Representa una fecha, hora o duración.                                                                              | Fechas de publicación, eventos, duraciones. Mejora SEO y accesibilidad.                                              |
+| `<mark>`        | Texto marcado o resaltado por su relevancia en el contexto actual.                                                  | Resultados de búsqueda, texto resaltado por el usuario.                                                              |
+| `<abbr>`        | Abreviación o acrónimo, con una expansión opcional en el atributo `title`.                                          | Definir abreviaturas la primera vez que aparecen.                                                                    |
+| `<address>`     | Información de contacto del autor o propietario del documento o sección.                                            | Datos de contacto en `<footer>`.                                                                                     |
+| `<div>`         | Contenedor de bloque genérico sin significado semántico.                                                            | Agrupar elementos para aplicar estilos CSS o manipular con JavaScript cuando ninguna otra etiqueta semántica aplica. |
+| `<span>`        | Contenedor en línea genérico sin significado semántico.                                                             | Aplicar estilos o scripts a una porción de texto cuando no existe etiqueta semántica apropiada.                      |
 
----
+***
 
 ## 2. Etiquetas de Formularios
 
@@ -350,7 +348,7 @@ Los formularios funcionan siguiendo este flujo general:
 4. Los datos se envían al servidor mediante una petición HTTP (GET o POST), o se procesan en el cliente con JavaScript.
 5. El servidor recibe y procesa los datos, y responde al navegador.
 
----
+***
 
 ### 2.2 Etiqueta `<form>`
 
@@ -364,19 +362,19 @@ La etiqueta `<form>` es el contenedor principal que envuelve todos los controles
 </form>
 ```
 
-**Atributos principales de `<form>`:**
+**Atributos principales de** **`<form>`:**
 
-| Atributo | Valores | Descripción |
-|---|---|---|
-| `action` | URL | Especifica la URL del servidor que recibirá y procesará los datos del formulario. Si se omite, los datos se envían a la URL actual de la página. |
-| `method` | `get`, `post` | Define el método HTTP para enviar los datos. `GET` añade los datos a la URL como query string (visible, limitado a ~2000 caracteres). `POST` envía los datos en el cuerpo de la petición (invisible en URL, sin límite de tamaño práctico). |
-| `enctype` | `application/x-www-form-urlencoded`, `multipart/form-data`, `text/plain` | Especifica cómo se codifican los datos al enviarlos. `multipart/form-data` es **obligatorio** cuando el formulario incluye subida de archivos (`<input type="file">`). Por defecto usa `application/x-www-form-urlencoded`. |
-| `target` | `_self`, `_blank`, `_parent`, `_top` | Define en qué ventana/pestaña se muestra la respuesta del servidor. `_blank` abre en nueva pestaña. |
-| `autocomplete` | `on`, `off` | Controla si el navegador puede autocompletar los campos del formulario con datos guardados anteriormente. |
-| `novalidate` | booleano | Cuando está presente, deshabilita la validación nativa del navegador antes del envío. |
-| `name` | texto | Nombre del formulario. Permite referenciarlo desde JavaScript mediante `document.forms["nombre"]`. |
+| Atributo       | Valores                                                                  | Descripción                                                                                                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`       | URL                                                                      | Especifica la URL del servidor que recibirá y procesará los datos del formulario. Si se omite, los datos se envían a la URL actual de la página.                                                                                             |
+| `method`       | `get`, `post`                                                            | Define el método HTTP para enviar los datos. `GET` añade los datos a la URL como query string (visible, limitado a \~2000 caracteres). `POST` envía los datos en el cuerpo de la petición (invisible en URL, sin límite de tamaño práctico). |
+| `enctype`      | `application/x-www-form-urlencoded`, `multipart/form-data`, `text/plain` | Especifica cómo se codifican los datos al enviarlos. `multipart/form-data` es **obligatorio** cuando el formulario incluye subida de archivos (`<input type="file">`). Por defecto usa `application/x-www-form-urlencoded`.                  |
+| `target`       | `_self`, `_blank`, `_parent`, `_top`                                     | Define en qué ventana/pestaña se muestra la respuesta del servidor. `_blank` abre en nueva pestaña.                                                                                                                                          |
+| `autocomplete` | `on`, `off`                                                              | Controla si el navegador puede autocompletar los campos del formulario con datos guardados anteriormente.                                                                                                                                    |
+| `novalidate`   | booleano                                                                 | Cuando está presente, deshabilita la validación nativa del navegador antes del envío.                                                                                                                                                        |
+| `name`         | texto                                                                    | Nombre del formulario. Permite referenciarlo desde JavaScript mediante `document.forms["nombre"]`.                                                                                                                                           |
 
----
+***
 
 ### 2.3 Etiqueta `<input>` y sus tipos
 
@@ -384,24 +382,24 @@ La etiqueta `<input>` es el control de formulario más versátil y usado. Es un 
 
 #### Propiedades y atributos comunes a todos los tipos de `<input>`
 
-| Atributo | Tipo de valor | Descripción |
-|---|---|---|
-| `type` | ver tipos abajo | Define el tipo de control. Si se omite, por defecto es `text`. |
-| `name` | texto | Nombre del campo. Es el identificador que se envía al servidor junto al valor. **Obligatorio** para que el campo se incluya en el envío. |
-| `id` | texto | Identificador único del elemento. Permite asociarlo con un `<label>` mediante el atributo `for`. |
-| `value` | texto | Valor inicial o por defecto del campo. Para checkboxes y radios, es el valor que se envía cuando están seleccionados. |
-| `placeholder` | texto | Texto de ayuda que aparece dentro del campo cuando está vacío. Desaparece al escribir. |
-| `required` | booleano | Hace que el campo sea obligatorio. El formulario no se envía si está vacío. |
-| `disabled` | booleano | Deshabilita el campo. No puede ser modificado ni se envía al servidor. |
-| `readonly` | booleano | El campo es de solo lectura. El usuario puede ver el valor pero no modificarlo. Sí se envía al servidor. |
-| `autofocus` | booleano | El campo recibe el foco automáticamente cuando la página carga. Solo debe usarse en un campo por página. |
-| `autocomplete` | `on`, `off`, nombres estándar | Controla el autocompletado del navegador para ese campo específico. |
-| `tabindex` | número | Controla el orden en que el campo recibe foco al presionar Tab. |
-| `form` | id de `<form>` | Asocia el campo a un formulario específico aunque esté fuera de él en el HTML. |
-| `aria-label` | texto | Etiqueta accesible para lectores de pantalla cuando no se usa `<label>`. |
-| `aria-describedby` | id | Asocia el campo con un elemento que lo describe (por ejemplo, un mensaje de error). |
+| Atributo           | Tipo de valor                 | Descripción                                                                                                                              |
+| ------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`             | ver tipos abajo               | Define el tipo de control. Si se omite, por defecto es `text`.                                                                           |
+| `name`             | texto                         | Nombre del campo. Es el identificador que se envía al servidor junto al valor. **Obligatorio** para que el campo se incluya en el envío. |
+| `id`               | texto                         | Identificador único del elemento. Permite asociarlo con un `<label>` mediante el atributo `for`.                                         |
+| `value`            | texto                         | Valor inicial o por defecto del campo. Para checkboxes y radios, es el valor que se envía cuando están seleccionados.                    |
+| `placeholder`      | texto                         | Texto de ayuda que aparece dentro del campo cuando está vacío. Desaparece al escribir.                                                   |
+| `required`         | booleano                      | Hace que el campo sea obligatorio. El formulario no se envía si está vacío.                                                              |
+| `disabled`         | booleano                      | Deshabilita el campo. No puede ser modificado ni se envía al servidor.                                                                   |
+| `readonly`         | booleano                      | El campo es de solo lectura. El usuario puede ver el valor pero no modificarlo. Sí se envía al servidor.                                 |
+| `autofocus`        | booleano                      | El campo recibe el foco automáticamente cuando la página carga. Solo debe usarse en un campo por página.                                 |
+| `autocomplete`     | `on`, `off`, nombres estándar | Controla el autocompletado del navegador para ese campo específico.                                                                      |
+| `tabindex`         | número                        | Controla el orden en que el campo recibe foco al presionar Tab.                                                                          |
+| `form`             | id de `<form>`                | Asocia el campo a un formulario específico aunque esté fuera de él en el HTML.                                                           |
+| `aria-label`       | texto                         | Etiqueta accesible para lectores de pantalla cuando no se usa `<label>`.                                                                 |
+| `aria-describedby` | id                            | Asocia el campo con un elemento que lo describe (por ejemplo, un mensaje de error).                                                      |
 
----
+***
 
 #### Tipos de `<input>`
 
@@ -425,15 +423,15 @@ El tipo más básico. Crea un campo de texto de una sola línea para entrada de 
 
 **Atributos específicos:**
 
-| Atributo | Descripción |
-|---|---|
-| `minlength` | Número mínimo de caracteres requeridos. |
-| `maxlength` | Número máximo de caracteres permitidos. |
-| `pattern` | Expresión regular que el valor debe cumplir para ser válido. |
-| `size` | Anchura visual del campo en número de caracteres (no limita el contenido). |
-| `spellcheck` | `true`/`false`. Activa o desactiva la revisión ortográfica del navegador. |
+| Atributo     | Descripción                                                                |
+| ------------ | -------------------------------------------------------------------------- |
+| `minlength`  | Número mínimo de caracteres requeridos.                                    |
+| `maxlength`  | Número máximo de caracteres permitidos.                                    |
+| `pattern`    | Expresión regular que el valor debe cumplir para ser válido.               |
+| `size`       | Anchura visual del campo en número de caracteres (no limita el contenido). |
+| `spellcheck` | `true`/`false`. Activa o desactiva la revisión ortográfica del navegador.  |
 
----
+***
 
 ##### `type="email"`
 
@@ -453,13 +451,13 @@ Campo especializado para capturar direcciones de correo electrónico. El navegad
 
 **Atributos específicos:**
 
-| Atributo | Descripción |
-|---|---|
-| `multiple` | Permite ingresar múltiples emails separados por comas. |
-| `maxlength` | Longitud máxima permitida. |
-| `pattern` | Patrón de expresión regular adicional para validar el formato. |
+| Atributo    | Descripción                                                    |
+| ----------- | -------------------------------------------------------------- |
+| `multiple`  | Permite ingresar múltiples emails separados por comas.         |
+| `maxlength` | Longitud máxima permitida.                                     |
+| `pattern`   | Patrón de expresión regular adicional para validar el formato. |
 
----
+***
 
 ##### `type="password"`
 
@@ -479,7 +477,7 @@ Campo para contraseñas. Los caracteres introducidos se ocultan visualmente con 
 
 **Nota importante:** `autocomplete="new-password"` le indica al gestor de contraseñas del navegador que genere y guarde una contraseña nueva. `autocomplete="current-password"` es para el campo de login.
 
----
+***
 
 ##### `type="number"`
 
@@ -500,13 +498,13 @@ Campo para entrada de valores numéricos. En dispositivos móviles muestra el te
 
 **Atributos específicos:**
 
-| Atributo | Descripción |
-|---|---|
-| `min` | Valor mínimo permitido. |
-| `max` | Valor máximo permitido. |
-| `step` | Intervalo de incremento/decremento. Por defecto `1`. Puede ser decimal, ej: `0.5`. |
+| Atributo | Descripción                                                                        |
+| -------- | ---------------------------------------------------------------------------------- |
+| `min`    | Valor mínimo permitido.                                                            |
+| `max`    | Valor máximo permitido.                                                            |
+| `step`   | Intervalo de incremento/decremento. Por defecto `1`. Puede ser decimal, ej: `0.5`. |
 
----
+***
 
 ##### `type="tel"`
 
@@ -523,7 +521,7 @@ Campo para números de teléfono. No valida el formato automáticamente (los for
 >
 ```
 
----
+***
 
 ##### `type="url"`
 
@@ -540,7 +538,7 @@ Campo para URLs. Valida que el valor tenga el formato de una URL válida (debe c
 >
 ```
 
----
+***
 
 ##### `type="search"`
 
@@ -556,7 +554,7 @@ Campo de búsqueda. Funcionalmente similar a `text`, pero el navegador puede apl
 >
 ```
 
----
+***
 
 ##### `type="date"`
 
@@ -575,7 +573,7 @@ Campo para seleccionar una fecha (año, mes y día). El navegador muestra un sel
 
 El formato del valor es siempre `YYYY-MM-DD` internamente, aunque el navegador puede mostrarlo en el formato local del usuario.
 
----
+***
 
 ##### `type="time"`
 
@@ -594,7 +592,7 @@ Campo para seleccionar una hora (horas y minutos, opcionalmente segundos).
 
 El atributo `step` en segundos define el intervalo. `1800` = cada 30 minutos.
 
----
+***
 
 ##### `type="datetime-local"`
 
@@ -610,7 +608,7 @@ Campo para seleccionar una fecha y hora juntas, sin zona horaria.
 >
 ```
 
----
+***
 
 ##### `type="month"`
 
@@ -620,7 +618,7 @@ Campo para seleccionar un mes y año específicos, sin especificar el día.
 <input type="month" name="mes-inicio" min="2024-01" max="2025-12">
 ```
 
----
+***
 
 ##### `type="week"`
 
@@ -630,7 +628,7 @@ Campo para seleccionar una semana específica del año.
 <input type="week" name="semana-laboral" min="2024-W01" max="2024-W52">
 ```
 
----
+***
 
 ##### `type="range"`
 
@@ -650,7 +648,7 @@ Muestra un control deslizante (slider) para seleccionar un valor dentro de un ra
 >
 ```
 
----
+***
 
 ##### `type="color"`
 
@@ -665,7 +663,7 @@ Muestra un selector de color nativo del navegador. El valor es siempre un códig
 >
 ```
 
----
+***
 
 ##### `type="file"`
 
@@ -683,13 +681,13 @@ Permite al usuario seleccionar uno o múltiples archivos para subir al servidor.
 
 **Atributos específicos:**
 
-| Atributo | Descripción |
-|---|---|
-| `accept` | Lista de tipos de archivo permitidos. Puede ser extensiones (`.pdf`), tipos MIME (`image/png`) o categorías (`image/*`, `audio/*`, `video/*`). |
-| `multiple` | Permite seleccionar múltiples archivos a la vez. |
-| `capture` | En dispositivos móviles, especifica si abrir la cámara (`user` para cámara frontal, `environment` para cámara trasera). |
+| Atributo   | Descripción                                                                                                                                    |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accept`   | Lista de tipos de archivo permitidos. Puede ser extensiones (`.pdf`), tipos MIME (`image/png`) o categorías (`image/*`, `audio/*`, `video/*`). |
+| `multiple` | Permite seleccionar múltiples archivos a la vez.                                                                                               |
+| `capture`  | En dispositivos móviles, especifica si abrir la cámara (`user` para cámara frontal, `environment` para cámara trasera).                        |
 
----
+***
 
 ##### `type="checkbox"`
 
@@ -716,7 +714,7 @@ Casilla de verificación que puede estar marcada (checked) o desmarcada. Se usa 
 
 Cuando se usa el mismo `name` en varios checkboxes, todos los valores seleccionados se envían al servidor.
 
----
+***
 
 ##### `type="radio"`
 
@@ -737,7 +735,7 @@ Botón de opción que pertenece a un grupo de opciones mutuamente excluyentes. S
 </fieldset>
 ```
 
----
+***
 
 ##### `type="submit"`
 
@@ -749,7 +747,7 @@ Botón que, al ser presionado, envía los datos del formulario al servidor segú
 
 El atributo `value` define el texto visible del botón. Si se omite, el navegador muestra el texto por defecto ("Submit" o "Enviar" según el idioma).
 
----
+***
 
 ##### `type="reset"`
 
@@ -759,7 +757,7 @@ Botón que, al ser presionado, restablece todos los campos del formulario a sus 
 <input type="reset" value="Limpiar formulario">
 ```
 
----
+***
 
 ##### `type="button"`
 
@@ -769,7 +767,7 @@ Botón genérico sin comportamiento por defecto. Se usa con JavaScript para ejec
 <input type="button" value="Calcular total" onclick="calcularTotal()">
 ```
 
----
+***
 
 ##### `type="image"`
 
@@ -785,7 +783,7 @@ Crea un botón de envío con una imagen. Al hacer clic, envía el formulario y t
 >
 ```
 
----
+***
 
 ##### `type="hidden"`
 
@@ -796,18 +794,19 @@ Campo invisible para el usuario que almacena datos que deben enviarse junto con 
 <input type="hidden" name="producto-id" value="4521">
 ```
 
----
+***
 
 ### 2.4 Etiqueta `<label>`
 
 La etiqueta `<label>` define una etiqueta o descripción para un control de formulario. Es un elemento **fundamental para la accesibilidad** porque asocia visualmente y programáticamente un texto descriptivo con su control correspondiente.
 
-**Beneficios de usar `<label>`:**
+**Beneficios de usar** **`<label>`:**
+
 - Cuando el usuario hace clic en el `<label>`, el control asociado recibe el foco automáticamente.
 - Los lectores de pantalla anuncian el texto del `<label>` cuando el usuario llega al control con el teclado.
 - Aumenta el área clicable del control (especialmente útil en checkboxes y radios en dispositivos móviles).
 
-**Formas de asociar un `<label>` con su control:**
+**Formas de asociar un** **`<label>`** **con su control:**
 
 ```html
 <!-- Método 1: Usando el atributo "for" (explícito) -->
@@ -824,14 +823,14 @@ La etiqueta `<label>` define una etiqueta o descripción para un control de form
 
 El método explícito (con `for`) es preferido en la mayoría de los casos porque permite mayor flexibilidad en el layout y es más compatible con tecnologías asistivas.
 
-**Atributos de `<label>`:**
+**Atributos de** **`<label>`:**
 
-| Atributo | Descripción |
-|---|---|
-| `for` | El `id` del control al que pertenece esta etiqueta. |
-| `form` | El `id` del formulario al que pertenece, si está fuera de él. |
+| Atributo | Descripción                                                   |
+| -------- | ------------------------------------------------------------- |
+| `for`    | El `id` del control al que pertenece esta etiqueta.           |
+| `form`   | El `id` del formulario al que pertenece, si está fuera de él. |
 
----
+***
 
 ### 2.5 Etiqueta `<textarea>`
 
@@ -855,24 +854,24 @@ A diferencia de `<input type="text">`, `<textarea>` tiene etiqueta de apertura y
 >Texto inicial si es necesario</textarea>
 ```
 
-**Atributos de `<textarea>`:**
+**Atributos de** **`<textarea>`:**
 
-| Atributo | Valores | Descripción |
-|---|---|---|
-| `rows` | número | Número de líneas visibles. Determina la altura inicial del área de texto. Por defecto `2`. |
-| `cols` | número | Número de columnas visibles (anchura). Por defecto `20`. En la práctica se prefiere controlar el tamaño con CSS. |
-| `maxlength` | número | Número máximo de caracteres permitidos. |
-| `minlength` | número | Número mínimo de caracteres requeridos. |
-| `placeholder` | texto | Texto de ayuda que aparece cuando el área está vacía. |
-| `required` | booleano | Campo obligatorio. |
-| `disabled` | booleano | Deshabilita el área de texto. |
-| `readonly` | booleano | Solo lectura. |
-| `autofocus` | booleano | Recibe el foco automáticamente al cargar la página. |
-| `wrap` | `soft`, `hard` | Controla cómo se envuelve el texto al enviarlo. `soft`: no inserta saltos de línea reales; `hard`: inserta saltos de línea según `cols`. |
-| `spellcheck` | `true`, `false` | Activa o desactiva la revisión ortográfica. |
-| `resize` | (propiedad CSS) | En CSS: `resize: none/both/horizontal/vertical` para controlar si el usuario puede redimensionar el área. |
+| Atributo      | Valores         | Descripción                                                                                                                              |
+| ------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `rows`        | número          | Número de líneas visibles. Determina la altura inicial del área de texto. Por defecto `2`.                                               |
+| `cols`        | número          | Número de columnas visibles (anchura). Por defecto `20`. En la práctica se prefiere controlar el tamaño con CSS.                         |
+| `maxlength`   | número          | Número máximo de caracteres permitidos.                                                                                                  |
+| `minlength`   | número          | Número mínimo de caracteres requeridos.                                                                                                  |
+| `placeholder` | texto           | Texto de ayuda que aparece cuando el área está vacía.                                                                                    |
+| `required`    | booleano        | Campo obligatorio.                                                                                                                       |
+| `disabled`    | booleano        | Deshabilita el área de texto.                                                                                                            |
+| `readonly`    | booleano        | Solo lectura.                                                                                                                            |
+| `autofocus`   | booleano        | Recibe el foco automáticamente al cargar la página.                                                                                      |
+| `wrap`        | `soft`, `hard`  | Controla cómo se envuelve el texto al enviarlo. `soft`: no inserta saltos de línea reales; `hard`: inserta saltos de línea según `cols`. |
+| `spellcheck`  | `true`, `false` | Activa o desactiva la revisión ortográfica.                                                                                              |
+| `resize`      | (propiedad CSS) | En CSS: `resize: none/both/horizontal/vertical` para controlar si el usuario puede redimensionar el área.                                |
 
----
+***
 
 ### 2.6 Etiqueta `<select>` y `<option>`
 
@@ -890,27 +889,27 @@ La etiqueta `<select>` crea una lista desplegable (dropdown) o un cuadro de list
 </select>
 ```
 
-**Atributos de `<select>`:**
+**Atributos de** **`<select>`:**
 
-| Atributo | Valores | Descripción |
-|---|---|---|
-| `name` | texto | Nombre del campo para el envío. |
-| `multiple` | booleano | Permite seleccionar múltiples opciones manteniendo Ctrl/Cmd. Cambia el aspecto de dropdown a listbox. |
-| `size` | número | Número de opciones visibles sin scroll. Por defecto `1` (dropdown). |
-| `required` | booleano | Requiere que se seleccione una opción con `value` no vacío. |
-| `disabled` | booleano | Deshabilita toda la lista. |
-| `autocomplete` | texto | Tipo de autocompletado para el campo. |
+| Atributo       | Valores  | Descripción                                                                                           |
+| -------------- | -------- | ----------------------------------------------------------------------------------------------------- |
+| `name`         | texto    | Nombre del campo para el envío.                                                                       |
+| `multiple`     | booleano | Permite seleccionar múltiples opciones manteniendo Ctrl/Cmd. Cambia el aspecto de dropdown a listbox. |
+| `size`         | número   | Número de opciones visibles sin scroll. Por defecto `1` (dropdown).                                   |
+| `required`     | booleano | Requiere que se seleccione una opción con `value` no vacío.                                           |
+| `disabled`     | booleano | Deshabilita toda la lista.                                                                            |
+| `autocomplete` | texto    | Tipo de autocompletado para el campo.                                                                 |
 
-**Atributos de `<option>`:**
+**Atributos de** **`<option>`:**
 
-| Atributo | Valores | Descripción |
-|---|---|---|
-| `value` | texto | El valor que se envía al servidor cuando esta opción está seleccionada. Si se omite, se usa el contenido de texto de la opción. |
-| `selected` | booleano | Preselecciona esta opción cuando la página carga. |
-| `disabled` | booleano | Deshabilita esta opción específica (no puede ser seleccionada). Útil para el placeholder "Selecciona...". |
-| `label` | texto | Etiqueta alternativa para mostrar (raramente usado). |
+| Atributo   | Valores  | Descripción                                                                                                                     |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `value`    | texto    | El valor que se envía al servidor cuando esta opción está seleccionada. Si se omite, se usa el contenido de texto de la opción. |
+| `selected` | booleano | Preselecciona esta opción cuando la página carga.                                                                               |
+| `disabled` | booleano | Deshabilita esta opción específica (no puede ser seleccionada). Útil para el placeholder "Selecciona...".                       |
+| `label`    | texto    | Etiqueta alternativa para mostrar (raramente usado).                                                                            |
 
----
+***
 
 ### 2.7 Etiqueta `<optgroup>`
 
@@ -936,14 +935,14 @@ La etiqueta `<select>` crea una lista desplegable (dropdown) o un cuadro de list
 </select>
 ```
 
-**Atributos de `<optgroup>`:**
+**Atributos de** **`<optgroup>`:**
 
-| Atributo | Descripción |
-|---|---|
-| `label` | **Obligatorio.** Texto del encabezado del grupo. No es seleccionable. |
-| `disabled` | Deshabilita todas las opciones del grupo. |
+| Atributo   | Descripción                                                           |
+| ---------- | --------------------------------------------------------------------- |
+| `label`    | **Obligatorio.** Texto del encabezado del grupo. No es seleccionable. |
+| `disabled` | Deshabilita todas las opciones del grupo.                             |
 
----
+***
 
 ### 2.8 Etiqueta `<button>`
 
@@ -968,22 +967,22 @@ La etiqueta `<button>` crea un botón interactivo. A diferencia de `<input type=
 <button type="submit" disabled>Procesando...</button>
 ```
 
-**Atributos de `<button>`:**
+**Atributos de** **`<button>`:**
 
-| Atributo | Valores | Descripción |
-|---|---|---|
-| `type` | `submit`, `reset`, `button` | Comportamiento del botón. **Si se omite, por defecto es `submit`** dentro de un formulario, lo que puede causar envíos accidentales. Siempre especificar `type`. |
-| `disabled` | booleano | Deshabilita el botón. |
-| `name` | texto | Nombre del botón para incluirlo en el envío del formulario. |
-| `value` | texto | Valor asociado al `name` que se envía al presionar este botón específico. |
-| `form` | id de form | Asocia el botón a un formulario fuera de su contenedor. |
-| `formaction` | URL | Sobreescribe el `action` del formulario para este botón específico. |
-| `formmethod` | `get`, `post` | Sobreescribe el `method` del formulario para este botón. |
-| `formenctype` | encoding | Sobreescribe el `enctype` del formulario para este botón. |
-| `formnovalidate` | booleano | Deshabilita la validación del formulario para este botón. |
-| `autofocus` | booleano | Recibe el foco al cargar la página. |
+| Atributo         | Valores                     | Descripción                                                                                                                                                          |
+| ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`           | `submit`, `reset`, `button` | Comportamiento del botón. **Si se omite, por defecto es** **`submit`** dentro de un formulario, lo que puede causar envíos accidentales. Siempre especificar `type`. |
+| `disabled`       | booleano                    | Deshabilita el botón.                                                                                                                                                |
+| `name`           | texto                       | Nombre del botón para incluirlo en el envío del formulario.                                                                                                          |
+| `value`          | texto                       | Valor asociado al `name` que se envía al presionar este botón específico.                                                                                            |
+| `form`           | id de form                  | Asocia el botón a un formulario fuera de su contenedor.                                                                                                              |
+| `formaction`     | URL                         | Sobreescribe el `action` del formulario para este botón específico.                                                                                                  |
+| `formmethod`     | `get`, `post`               | Sobreescribe el `method` del formulario para este botón.                                                                                                             |
+| `formenctype`    | encoding                    | Sobreescribe el `enctype` del formulario para este botón.                                                                                                            |
+| `formnovalidate` | booleano                    | Deshabilita la validación del formulario para este botón.                                                                                                            |
+| `autofocus`      | booleano                    | Recibe el foco al cargar la página.                                                                                                                                  |
 
----
+***
 
 ### 2.9 Etiqueta `<fieldset>` y `<legend>`
 
@@ -1020,15 +1019,15 @@ Son especialmente importantes para la **accesibilidad** en grupos de radios y ch
 </fieldset>
 ```
 
-**Atributos de `<fieldset>`:**
+**Atributos de** **`<fieldset>`:**
 
-| Atributo | Descripción |
-|---|---|
+| Atributo   | Descripción                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------- |
 | `disabled` | Deshabilita todos los controles del grupo. Útil para deshabilitar secciones completas condicionalmente. |
-| `name` | Nombre del fieldset para referenciarlo con JavaScript. |
-| `form` | Asocia el fieldset a un formulario externo. |
+| `name`     | Nombre del fieldset para referenciarlo con JavaScript.                                                  |
+| `form`     | Asocia el fieldset a un formulario externo.                                                             |
 
----
+***
 
 ### 2.10 Etiqueta `<datalist>`
 
@@ -1056,7 +1055,7 @@ Son especialmente importantes para la **accesibilidad** en grupos de radios y ch
 
 También funciona con `type="color"`, `type="range"`, `type="date"` y otros tipos para sugerir valores.
 
----
+***
 
 ### 2.11 Etiqueta `<output>`
 
@@ -1072,15 +1071,15 @@ También funciona con `type="color"`, `type="range"`, `type="date"` y otros tipo
 </form>
 ```
 
-**Atributos de `<output>`:**
+**Atributos de** **`<output>`:**
 
-| Atributo | Descripción |
-|---|---|
-| `for` | Lista de `id` de los controles cuyos valores produjeron este resultado, separados por espacios. |
-| `name` | Nombre del campo para ser referenciado. |
-| `form` | Asocia el output a un formulario externo. |
+| Atributo | Descripción                                                                                     |
+| -------- | ----------------------------------------------------------------------------------------------- |
+| `for`    | Lista de `id` de los controles cuyos valores produjeron este resultado, separados por espacios. |
+| `name`   | Nombre del campo para ser referenciado.                                                         |
+| `form`   | Asocia el output a un formulario externo.                                                       |
 
----
+***
 
 ### 2.12 Etiqueta `<progress>`
 
@@ -1095,14 +1094,14 @@ Muestra el progreso de una tarea, como la carga de un archivo o el avance en un 
 <progress>Procesando...</progress>
 ```
 
-**Atributos de `<progress>`:**
+**Atributos de** **`<progress>`:**
 
-| Atributo | Descripción |
-|---|---|
-| `max` | Valor total que representa el 100%. Por defecto `1`. |
-| `value` | Progreso actual. Debe ser entre `0` y `max`. Si se omite, la barra es indeterminada (animación de "cargando"). |
+| Atributo | Descripción                                                                                                    |
+| -------- | -------------------------------------------------------------------------------------------------------------- |
+| `max`    | Valor total que representa el 100%. Por defecto `1`.                                                           |
+| `value`  | Progreso actual. Debe ser entre `0` y `max`. Si se omite, la barra es indeterminada (animación de "cargando"). |
 
----
+***
 
 ### 2.13 Etiqueta `<meter>`
 
@@ -1116,18 +1115,18 @@ Representa un valor escalar dentro de un rango conocido, o una medida fraccionar
 <meter min="0" max="10" value="7.4">7.4 de 10</meter>
 ```
 
-**Atributos de `<meter>`:**
+**Atributos de** **`<meter>`:**
 
-| Atributo | Descripción |
-|---|---|
-| `value` | El valor numérico actual medido. |
-| `min` | Límite inferior del rango. Por defecto `0`. |
-| `max` | Límite superior del rango. Por defecto `1`. |
-| `low` | Umbral que define el inicio del rango "bajo". Valores por debajo de este pueden mostrarse en color de advertencia. |
-| `high` | Umbral que define el inicio del rango "alto". |
-| `optimum` | El valor óptimo o ideal. Guía al navegador sobre qué color usar para indicar si el valor es "bueno" o "malo". |
+| Atributo  | Descripción                                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| `value`   | El valor numérico actual medido.                                                                                   |
+| `min`     | Límite inferior del rango. Por defecto `0`.                                                                        |
+| `max`     | Límite superior del rango. Por defecto `1`.                                                                        |
+| `low`     | Umbral que define el inicio del rango "bajo". Valores por debajo de este pueden mostrarse en color de advertencia. |
+| `high`    | Umbral que define el inicio del rango "alto".                                                                      |
+| `optimum` | El valor óptimo o ideal. Guía al navegador sobre qué color usar para indicar si el valor es "bueno" o "malo".      |
 
----
+***
 
 ### Estructura completa de un formulario bien construido
 
@@ -1234,7 +1233,7 @@ Representa un valor escalar dentro de un rango conocido, o una medida fraccionar
 </form>
 ```
 
----
+***
 
 ## 3. Etiquetas de Tablas
 
@@ -1243,6 +1242,7 @@ Representa un valor escalar dentro de un rango conocido, o una medida fraccionar
 Una **tabla HTML** es una estructura de datos bidimensional organizada en filas y columnas, diseñada para presentar información **tabular**: datos que tienen una relación lógica entre sí y que se benefician de ser visualizados en una cuadrícula.
 
 Las tablas HTML son apropiadas para mostrar:
+
 - Horarios y calendarios
 - Comparaciones de productos o servicios
 - Datos estadísticos y reportes
@@ -1254,7 +1254,7 @@ Las tablas HTML son apropiadas para mostrar:
 
 Históricamente, antes de que CSS madurara, los desarrolladores usaban tablas para crear el layout (estructura) visual de las páginas web. Esta práctica está completamente obsoleta y es considerada un error grave en el desarrollo moderno. Las tablas deben usarse **exclusivamente para datos tabulares**, nunca para maquetación. El layout debe hacerse con CSS (Flexbox, Grid).
 
----
+***
 
 ### 3.2 Etiqueta `<table>`
 
@@ -1266,15 +1266,15 @@ Históricamente, antes de que CSS madurara, los desarrolladores usaban tablas pa
 </table>
 ```
 
-**Atributos relevantes de `<table>`:**
+**Atributos relevantes de** **`<table>`:**
 
-| Atributo | Descripción |
-|---|---|
-| `summary` | (Obsoleto en HTML5) Descripción de la tabla para lectores de pantalla. Reemplazado por `<caption>` y `aria-describedby`. |
-| `border` | (Obsoleto) Grosor del borde. Usar CSS en su lugar. |
-| `cellpadding` | (Obsoleto) Espacio interno en celdas. Usar CSS en su lugar. |
-| `cellspacing` | (Obsoleto) Espacio entre celdas. Usar CSS `border-collapse` en su lugar. |
-| `width` | (Obsoleto) Anchura de la tabla. Usar CSS en su lugar. |
+| Atributo      | Descripción                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `summary`     | (Obsoleto en HTML5) Descripción de la tabla para lectores de pantalla. Reemplazado por `<caption>` y `aria-describedby`. |
+| `border`      | (Obsoleto) Grosor del borde. Usar CSS en su lugar.                                                                       |
+| `cellpadding` | (Obsoleto) Espacio interno en celdas. Usar CSS en su lugar.                                                              |
+| `cellspacing` | (Obsoleto) Espacio entre celdas. Usar CSS `border-collapse` en su lugar.                                                 |
+| `width`       | (Obsoleto) Anchura de la tabla. Usar CSS en su lugar.                                                                    |
 
 > **Importante:** En HTML5, todos los atributos de presentación de `<table>` están obsoletos. Todo el estilo visual debe controlarse con CSS.
 
@@ -1291,13 +1291,14 @@ Históricamente, antes de que CSS madurara, los desarrolladores usaban tablas pa
 </p>
 ```
 
----
+***
 
 ### 3.3 Etiqueta `<thead>`
 
 `<thead>` (Table Head) define la sección de **encabezado** de la tabla. Contiene las filas que describen el significado de cada columna. Generalmente incluye una o más filas `<tr>` con celdas de encabezado `<th>`.
 
-**¿Por qué usar `<thead>`?**
+**¿Por qué usar** **`<thead>`?**
+
 - Semántica: distingue claramente las filas de encabezado del cuerpo de datos.
 - Accesibilidad: los lectores de pantalla pueden anunciar el encabezado de columna antes de leer cada celda de datos.
 - Funcionalidad: cuando una tabla larga se imprime, el navegador puede repetir las filas de `<thead>` en cada página impresa automáticamente.
@@ -1317,7 +1318,7 @@ Históricamente, antes de que CSS madurara, los desarrolladores usaban tablas pa
 </table>
 ```
 
----
+***
 
 ### 3.4 Etiqueta `<tbody>`
 
@@ -1356,7 +1357,7 @@ Aunque `<tbody>` es opcional (el navegador lo añade automáticamente al parsear
 </tbody>
 ```
 
----
+***
 
 ### 3.5 Etiqueta `<tfoot>`
 
@@ -1395,7 +1396,7 @@ Aunque `<tbody>` es opcional (el navegador lo añade automáticamente al parsear
 </table>
 ```
 
----
+***
 
 ### 3.6 Etiqueta `<tr>`
 
@@ -1411,7 +1412,7 @@ Aunque `<tbody>` es opcional (el navegador lo añade automáticamente al parsear
 
 Todos los atributos de presentación de `<tr>` están obsoletos en HTML5 (`align`, `valign`, `bgcolor`). Se controlan con CSS.
 
----
+***
 
 ### 3.7 Etiqueta `<th>`
 
@@ -1444,17 +1445,17 @@ El atributo `scope` es crítico para la accesibilidad, ya que indica a qué celd
 </tbody>
 ```
 
-**Atributos de `<th>`:**
+**Atributos de** **`<th>`:**
 
-| Atributo | Valores | Descripción |
-|---|---|---|
-| `scope` | `col`, `row`, `colgroup`, `rowgroup` | **Muy importante para accesibilidad.** Indica si el encabezado aplica a una columna (`col`), una fila (`row`), un grupo de columnas (`colgroup`) o un grupo de filas (`rowgroup`). |
-| `abbr` | texto | Versión abreviada del encabezado, usada por lectores de pantalla en tablas complejas. |
-| `colspan` | número | Número de columnas que ocupa esta celda (fusión horizontal). Por defecto `1`. |
-| `rowspan` | número | Número de filas que ocupa esta celda (fusión vertical). Por defecto `1`. |
-| `headers` | lista de ids | Lista de ids de los `<th>` que encabezan esta celda, para tablas muy complejas. |
+| Atributo  | Valores                              | Descripción                                                                                                                                                                        |
+| --------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scope`   | `col`, `row`, `colgroup`, `rowgroup` | **Muy importante para accesibilidad.** Indica si el encabezado aplica a una columna (`col`), una fila (`row`), un grupo de columnas (`colgroup`) o un grupo de filas (`rowgroup`). |
+| `abbr`    | texto                                | Versión abreviada del encabezado, usada por lectores de pantalla en tablas complejas.                                                                                              |
+| `colspan` | número                               | Número de columnas que ocupa esta celda (fusión horizontal). Por defecto `1`.                                                                                                      |
+| `rowspan` | número                               | Número de filas que ocupa esta celda (fusión vertical). Por defecto `1`.                                                                                                           |
+| `headers` | lista de ids                         | Lista de ids de los `<th>` que encabezan esta celda, para tablas muy complejas.                                                                                                    |
 
----
+***
 
 ### 3.8 Etiqueta `<td>`
 
@@ -1471,15 +1472,15 @@ El atributo `scope` es crítico para la accesibilidad, ya que indica a qué celd
 </tbody>
 ```
 
-**Atributos de `<td>`:**
+**Atributos de** **`<td>`:**
 
-| Atributo | Valores | Descripción |
-|---|---|---|
-| `colspan` | número | Número de columnas que ocupa (fusión horizontal). Útil para celdas que abarcan múltiples columnas. |
-| `rowspan` | número | Número de filas que ocupa (fusión vertical). Útil para celdas que abarcan múltiples filas. |
+| Atributo  | Valores      | Descripción                                                                                                        |
+| --------- | ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `colspan` | número       | Número de columnas que ocupa (fusión horizontal). Útil para celdas que abarcan múltiples columnas.                 |
+| `rowspan` | número       | Número de filas que ocupa (fusión vertical). Útil para celdas que abarcan múltiples filas.                         |
 | `headers` | lista de ids | Referencia a los `<th>` que corresponden a esta celda, para tablas complejas con múltiples niveles de encabezados. |
 
-**Ejemplo de `colspan` y `rowspan`:**
+**Ejemplo de** **`colspan`** **y** **`rowspan`:**
 
 ```html
 <table>
@@ -1508,7 +1509,7 @@ El atributo `scope` es crítico para la accesibilidad, ya que indica a qué celd
 </table>
 ```
 
----
+***
 
 ### 3.9 Etiqueta `<caption>`
 
@@ -1534,7 +1535,7 @@ caption {
 }
 ```
 
----
+***
 
 ### 3.10 Etiqueta `<colgroup>` y `<col>`
 
@@ -1561,16 +1562,16 @@ caption {
 </table>
 ```
 
-**Atributos de `<col>`:**
+**Atributos de** **`<col>`:**
 
-| Atributo | Descripción |
-|---|---|
-| `span` | Número de columnas a las que aplica este `<col>`. Por defecto `1`. |
-| `style` | Estilos CSS a aplicar a la columna (opciones limitadas: `background-color`, `border`, `visibility`, `width`). |
+| Atributo | Descripción                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
+| `span`   | Número de columnas a las que aplica este `<col>`. Por defecto `1`.                                            |
+| `style`  | Estilos CSS a aplicar a la columna (opciones limitadas: `background-color`, `border`, `visibility`, `width`). |
 
 > **Nota:** `<col>` solo soporta un subconjunto limitado de propiedades CSS. Para estilos más complejos es mejor usar clases en las celdas directamente.
 
----
+***
 
 ### 3.11 Estructura Completa de una Tabla
 
@@ -1643,7 +1644,7 @@ caption {
 </figure>
 ```
 
----
+***
 
 ## 4. Nomenclatura de Carpetas y Archivos
 
@@ -1653,22 +1654,22 @@ La **nomenclatura** (naming convention) en el contexto de desarrollo de software
 
 Tener una nomenclatura consistente y bien elegida no es un capricho estético; es una práctica de ingeniería con consecuencias directas y medibles en la calidad del software:
 
-**1. Legibilidad y comprensión del código:**  
+**1. Legibilidad y comprensión del código:**\
 Un nombre descriptivo y consistente comunica el propósito de un archivo o variable de forma inmediata. `user-profile-settings.css` es instantáneamente comprensible; `ups.css` o `archivo3.css` no lo son.
 
-**2. Colaboración en equipo:**  
+**2. Colaboración en equipo:**\
 En proyectos con múltiples desarrolladores, las convenciones de nomenclatura evitan que cada persona use su propio estilo, lo que resultaría en una base de código inconsistente y difícil de navegar. Los equipos profesionales documentan sus convenciones en guías de estilo o `CONTRIBUTING.md`.
 
-**3. Compatibilidad entre sistemas operativos:**  
+**3. Compatibilidad entre sistemas operativos:**\
 Los sistemas de archivos de diferentes sistemas operativos tienen distintas reglas. En **Linux y macOS** los sistemas de archivos son sensibles a mayúsculas (`archivo.html` y `Archivo.html` son archivos distintos). En **Windows** los sistemas de archivos son generalmente insensibles a mayúsculas. Esto puede causar bugs difíciles de detectar: un archivo funciona localmente en Windows pero falla en producción en un servidor Linux.
 
-**4. URLs y rutas web:**  
+**4. URLs y rutas web:**\
 Las URLs son procesadas por servidores Linux, por lo que son sensibles a mayúsculas. Las URLs amigables para SEO y usuarios deben ser en minúsculas, con separación clara de palabras. `my-blog-post` es mejor URL que `MyBlogPost` o `my_blog_post`.
 
-**5. Compatibilidad con herramientas:**  
+**5. Compatibilidad con herramientas:**\
 Algunos frameworks, bundlers y herramientas de build tienen expectativas específicas sobre la nomenclatura de archivos (React espera componentes en PascalCase, algunos módulos CSS esperan kebab-case, etc.).
 
----
+***
 
 ### 4.2 kebab-case
 
@@ -1677,6 +1678,7 @@ Algunos frameworks, bundlers y herramientas de build tienen expectativas especí
 El nombre "kebab" viene de la analogía visual: las palabras ensartadas en el guión como ingredientes en un pincho de kebab.
 
 **Formato:**
+
 ```
 mi-archivo-de-estilos.css
 user-profile-card.html
@@ -1692,7 +1694,8 @@ api-response-handler.js
 
 **¿Dónde se usa kebab-case?**
 
-**Archivos HTML, CSS y assets web:**  
+**Archivos HTML, CSS y assets web:**
+
 ```
 index.html
 about-us.html
@@ -1703,15 +1706,17 @@ user-avatar.png
 background-pattern.svg
 ```
 
-**URLs y rutas de navegación:**  
+**URLs y rutas de navegación:**\
 Las URLs en kebab-case son las favoritas de Google para el SEO porque son legibles, fáciles de compartir, y los motores de búsqueda las prefieren para separar palabras clave. Los guiones en las URLs son interpretados como separadores de palabras.
+
 ```
 https://misitio.com/blog/introduccion-a-javascript
 https://misitio.com/productos/zapatos-deportivos
 https://misitio.com/sobre-nosotros
 ```
 
-**Paquetes de npm:**  
+**Paquetes de npm:**
+
 ```
 react-dom
 lodash-es
@@ -1719,7 +1724,8 @@ date-fns
 express-validator
 ```
 
-**Carpetas de proyectos web:**  
+**Carpetas de proyectos web:**
+
 ```
 src/
 ├── components/
@@ -1734,8 +1740,9 @@ src/
     └── fonts/
 ```
 
-**Clases CSS:**  
+**Clases CSS:**\
 La metodología BEM (Block Element Modifier) usa kebab-case para bloques y elementos:
+
 ```css
 .navigation-bar { }
 .navigation-bar__menu-item { }
@@ -1743,6 +1750,7 @@ La metodología BEM (Block Element Modifier) usa kebab-case para bloques y eleme
 ```
 
 **Propiedades CSS personalizadas:**
+
 ```css
 :root {
   --primary-color: #3B82F6;
@@ -1759,13 +1767,14 @@ La metodología BEM (Block Element Modifier) usa kebab-case para bloques y eleme
 - Google y otros buscadores tratan los guiones como separadores de palabras.
 - Es fácil de leer y escribir.
 
----
+***
 
-### 4.3 snake_case
+### 4.3 snake\_case
 
-**snake_case** es una convención de nomenclatura en la que todas las palabras se escriben en **minúsculas** y se separan con **guiones bajos** (`_`). El nombre "snake" (serpiente) hace referencia a cómo el guión bajo "rastrea" por el suelo entre las palabras, como una serpiente.
+**snake\_case** es una convención de nomenclatura en la que todas las palabras se escriben en **minúsculas** y se separan con **guiones bajos** (`_`). El nombre "snake" (serpiente) hace referencia a cómo el guión bajo "rastrea" por el suelo entre las palabras, como una serpiente.
 
 **Formato:**
+
 ```
 mi_archivo.py
 user_profile.json
@@ -1779,10 +1788,10 @@ database_connection.rb
 - Palabras separadas con **guión bajo** (`_`).
 - Sin espacios ni guiones medios.
 
-**¿Dónde se usa snake_case?**
+**¿Dónde se usa snake\_case?**
 
-**Python — el lenguaje que más lo usa:**  
-La guía de estilo oficial de Python ([PEP 8](https://pep8.org/)) recomienda snake_case para nombres de variables, funciones, métodos, módulos y paquetes:
+**Python — el lenguaje que más lo usa:**\
+La guía de estilo oficial de Python ([PEP 8](https://pep8.org/)) recomienda snake\_case para nombres de variables, funciones, métodos, módulos y paquetes:
 
 ```python
 # Variables
@@ -1801,8 +1810,8 @@ def calculate_total_price(unit_price, quantity, discount_rate):
 # data_validation.py
 ```
 
-**Ruby:**  
-Ruby también usa snake_case por convención para variables y métodos.
+**Ruby:**\
+Ruby también usa snake\_case por convención para variables y métodos.
 
 ```ruby
 def calculate_monthly_payment(principal, annual_rate, months)
@@ -1811,8 +1820,8 @@ def calculate_monthly_payment(principal, annual_rate, months)
 end
 ```
 
-**Bases de datos — nombres de tablas y columnas:**  
-En SQL (y en general en bases de datos relacionales), snake_case es la convención más extendida:
+**Bases de datos — nombres de tablas y columnas:**\
+En SQL (y en general en bases de datos relacionales), snake\_case es la convención más extendida:
 
 ```sql
 CREATE TABLE user_accounts (
@@ -1844,8 +1853,9 @@ src/
     └── string_validators.py
 ```
 
-**JSON y configuración:**  
-Muchas APIs y archivos de configuración usan snake_case para sus claves:
+**JSON y configuración:**\
+Muchas APIs y archivos de configuración usan snake\_case para sus claves:
+
 ```json
 {
   "user_id": 1234,
@@ -1857,8 +1867,8 @@ Muchas APIs y archivos de configuración usan snake_case para sus claves:
 }
 ```
 
-**SCREAMING_SNAKE_CASE:**  
-Una variante especial que usa snake_case pero en **mayúsculas**. Se usa universalmente para constantes, variables de entorno y valores que no cambian:
+**SCREAMING\_SNAKE\_CASE:**\
+Una variante especial que usa snake\_case pero en **mayúsculas**. Se usa universalmente para constantes, variables de entorno y valores que no cambian:
 
 ```python
 # Python - constantes
@@ -1879,7 +1889,7 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 ```
 
----
+***
 
 ### 4.4 PascalCase
 
@@ -1888,6 +1898,7 @@ SMTP_PORT=587
 Se llama "Pascal" porque popularizó su uso el lenguaje de programación Pascal, creado por Niklaus Wirth en los 70.
 
 **Formato:**
+
 ```
 UserProfile
 ShoppingCart
@@ -1903,7 +1914,7 @@ ApiResponseHandler
 
 **¿Dónde se usa PascalCase?**
 
-**Clases en casi todos los lenguajes de programación:**  
+**Clases en casi todos los lenguajes de programación:**\
 PascalCase es la convención casi universal para nombres de clases:
 
 ```javascript
@@ -1949,7 +1960,7 @@ class UserAuthenticationService:
         pass
 ```
 
-**Componentes de React:**  
+**Componentes de React:**\
 En React, los componentes **deben** nombrarse en PascalCase. Esta es una regla funcional (no solo de estilo): React distingue entre componentes personalizados y elementos HTML nativos precisamente por la capitalización del nombre.
 
 ```jsx
@@ -2024,17 +2035,19 @@ namespace UserManagement.Authentication {
 ```
 
 **Por qué PascalCase para clases y componentes:**
+
 - Diferencia visualmente las clases/constructores de funciones y variables.
 - Es una convención tan universal que es comprendida inmediatamente por cualquier desarrollador.
 - En React, es funcionalmente necesario para que el framework identifique correctamente los componentes.
 
----
+***
 
 ### 4.5 camelCase
 
 **camelCase** (también llamado *lowerCamelCase*) es similar a PascalCase, pero la **primera letra del nombre completo va en minúscula**. Las primeras letras de las palabras subsiguientes van en mayúscula. El nombre "camel" alude a las "jorobas" que forman las mayúsculas en el medio del nombre.
 
 **Formato:**
+
 ```
 myVariable
 calculateTotalPrice
@@ -2051,7 +2064,7 @@ isAuthenticated
 
 **¿Dónde se usa camelCase?**
 
-**Variables y funciones en JavaScript/TypeScript:**  
+**Variables y funciones en JavaScript/TypeScript:**\
 camelCase es la convención estándar en JavaScript para nombrar variables, funciones, métodos y parámetros:
 
 ```javascript
@@ -2093,7 +2106,7 @@ const userAccount = {
 };
 ```
 
-**Hooks de React:**  
+**Hooks de React:**\
 Los hooks personalizados en React usan camelCase con el prefijo `use`:
 
 ```javascript
@@ -2109,7 +2122,7 @@ function useShoppingCart() {
 }
 ```
 
-**Métodos en Java:**  
+**Métodos en Java:**\
 Java usa PascalCase para clases y camelCase para métodos y variables:
 
 ```java
@@ -2132,7 +2145,7 @@ public class UserAuthenticationService {
 }
 ```
 
-**Propiedades de objetos JSON (en APIs JavaScript):**  
+**Propiedades de objetos JSON (en APIs JavaScript):**\
 Muchas APIs REST que sirven a aplicaciones JavaScript usan camelCase en sus respuestas:
 
 ```json
@@ -2168,17 +2181,17 @@ Muchas APIs REST que sirven a aplicaciones JavaScript usan camelCase en sus resp
 />
 ```
 
----
+***
 
 ### 4.6 Tabla Comparativa
 
-| Convención | Formato | Ejemplo | Usos principales |
-|---|---|---|---|
-| **kebab-case** | palabras-en-minúsculas-con-guiones | `user-profile-card.css` | Archivos HTML/CSS/assets, URLs, paquetes npm, ramas de Git, variables CSS personalizadas, clases CSS |
-| **snake_case** | palabras_en_minúsculas_con_guiones_bajos | `calculate_total_price` | Python (variables, funciones, archivos), Ruby, bases de datos SQL, variables de entorno, JSON de APIs en lenguajes no-JS |
-| **SCREAMING_SNAKE_CASE** | CONSTANTES_EN_MAYÚSCULAS | `MAX_RETRY_ATTEMPTS` | Constantes, variables de entorno, configuración fija |
-| **PascalCase** | PrimeraLetraDeCadaPalabraEnMayúscula | `UserProfileCard` | Clases (todos los lenguajes), componentes React, interfaces TypeScript, tipos, enums, archivos de componentes |
-| **camelCase** | primeraLetraMinúsculaResto EnMayúsculas | `calculateTotalPrice` | Variables y funciones en JS/TS/Java/C#, props de React, hooks, métodos de objetos, propiedades JSON |
+| Convención                 | Formato                                       | Ejemplo                 | Usos principales                                                                                                         |
+| -------------------------- | --------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **kebab-case**             | palabras-en-minúsculas-con-guiones            | `user-profile-card.css` | Archivos HTML/CSS/assets, URLs, paquetes npm, ramas de Git, variables CSS personalizadas, clases CSS                     |
+| **snake\_case**            | palabras\_en\_minúsculas\_con\_guiones\_bajos | `calculate_total_price` | Python (variables, funciones, archivos), Ruby, bases de datos SQL, variables de entorno, JSON de APIs en lenguajes no-JS |
+| **SCREAMING\_SNAKE\_CASE** | CONSTANTES\_EN\_MAYÚSCULAS                    | `MAX_RETRY_ATTEMPTS`    | Constantes, variables de entorno, configuración fija                                                                     |
+| **PascalCase**             | PrimeraLetraDeCadaPalabraEnMayúscula          | `UserProfileCard`       | Clases (todos los lenguajes), componentes React, interfaces TypeScript, tipos, enums, archivos de componentes            |
+| **camelCase**              | primeraLetraMinúsculaResto EnMayúsculas       | `calculateTotalPrice`   | Variables y funciones en JS/TS/Java/C#, props de React, hooks, métodos de objetos, propiedades JSON                      |
 
 **Guía rápida de decisión:**
 
@@ -2199,7 +2212,7 @@ Muchas APIs REST que sirven a aplicaciones JavaScript usan camelCase en sus resp
   → SCREAMING_SNAKE_CASE: MAX_CONNECTIONS, DATABASE_URL
 ```
 
----
+***
 
 ## Referencias y recursos
 
@@ -2212,6 +2225,6 @@ Muchas APIs REST que sirven a aplicaciones JavaScript usan camelCase en sus resp
 - [Airbnb JavaScript Style Guide](https://github.com/airbnb/javascript)
 - [WebAIM — Accesibilidad web](https://webaim.org/)
 
----
+***
 
 *Documentación generada para uso educativo y de referencia técnica.*

@@ -50,33 +50,38 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 px-6 py-16">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-sm ring-1 ring-black/5">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-950">
-          Panel admin
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600">Inicia sesion para continuar.</p>
+    <div className="flex flex-1 items-center justify-center bg-background px-6 py-16">
+      <div className="w-full max-w-sm zs-card p-6">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
+            ZS
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">Panel admin</h1>
+            <p className="mt-0.5 text-sm text-foreground/65">Inicia sesion para continuar.</p>
+          </div>
+        </div>
 
         <div className="mt-6 grid gap-3">
           <label className="grid gap-1">
-            <span className="text-sm font-medium text-zinc-800">Correo</span>
+            <span className="text-sm font-medium text-foreground/80">Correo</span>
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-zinc-950 outline-none focus:border-zinc-400"
+              className="zs-input"
               autoComplete="email"
               placeholder="admin@colegio.edu"
               disabled={submitting}
             />
           </label>
           <label className="grid gap-1">
-            <span className="text-sm font-medium text-zinc-800">Contrasena</span>
+            <span className="text-sm font-medium text-foreground/80">Contrasena</span>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-zinc-950 outline-none focus:border-zinc-400"
+              className="zs-input"
               autoComplete="current-password"
               placeholder="••••••••"
               disabled={submitting}
@@ -84,7 +89,7 @@ export default function AdminLoginPage() {
           </label>
 
           {error ? (
-            <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-xl border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger">
               {error}
             </div>
           ) : null}
@@ -92,26 +97,26 @@ export default function AdminLoginPage() {
           <button
             onClick={loginEmailPassword}
             disabled={submitting || !email || !password}
-            className="h-11 rounded-xl bg-zinc-900 text-sm font-medium text-white disabled:opacity-50"
+            className="zs-btn-primary h-11"
           >
             Entrar
           </button>
 
           <div className="flex items-center gap-3 py-1">
-            <div className="h-px flex-1 bg-zinc-200" />
-            <div className="text-xs text-zinc-500">o</div>
-            <div className="h-px flex-1 bg-zinc-200" />
+            <div className="h-px flex-1 bg-border" />
+            <div className="text-xs text-foreground/55">o</div>
+            <div className="h-px flex-1 bg-border" />
           </div>
 
           <button
             onClick={loginGoogle}
             disabled={submitting}
-            className="h-11 rounded-xl border border-zinc-200 bg-white text-sm font-medium text-zinc-950 disabled:opacity-50"
+            className="zs-btn-secondary h-11"
           >
             Entrar con Google
           </button>
 
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-foreground/55">
             Si inicias sesion pero no eres admin, veras acceso denegado.
           </p>
         </div>

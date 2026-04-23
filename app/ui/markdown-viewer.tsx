@@ -5,16 +5,55 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Info, Copy, Check } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { isValidElement, memo, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 
 function toPlainText(children: unknown): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map(toPlainText).join("");
-  if (children && typeof children === "object" && "props" in (children as any)) {
-    return toPlainText((children as any).props?.children);
+  if (children && typeof children === "object") {
+    const rec = children as Record<string, unknown>;
+    const props = rec.props;
+    if (props && typeof props === "object") {
+      const propsRec = props as Record<string, unknown>;
+      if ("children" in propsRec) return toPlainText(propsRec.children);
+    }
   }
   return "";
+}
+
+function guessLanguage(code: string) {
+  const t = code.trim();
+  if (!t) return "text";
+
+  if (
+    (t.startsWith("{") && t.endsWith("}")) ||
+    (t.startsWith("[") && t.endsWith("]"))
+  ) {
+    try {
+      JSON.parse(t);
+      return "json";
+    } catch {}
+  }
+
+  if (/^\s*<(!doctype|html|[a-z])/i.test(t) || /<\/[a-z][\s\S]*?>/i.test(t)) return "html";
+
+  if (
+    /^\s*(select|with|insert|update|delete)\b/i.test(t) ||
+    (/\bselect\b/i.test(t) && /\bfrom\b/i.test(t))
+  ) {
+    return "sql";
+  }
+
+  if (/\bdef\s+\w+\s*\(/.test(t) || /\bprint\s*\(/.test(t) || /^\s*import\s+\w+/m.test(t)) return "python";
+
+  if (/\bpublic\s+class\b/.test(t) || /\bSystem\.out\.println\b/.test(t)) return "java";
+
+  if (/^\s*\$ /.test(t) || /^\s*(npm|pnpm|yarn|npx|node)\b/m.test(t)) return "bash";
+
+  if (/\b(const|let|var|function)\b/.test(t) || /=>/.test(t) || /\bconsole\./.test(t)) return "javascript";
+
+  return "text";
 }
 
 function slugify(text: string) {
@@ -46,6 +85,34 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
     </button>
+  );
+}
+
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  return (
+    <div className="group relative my-6 overflow-hidden rounded-2xl border border-zinc-800 bg-[#1E1E1E] shadow-lg">
+      <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/50 px-4 py-2">
+        <span className="font-mono text-xs font-semibold uppercase text-zinc-400">{language}</span>
+        <CopyButton text={code} />
+      </div>
+      <SyntaxHighlighter
+        style={vscDarkPlus}
+        language={language}
+        PreTag="div"
+        customStyle={{
+          margin: 0,
+          padding: "1rem",
+          background: "transparent",
+          fontSize: "13px",
+          lineHeight: "1.6",
+        }}
+        codeTagProps={{
+          style: { fontFamily: "var(--font-mono)", fontSize: "13px" },
+        }}
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
   );
 }
 
@@ -116,7 +183,7 @@ export const MarkdownViewer = memo(function MarkdownViewer({
           ul: (props) => <ul {...props} className="list-disc space-y-2 pl-6 text-zinc-700" />,
           ol: (props) => <ol {...props} className="list-decimal space-y-2 pl-6 text-zinc-700" />,
           li: (props) => <li {...props} className="text-[15px] leading-relaxed marker:text-zinc-400" />,
-          blockquote: ({ node, ...props }) => (
+          blockquote: (props) => (
             <motion.blockquote
               initial={{ opacity: 0, x: -10 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -129,54 +196,27 @@ export const MarkdownViewer = memo(function MarkdownViewer({
               </div>
             </motion.blockquote>
           ),
-          code: ({ className, children, ...props }) => {
-            const match = /language-(\w+)/.exec(className || "");
-            const isBlock = match != null || (className && className.includes("language-"));
-            
-            if (!isBlock) {
-              return (
-                <code
-                  {...props}
-                  className="rounded-md border border-zinc-200 bg-zinc-100/80 px-[5px] py-[2px] font-mono text-[13px] font-medium text-indigo-600"
-                >
-                  {children}
-                </code>
-              );
-            }
-
-            const language = match ? match[1] : "text";
-            const codeString = String(children).replace(/\n$/, "");
-
+          code: ({ children, ...props }) => {
             return (
-              <div className="group relative my-6 overflow-hidden rounded-2xl border border-zinc-800 bg-[#1E1E1E] shadow-lg">
-                <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/50 px-4 py-2">
-                  <span className="font-mono text-xs font-semibold uppercase text-zinc-400">
-                    {language}
-                  </span>
-                  <CopyButton text={codeString} />
-                </div>
-                <SyntaxHighlighter
-                  {...(props as any)}
-                  style={vscDarkPlus}
-                  language={language}
-                  PreTag="div"
-                  customStyle={{
-                    margin: 0,
-                    padding: "1rem",
-                    background: "transparent",
-                    fontSize: "13px",
-                    lineHeight: "1.6",
-                  }}
-                  codeTagProps={{
-                    style: { fontFamily: "var(--font-mono)", fontSize: "13px" },
-                  }}
-                >
-                  {codeString}
-                </SyntaxHighlighter>
-              </div>
+              <code
+                {...props}
+                className="rounded-md border border-zinc-200 bg-zinc-100/80 px-[5px] py-[2px] font-mono text-[13px] font-medium text-indigo-600"
+              >
+                {children}
+              </code>
             );
           },
-          pre: (props) => <>{props.children}</>, // Evitamos el pre doble porque SyntaxHighlighter ya usa div/pre
+          pre: ({ children }) => {
+            if (isValidElement(children)) {
+              const props = (children.props ?? {}) as Record<string, unknown>;
+              const className = typeof props.className === "string" ? props.className : "";
+              const match = /language-(\w+)/.exec(className);
+              const codeString = toPlainText(props.children).replace(/\n$/, "");
+              const language = match?.[1] && match[1] !== "text" ? match[1] : guessLanguage(codeString);
+              return <CodeBlock code={codeString} language={language} />;
+            }
+            return <pre>{children}</pre>;
+          },
           table: (props) => (
             <div className="my-8 w-full overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
               <table {...props} className="w-full border-collapse text-left text-sm" />
