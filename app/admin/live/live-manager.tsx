@@ -14,7 +14,7 @@ import {
   where,
 } from "firebase/firestore";
 import { Ban, MessageSquareText, Search, KeyRound, Send, X, LayoutGrid, Rows3, UserRound, AlertTriangle, Clock4 } from "lucide-react";
-import { firestore } from "@/lib/firebase/client";
+import { firebaseAuth, firestore } from "@/lib/firebase/client";
 import { IconButton } from "@/app/admin/ui/icon-button";
 
 type PublishedExamRow = {
@@ -166,11 +166,21 @@ export function LiveManager() {
     setClosingId(row.id);
     setError(null);
     try {
-      await updateDoc(doc(firestore, "publishedExams", row.id), {
-        status: "closed",
-        closedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const token = await firebaseAuth.currentUser?.getIdToken();
+      if (!token) {
+        setError("Sesión inválida. Vuelve a iniciar sesión como admin.");
+        return;
+      }
+      const res = await fetch("/api/admin/published-exams/close", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ publishedExamId: row.id }),
       });
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        setError(typeof data?.error === "string" ? data.error : "No fue posible cerrar el examen.");
+        return;
+      }
     } catch {
       setError("No fue posible cerrar el examen.");
     } finally {

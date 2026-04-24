@@ -51,6 +51,7 @@ type ExamTemplateRow = {
   questionCount: number;
   timeLimitMinutes: number;
   active: boolean;
+  fraudEnabled: boolean;
   documentationMarkdown: string;
 };
 
@@ -152,6 +153,7 @@ export function ExamManager() {
   const [questionCount, setQuestionCount] = useState(45);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
   const [active, setActive] = useState(true);
+  const [fraudEnabled, setFraudEnabled] = useState(true);
   const [documentationMarkdown, setDocumentationMarkdown] = useState("");
   const [docFileName, setDocFileName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -294,6 +296,7 @@ export function ExamManager() {
               questionCount: toNumber(row.questionCount, 45),
               timeLimitMinutes: toNumber(row.timeLimitMinutes, 60),
               active: toBoolean(row.active, true),
+              fraudEnabled: toBoolean(row.fraudEnabled, true),
               documentationMarkdown: typeof row.documentationMarkdown === "string" ? row.documentationMarkdown : "",
             };
           }),
@@ -348,6 +351,7 @@ export function ExamManager() {
         questionCount,
         timeLimitMinutes,
         documentationMarkdown: documentationMarkdown.trim(),
+        fraudEnabled,
         allowedQuestionTypes: [
           "single_choice",
           "multiple_choice",
@@ -368,6 +372,7 @@ export function ExamManager() {
       setQuestionCount(45);
       setTimeLimitMinutes(60);
       setActive(true);
+      setFraudEnabled(true);
       setDocumentationMarkdown("");
       setDocFileName(null);
       setCreateOpen(false);
@@ -388,6 +393,24 @@ export function ExamManager() {
         questionCount: value,
         updatedAt: serverTimestamp(),
       });
+      const publishedSnap = await getDocs(
+        query(
+          collection(firestore, "publishedExams"),
+          where("templateId", "==", id),
+          limit(200),
+        ),
+      );
+      await Promise.all(
+        publishedSnap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as Record<string, unknown> & { id: string })
+          .filter((r) => toString((r as Record<string, unknown>).status, "published") === "published")
+          .map(async (r) => {
+            await updateDoc(doc(firestore, "publishedExams", r.id), {
+              questionCount: value,
+              updatedAt: serverTimestamp(),
+            });
+          }),
+      );
     } finally {
       setSavingId(null);
     }
@@ -506,6 +529,7 @@ export function ExamManager() {
         questionCount: publishTarget.questionCount,
         timeLimitMinutes: publishTarget.timeLimitMinutes || 60,
         documentationMarkdown: publishTarget.documentationMarkdown || "",
+        fraudEnabled: publishTarget.fraudEnabled,
         accessCode,
         status: "published",
         publishedAt: serverTimestamp(),
@@ -547,6 +571,7 @@ export function ExamManager() {
     setQuestionCount(row.questionCount);
     setTimeLimitMinutes(row.timeLimitMinutes || 60);
     setActive(row.active);
+    setFraudEnabled(row.fraudEnabled);
     setDocumentationMarkdown(row.documentationMarkdown || "");
     setDocFileName(null);
     setEditOpen(true);
@@ -641,6 +666,7 @@ export function ExamManager() {
         timeLimitMinutes,
         documentationMarkdown: documentationMarkdown.trim(),
         active,
+        fraudEnabled,
         updatedAt: serverTimestamp(),
       });
       const publishedSnap = await getDocs(
@@ -657,6 +683,11 @@ export function ExamManager() {
           .map(async (r) => {
             await updateDoc(doc(firestore, "publishedExams", r.id), {
               documentationMarkdown: documentationMarkdown.trim(),
+              fraudEnabled,
+              questionCount,
+              timeLimitMinutes,
+              templateName: nameRes.value,
+              name: nameRes.value,
               updatedAt: serverTimestamp(),
             });
           }),
@@ -825,6 +856,7 @@ export function ExamManager() {
               setDocFileName(null);
               setInstitution("CESDE");
               setGroupId("");
+              setFraudEnabled(true);
               setCreateOpen(true);
             }}
             className="h-11 w-11 shrink-0"
@@ -1387,6 +1419,12 @@ export function ExamManager() {
                 value={active}
                 onChange={setActive}
               />
+              <Toggle
+                label="Modo fraude"
+                description="Cuenta cambios de pestaña y copy/paste."
+                value={fraudEnabled}
+                onChange={setFraudEnabled}
+              />
 
               <div className="grid gap-2 sm:col-span-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1601,6 +1639,12 @@ export function ExamManager() {
                 description="Si esta inactivo, no se deberia poder publicar."
                 value={active}
                 onChange={setActive}
+              />
+              <Toggle
+                label="Modo fraude"
+                description="Cuenta cambios de pestaña y copy/paste."
+                value={fraudEnabled}
+                onChange={setFraudEnabled}
               />
 
               <div className="grid gap-2 sm:col-span-2">

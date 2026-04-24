@@ -147,7 +147,7 @@ export function DocumentationDrawer({
           </aside>
 
           <main className="overflow-y-auto px-4 py-5 lg:px-8">
-            <div className="mx-auto w-full max-w-4xl rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm lg:p-8">
+            <div className="w-full rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm lg:p-8">
               <MarkdownViewer markdown={markdown} />
             </div>
           </main>

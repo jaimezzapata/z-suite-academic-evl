@@ -2,18 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  addDoc,
-  collection,
   getDoc,
-  getDocs,
-  limit,
   onSnapshot,
-  query,
   serverTimestamp,
   updateDoc,
-  where,
   doc,
-  orderBy,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
 import { normalizeFullName, normalizePersonNamePart } from "@/lib/text/normalize";
@@ -45,6 +38,7 @@ type PublishedExam = {
   questionCount: number;
   timeLimitMinutes: number;
   documentationMarkdown: string;
+  fraudEnabled: boolean;
 };
 
 type SnapshotQuestion = {
@@ -69,6 +63,7 @@ type Step = "code" | "student" | "rules" | "exam" | "result";
 const FRAUD_PENALTY_PER_EVENT_0TO5 = 0.2;
 const FRAUD_FAIL_TOTAL_EVENTS = 11;
 const RESUME_KEY = "zse:examResume";
+const ATTEMPT_STATE_PREFIX = "zse:attemptState:";
 
 function randomInt(maxExclusive: number) {
   if (maxExclusive <= 0) return 0;
@@ -96,6 +91,10 @@ function toString(value: unknown, fallback = "") {
 
 function toNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function toBoolean(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function toMillis(value: unknown) {
@@ -246,13 +245,15 @@ export default function ExamPublicPage() {
     submittedFraudFail: false,
   });
   const autosaveTimerRef = useRef<number | null>(null);
+  const autoResumeRef = useRef(false);
 
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
 
   const displayQuestions = useMemo(() => {
-    if (!questionOrder.length) return questions;
+    const limitCount = exam?.questionCount ? Math.max(1, Math.min(exam.questionCount, questions.length)) : questions.length;
+    if (!questionOrder.length) return questions.slice(0, limitCount);
     const byId = new Map<string, SnapshotQuestion>();
     questions.forEach((q) => byId.set(q.questionId, q));
     const ordered: SnapshotQuestion[] = [];
@@ -265,8 +266,8 @@ export default function ExamPublicPage() {
         if (!questionOrder.includes(q.questionId)) ordered.push(q);
       });
     }
-    return ordered;
-  }, [questions, questionOrder]);
+    return ordered.slice(0, limitCount);
+  }, [questions, questionOrder, exam?.questionCount]);
 
   useEffect(() => {
     if (step !== "code") return;
@@ -278,6 +279,19 @@ export default function ExamPublicPage() {
       if (c && /^\d{6}$/.test(c)) setCode(c);
     } catch {}
   }, [step]);
+
+  useEffect(() => {
+    if (autoResumeRef.current) return;
+    if (step !== "code") return;
+    if (loading) return;
+    if (!/^\d{6}$/.test(code.trim())) return;
+    try {
+      const raw = localStorage.getItem(RESUME_KEY);
+      if (!raw) return;
+      autoResumeRef.current = true;
+      void loadExamByCode();
+    } catch {}
+  }, [step, code, loading]);
 
   useEffect(() => {
     fraudCountsRef.current = { tab: fraudTabSwitches, clip: fraudClipboardAttempts };
@@ -314,6 +328,7 @@ export default function ExamPublicPage() {
         questionCount: toNumber(examRow?.questionCount, 0),
         timeLimitMinutes: toNumber(examRow?.timeLimitMinutes, 60),
         documentationMarkdown: toString(examRow?.documentationMarkdown, ""),
+        fraudEnabled: toBoolean(examRow?.fraudEnabled, true),
       };
       if (!nextExam.id) {
         setError("No fue posible cargar el examen.");
@@ -369,16 +384,18 @@ export default function ExamPublicPage() {
           const resumeExamId = typeof parsed.publishedExamId === "string" ? parsed.publishedExamId : "";
           const resumeAttemptId = typeof parsed.attemptId === "string" ? parsed.attemptId : "";
           if (resumeExamId === nextExam.id && resumeAttemptId) {
-            const attemptSnap = await getDoc(doc(firestore, "attempts", resumeAttemptId));
-            if (attemptSnap.exists()) {
+            let attemptSnap: Awaited<ReturnType<typeof getDoc>> | null = null;
+            try {
+              attemptSnap = await getDoc(doc(firestore, "attempts", resumeAttemptId));
+            } catch {
+              attemptSnap = null;
+            }
+            if (attemptSnap?.exists()) {
               const attempt = attemptSnap.data() as Record<string, unknown>;
               const status = toString(attempt.status, "in_progress");
               if (status === "in_progress") {
                 const startedAt = attempt.startedAt as unknown;
-                const startMs =
-                  startedAt && typeof startedAt === "object" && "toMillis" in (startedAt as any)
-                    ? Number((startedAt as any).toMillis())
-                    : Date.now();
+                const startMs = toMillis(startedAt) ?? Date.now();
                 const ends = startMs + nextExam.timeLimitMinutes * 60 * 1000;
                 setAttemptId(resumeAttemptId);
                 setAttemptStartMs(startMs);
@@ -418,11 +435,13 @@ export default function ExamPublicPage() {
                 const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
                 const score5Raw = correctCount * valuePerQuestion0to5;
                 const score50Raw = correctCount * valuePerQuestion0to50;
-                const fraudTotal = fraudTab + fraudClip;
-                const fraudPenalty0to5 = Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+                const fraudTotal = nextExam.fraudEnabled ? fraudTab + fraudClip : 0;
+                const fraudPenalty0to5 = nextExam.fraudEnabled
+                  ? Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2))
+                  : 0;
 
-                if (fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS || Date.now() >= ends) {
-                  const forceZero = fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS;
+                if ((nextExam.fraudEnabled && fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS) || Date.now() >= ends) {
+                  const forceZero = nextExam.fraudEnabled && fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS;
                   const status = forceZero ? "submitted_fraud" : "submitted_expired";
                   const adjusted5 = forceZero ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
                   const adjusted50 = forceZero ? 0 : (adjusted5 / 5) * 50;
@@ -443,8 +462,8 @@ export default function ExamPublicPage() {
                       grade0to50Raw: Number(score50Raw.toFixed(2)),
                       grade0to5: score5,
                       grade0to50: score50,
-                      fraudTabSwitches: fraudTab,
-                      fraudClipboardAttempts: fraudClip,
+                      fraudTabSwitches: nextExam.fraudEnabled ? fraudTab : 0,
+                      fraudClipboardAttempts: nextExam.fraudEnabled ? fraudClip : 0,
                       fraudPenalty0to5,
                       fraudForcedFail: forceZero,
                       gradeMethod: "per_question_equal",
@@ -464,8 +483,8 @@ export default function ExamPublicPage() {
                     score50Raw: Number(score50Raw.toFixed(2)),
                     earned: Number(correctCount),
                     total: Number(totalQuestionsLocal),
-                    fraudTabSwitches: fraudTab,
-                    fraudClipboardAttempts: fraudClip,
+                    fraudTabSwitches: nextExam.fraudEnabled ? fraudTab : 0,
+                    fraudClipboardAttempts: nextExam.fraudEnabled ? fraudClip : 0,
                     fraudPenalty0to5,
                     fraudForcedFail: forceZero,
                   });
@@ -473,6 +492,41 @@ export default function ExamPublicPage() {
                   setStep("result");
                 }
               }
+            } else {
+              try {
+                const rawAttempt = localStorage.getItem(`${ATTEMPT_STATE_PREFIX}${resumeAttemptId}`);
+                if (rawAttempt) {
+                  const parsedAttempt = JSON.parse(rawAttempt) as Record<string, unknown>;
+                  const pid = toString(parsedAttempt.publishedExamId, "");
+                  if (pid === nextExam.id) {
+                    const startMs = toNumber(parsedAttempt.startedAtMs, Date.now());
+                    const ends = startMs + nextExam.timeLimitMinutes * 60 * 1000;
+                    setAttemptId(resumeAttemptId);
+                    setAttemptStartMs(startMs);
+                    setEndAtMs(ends);
+                    setRemainingMs(ends - Date.now());
+                    setCurrentQuestionIndex(toNumber(parsedAttempt.currentQuestionIndex, 0));
+
+                    const ord = Array.isArray(parsedAttempt.questionOrder)
+                      ? (parsedAttempt.questionOrder as unknown[]).map((x) => (typeof x === "string" ? x : "")).filter(Boolean)
+                      : [];
+                    setQuestionOrder(ord);
+
+                    const ans = parsedAttempt.answers;
+                    if (ans && typeof ans === "object") setAnswers(ans as Record<string, unknown>);
+
+                    const fraudTab = toNumber(parsedAttempt.fraudTabSwitches, 0);
+                    const fraudClip = toNumber(parsedAttempt.fraudClipboardAttempts, 0);
+                    setFraudTabSwitches(fraudTab);
+                    setFraudClipboardAttempts(fraudClip);
+                    fraudCountsRef.current = { tab: fraudTab, clip: fraudClip };
+
+                    setRulesAccepted(true);
+                    setStep("exam");
+                    resumed = true;
+                  }
+                }
+              } catch {}
             }
           }
         }
@@ -516,75 +570,84 @@ export default function ExamPublicPage() {
 
     const emailNorm = email.trim().toLowerCase();
     const docNorm = documentId.trim();
+    const order = shuffleIds(questions.map((q) => q.questionId));
+    let attemptIdRes = "";
+    let startedAtMs = Date.now();
+    let fraudEnabledRes: boolean | null = null;
     try {
-      const [byEmail, byDoc] = await Promise.all([
-        getDocs(
-          query(
-            collection(firestore, "attempts"),
-            where("publishedExamId", "==", exam.id),
-            where("email", "==", emailNorm),
-            limit(1),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firestore, "attempts"),
-            where("publishedExamId", "==", exam.id),
-            where("documentId", "==", docNorm),
-            limit(1),
-          ),
-        ),
-      ]);
-
-      if (!byEmail.empty || !byDoc.empty) {
-        setError("Ya existe un intento registrado con ese correo o documento. Solo se permite un intento.");
+      const res = await fetch("/api/exam/attempt/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          publishedExamId: exam.id,
+          accessCode: exam.accessCode,
+          examTemplateId: exam.templateId || null,
+          templateId: exam.templateId || null,
+          examName: exam.name,
+          studentFirstName: n1.value,
+          studentLastName: n2.value,
+          studentFullName: full.value,
+          documentId: docNorm,
+          email: emailNorm,
+          questionCount: questions.length,
+          questionOrder: order,
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        setError(typeof data?.error === "string" ? data.error : "No fue posible validar el intento unico. Intenta de nuevo.");
         return;
       }
+      attemptIdRes = typeof data?.attemptId === "string" ? data.attemptId : "";
+      const ms = toNumber(data?.startedAtMs, Date.now());
+      startedAtMs = ms > 0 ? ms : Date.now();
+      fraudEnabledRes = typeof data?.fraudEnabled === "boolean" ? data.fraudEnabled : null;
     } catch {
       setError("No fue posible validar el intento unico. Intenta de nuevo.");
       return;
     }
+    if (!attemptIdRes) {
+      setError("No fue posible inicializar el intento. Intenta de nuevo.");
+      return;
+    }
 
-    const now = Date.now();
-    const ends = now + exam.timeLimitMinutes * 60 * 1000;
-    const order = shuffleIds(questions.map((q) => q.questionId));
+    const ends = startedAtMs + exam.timeLimitMinutes * 60 * 1000;
 
-    const ref = await addDoc(collection(firestore, "attempts"), {
-      publishedExamId: exam.id,
-      examTemplateId: exam.templateId || null,
-      templateId: exam.templateId || null,
-      examName: exam.name,
-      studentFirstName: n1.value,
-      studentLastName: n2.value,
-      studentFullName: full.value,
-      documentId: docNorm,
-      email: emailNorm,
-      status: "in_progress",
-      questionCount: questions.length,
-      answers: {},
-      questionOrder: order,
-      currentQuestionIndex: 0,
-      fraudTabSwitches: 0,
-      fraudClipboardAttempts: 0,
-      startedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    setAttemptId(ref.id);
+    setAttemptId(attemptIdRes);
     setQuestionOrder(order);
     setAnswers({});
-    setAttemptStartMs(now);
+    setAttemptStartMs(startedAtMs);
     setEndAtMs(ends);
-    setRemainingMs(ends - now);
+    setRemainingMs(ends - Date.now());
     setCurrentQuestionIndex(0);
     setShowExamSummary(false);
     setShowQuestionMap(false);
     setFinalSubmitAccepted(false);
     fraudRuntimeRef.current.isVisible = document.visibilityState === "visible";
     try {
-      localStorage.setItem(RESUME_KEY, JSON.stringify({ publishedExamId: exam.id, attemptId: ref.id, accessCode: exam.accessCode }));
+      localStorage.setItem(RESUME_KEY, JSON.stringify({ publishedExamId: exam.id, attemptId: attemptIdRes, accessCode: exam.accessCode }));
     } catch {}
+    try {
+      localStorage.setItem(
+        `${ATTEMPT_STATE_PREFIX}${attemptIdRes}`,
+        JSON.stringify({
+          attemptId: attemptIdRes,
+          publishedExamId: exam.id,
+          accessCode: exam.accessCode,
+          startedAtMs,
+          endAtMs: ends,
+          answers: {},
+          currentQuestionIndex: 0,
+          questionOrder: order,
+          fraudTabSwitches: 0,
+          fraudClipboardAttempts: 0,
+          updatedAtMs: Date.now(),
+        }),
+      );
+    } catch {}
+    if (fraudEnabledRes !== null && fraudEnabledRes !== exam.fraudEnabled) {
+      setExam((prev) => (prev ? { ...prev, fraudEnabled: fraudEnabledRes } : prev));
+    }
     setStep("exam");
   }
 
@@ -603,85 +666,181 @@ export default function ExamPublicPage() {
 
   useEffect(() => {
     if (!exam) return;
-    const unsub = onSnapshot(doc(firestore, "publishedExams", exam.id), (snap) => {
-      if (!snap.exists()) return;
-      const row = snap.data() as Record<string, unknown>;
-      const status = toString(row.status, "published");
-      const timeLimitMinutes = toNumber(row.timeLimitMinutes, exam.timeLimitMinutes);
-      const documentationMarkdown = toString(row.documentationMarkdown, exam.documentationMarkdown);
+    const snapshotExam = exam;
+    const publishedExamId = snapshotExam.id;
+    const accessCode = snapshotExam.accessCode;
+    let cancelled = false;
 
-      if (timeLimitMinutes !== exam.timeLimitMinutes) {
-        setExam((prev) => (prev ? { ...prev, timeLimitMinutes } : prev));
-        if (step === "exam" && !submitted) {
-          const start = attemptStartMs ?? (endAtMs ? endAtMs - exam.timeLimitMinutes * 60 * 1000 : null);
-          if (start) {
-            const nextEnd = start + timeLimitMinutes * 60 * 1000;
-            setEndAtMs(nextEnd);
-            setRemainingMs(nextEnd - Date.now());
+    async function poll() {
+      try {
+        const res = await fetch("/api/exam/state", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ publishedExamId, accessCode }),
+        });
+        const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+        if (!res.ok) return;
+
+        const examRow = (data?.exam ?? null) as Record<string, unknown> | null;
+        if (!examRow || cancelled) return;
+
+        const status = toString(examRow.status, "published");
+        const timeLimitMinutes = toNumber(examRow.timeLimitMinutes, snapshotExam.timeLimitMinutes);
+        const documentationMarkdown = toString(examRow.documentationMarkdown, snapshotExam.documentationMarkdown);
+        const fraudEnabled = toBoolean(examRow.fraudEnabled, snapshotExam.fraudEnabled);
+        const questionCount = Math.max(1, toNumber(examRow.questionCount, snapshotExam.questionCount));
+
+        if (timeLimitMinutes !== snapshotExam.timeLimitMinutes) {
+          setExam((prev) => (prev ? { ...prev, timeLimitMinutes } : prev));
+          if (step === "exam" && !submitted) {
+            const start = attemptStartMs ?? (endAtMs ? endAtMs - snapshotExam.timeLimitMinutes * 60 * 1000 : null);
+            if (start) {
+              const nextEnd = start + timeLimitMinutes * 60 * 1000;
+              setEndAtMs(nextEnd);
+              setRemainingMs(nextEnd - Date.now());
+            }
           }
         }
-      }
-      if (documentationMarkdown !== exam.documentationMarkdown) {
-        setExam((prev) => (prev ? { ...prev, documentationMarkdown } : prev));
-      }
-      if (status === "closed" && (step === "rules" || step === "student")) {
-        setError("Este examen ya esta cerrado.");
-        setStep("code");
-        setExam(null);
-      }
-    });
-    return () => unsub();
-  }, [exam, attemptStartMs, endAtMs, step, submitted]);
+        if (documentationMarkdown !== snapshotExam.documentationMarkdown) {
+          setExam((prev) => (prev ? { ...prev, documentationMarkdown } : prev));
+        }
+        if (fraudEnabled !== snapshotExam.fraudEnabled) {
+          setExam((prev) => (prev ? { ...prev, fraudEnabled } : prev));
+        }
+        if (questionCount !== snapshotExam.questionCount) {
+          setExam((prev) => (prev ? { ...prev, questionCount } : prev));
+          const nextLimit = Math.max(1, Math.min(questionCount, questions.length || questionCount));
+          setCurrentQuestionIndex((i) => Math.min(i, nextLimit - 1));
+        }
+
+        if (status === "closed") {
+          if (step === "exam" && !submitted && attemptId) {
+            try {
+              const attemptRes = await fetch("/api/exam/attempt/status", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ attemptId, accessCode }),
+              });
+              const attemptData = (await attemptRes.json().catch(() => null)) as Record<string, unknown> | null;
+              if (attemptRes.ok) {
+                const a = (attemptData?.attempt ?? null) as Record<string, unknown> | null;
+                const st = toString(a?.status, "");
+                if (st.toLowerCase().includes("submitted")) {
+                  const score5 = toNumber(a?.grade0to5, 0);
+                  const score50 = toNumber(a?.grade0to50, 0);
+                  setResult({
+                    score5,
+                    score50,
+                    score5Raw: toNumber(a?.grade0to5Raw, score5),
+                    score50Raw: toNumber(a?.grade0to50Raw, score50),
+                    earned: toNumber(a?.earnedPoints, 0),
+                    total: toNumber(a?.totalPoints, 0),
+                    fraudTabSwitches: toNumber(a?.fraudTabSwitches, 0),
+                    fraudClipboardAttempts: toNumber(a?.fraudClipboardAttempts, 0),
+                    fraudPenalty0to5: toNumber(a?.fraudPenalty0to5, 0),
+                    fraudForcedFail: toBoolean(a?.fraudForcedFail, false),
+                  });
+                  setSubmitted(true);
+                  setStep("result");
+                  return;
+                }
+              }
+            } catch {}
+          }
+          if (step === "rules" || step === "student") {
+            setError("Este examen ya esta cerrado.");
+            setStep("code");
+            setExam(null);
+          }
+        }
+      } catch {}
+    }
+
+    void poll();
+    const interval = window.setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [exam, attemptStartMs, endAtMs, step, submitted, attemptId, questions.length]);
 
   useEffect(() => {
     if (!attemptId) return;
-    const unsub = onSnapshot(doc(firestore, "attempts", attemptId), (snap) => {
-      if (!snap.exists()) return;
-      const row = snap.data() as Record<string, unknown>;
-      const status = toString(row.status, "in_progress");
-      const msg = toString(row.adminMessage, "") || null;
-      const msgAtMs = toMillis(row.adminMessageAt);
-      const nextKey = msg ? `${msgAtMs ?? "na"}:${msg}` : null;
-      setAdminMessage(msg);
-      setAdminMessageKey(nextKey);
+    const unsub = onSnapshot(
+      doc(firestore, "attempts", attemptId),
+      (snap) => {
+        if (!snap.exists()) return;
+        const row = snap.data() as Record<string, unknown>;
+        const status = toString(row.status, "in_progress");
+        const msg = toString(row.adminMessage, "") || null;
+        const msgAtMs = toMillis(row.adminMessageAt);
+        const nextKey = msg ? `${msgAtMs ?? "na"}:${msg}` : null;
+        setAdminMessage(msg);
+        setAdminMessageKey(nextKey);
 
-      const startedAt = row.startedAt as unknown;
-      if (!attemptStartMs) {
-        const ms = toMillis(startedAt);
-        if (typeof ms === "number" && ms > 0) setAttemptStartMs(ms);
-      }
+        const startedAt = row.startedAt as unknown;
+        if (!attemptStartMs) {
+          const ms = toMillis(startedAt);
+          if (typeof ms === "number" && ms > 0) setAttemptStartMs(ms);
+        }
 
-      if (status === "annulled" && step !== "result") {
-        setAnnulled(true);
-        setAnnulReason(
-          toString(
-            row.annulReason,
-            "Tu intento fue anulado por el docente. Nota asignada: 0.00, sin posibilidad de recuperacion.",
-          ),
-        );
-        const total = toNumber(row.questionCount, toNumber(row.totalPoints, questions.length));
-        const fraudTab = toNumber(row.fraudTabSwitches, 0);
-        const fraudClip = toNumber(row.fraudClipboardAttempts, 0);
-        const fraudPenalty0to5 = toNumber(
-          row.fraudPenalty0to5,
-          Number(((fraudTab + fraudClip) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)),
-        );
-        setResult({
-          score5: 0,
-          score50: 0,
-          score5Raw: 0,
-          score50Raw: 0,
-          earned: 0,
-          total: Number(total),
-          fraudTabSwitches: fraudTab,
-          fraudClipboardAttempts: fraudClip,
-          fraudPenalty0to5,
-          fraudForcedFail: Boolean(row.fraudForcedFail),
-        });
-        setSubmitted(true);
-        setStep("result");
-      }
-    });
+        if (status === "annulled" && step !== "result") {
+          setAnnulled(true);
+          setAnnulReason(
+            toString(
+              row.annulReason,
+              "Tu intento fue anulado por el docente. Nota asignada: 0.00, sin posibilidad de recuperacion.",
+            ),
+          );
+          const total = toNumber(row.questionCount, toNumber(row.totalPoints, questions.length));
+          const fraudTab = toNumber(row.fraudTabSwitches, 0);
+          const fraudClip = toNumber(row.fraudClipboardAttempts, 0);
+          const fraudPenalty0to5 = toNumber(
+            row.fraudPenalty0to5,
+            Number(((fraudTab + fraudClip) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)),
+          );
+          setResult({
+            score5: 0,
+            score50: 0,
+            score5Raw: 0,
+            score50Raw: 0,
+            earned: 0,
+            total: Number(total),
+            fraudTabSwitches: fraudTab,
+            fraudClipboardAttempts: fraudClip,
+            fraudPenalty0to5,
+            fraudForcedFail: Boolean(row.fraudForcedFail),
+          });
+          setSubmitted(true);
+          setStep("result");
+        }
+
+        if (status.toLowerCase().includes("submitted") && step !== "result" && !submitted) {
+          const score5 = toNumber(row.grade0to5, 0);
+          const score50 = toNumber(row.grade0to50, 0);
+          const earned = toNumber(row.earnedPoints, toNumber(row.correctCount, 0));
+          const total = toNumber(row.totalPoints, toNumber(row.questionCount, questions.length));
+          const fraudTab = toNumber(row.fraudTabSwitches, 0);
+          const fraudClip = toNumber(row.fraudClipboardAttempts, 0);
+          const fraudPenalty0to5 = toNumber(row.fraudPenalty0to5, 0);
+          setResult({
+            score5,
+            score50,
+            score5Raw: toNumber(row.grade0to5Raw, score5),
+            score50Raw: toNumber(row.grade0to50Raw, score50),
+            earned: Number(earned),
+            total: Number(total),
+            fraudTabSwitches: fraudTab,
+            fraudClipboardAttempts: fraudClip,
+            fraudPenalty0to5,
+            fraudForcedFail: Boolean(row.fraudForcedFail),
+          });
+          setSubmitted(true);
+          setStep("result");
+        }
+      },
+      () => {},
+    );
     return () => unsub();
   }, [attemptId, step, questions]);
 
@@ -698,12 +857,31 @@ export default function ExamPublicPage() {
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = window.setTimeout(async () => {
       try {
+        const saveFraudEnabled = exam?.fraudEnabled !== false;
+        try {
+          localStorage.setItem(
+            `${ATTEMPT_STATE_PREFIX}${attemptId}`,
+            JSON.stringify({
+              attemptId,
+              publishedExamId: exam?.id ?? null,
+              accessCode: exam?.accessCode ?? null,
+              startedAtMs: attemptStartMs ?? null,
+              endAtMs,
+              answers,
+              currentQuestionIndex,
+              questionOrder,
+              fraudTabSwitches: saveFraudEnabled ? fraudTabSwitches : 0,
+              fraudClipboardAttempts: saveFraudEnabled ? fraudClipboardAttempts : 0,
+              updatedAtMs: Date.now(),
+            }),
+          );
+        } catch {}
         await updateDoc(doc(firestore, "attempts", attemptId), {
           answers,
           currentQuestionIndex,
           questionOrder,
-          fraudTabSwitches,
-          fraudClipboardAttempts,
+          fraudTabSwitches: saveFraudEnabled ? fraudTabSwitches : 0,
+          fraudClipboardAttempts: saveFraudEnabled ? fraudClipboardAttempts : 0,
           updatedAt: serverTimestamp(),
         });
       } catch {}
@@ -716,6 +894,11 @@ export default function ExamPublicPage() {
     attemptId,
     step,
     submitted,
+    exam?.fraudEnabled,
+    exam?.id,
+    exam?.accessCode,
+    attemptStartMs,
+    endAtMs,
     answers,
     currentQuestionIndex,
     questionOrder,
@@ -997,6 +1180,7 @@ export default function ExamPublicPage() {
     setSubmitting(true);
     setError(null);
     try {
+      const fraudEnabled = exam?.fraudEnabled !== false;
       const currentAnswers = answersRef.current;
       const totalQuestionsLocal = displayQuestions.length;
       const correctCount = displayQuestions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
@@ -1005,18 +1189,20 @@ export default function ExamPublicPage() {
       const score5Raw = correctCount * valuePerQuestion0to5;
       const score50Raw = correctCount * valuePerQuestion0to50;
 
-      const fraudTab = fraudCountsRef.current.tab;
-      const fraudClip = fraudCountsRef.current.clip;
+      const fraudTab = fraudEnabled ? fraudCountsRef.current.tab : 0;
+      const fraudClip = fraudEnabled ? fraudCountsRef.current.clip : 0;
       const fraudTotal = fraudTab + fraudClip;
-      const fraudPenalty0to5 = Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+      const fraudPenalty0to5 = fraudEnabled ? Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)) : 0;
 
-      const adjusted5 = opts?.forceZero ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
-      const adjusted50 = opts?.forceZero ? 0 : (adjusted5 / 5) * 50;
+      const forcedZero = fraudEnabled ? Boolean(opts?.forceZero) : false;
+      const forcedStatus = fraudEnabled ? opts?.forcedStatus : undefined;
+      const adjusted5 = forcedZero ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
+      const adjusted50 = forcedZero ? 0 : (adjusted5 / 5) * 50;
       const score5 = Number(adjusted5.toFixed(2));
       const score50 = Number(adjusted50.toFixed(2));
 
       await updateDoc(doc(firestore, "attempts", attemptId), {
-        status: opts?.forcedStatus ?? (expired ? "submitted_expired" : "submitted"),
+        status: forcedStatus ?? (expired ? "submitted_expired" : "submitted"),
         answers: currentAnswers,
         correctCount,
         questionCount: totalQuestionsLocal,
@@ -1032,7 +1218,7 @@ export default function ExamPublicPage() {
         fraudTabSwitches: fraudTab,
         fraudClipboardAttempts: fraudClip,
         fraudPenalty0to5,
-        fraudForcedFail: Boolean(opts?.forceZero),
+        fraudForcedFail: forcedZero,
         gradeMethod: "per_question_equal",
         submittedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -1052,7 +1238,7 @@ export default function ExamPublicPage() {
         fraudTabSwitches: fraudTab,
         fraudClipboardAttempts: fraudClip,
         fraudPenalty0to5,
-        fraudForcedFail: Boolean(opts?.forceZero),
+        fraudForcedFail: forcedZero,
       });
       setSubmitted(true);
       setStep("result");
@@ -1064,7 +1250,7 @@ export default function ExamPublicPage() {
   }
 
   useEffect(() => {
-    if (step !== "exam" || !attemptId || submitted) return;
+    if (step !== "exam" || !attemptId || submitted || exam?.fraudEnabled === false) return;
     const id = attemptId;
 
     async function syncFraud(nextTab: number, nextClip: number, force = false) {
@@ -1088,6 +1274,12 @@ export default function ExamPublicPage() {
     function applyTabSwitch() {
       const now = Date.now();
       if (now - fraudRuntimeRef.current.lastTabCountAt < 500) return;
+      if (fraudRuntimeRef.current.submittedFraudFail) return;
+      const currentTotal = fraudCountsRef.current.tab + fraudCountsRef.current.clip;
+      if (currentTotal >= FRAUD_FAIL_TOTAL_EVENTS) {
+        fraudRuntimeRef.current.submittedFraudFail = true;
+        return;
+      }
       fraudRuntimeRef.current.lastTabCountAt = now;
 
       const nextTab = fraudCountsRef.current.tab + 1;
@@ -1106,6 +1298,12 @@ export default function ExamPublicPage() {
     function applyClipboardAttempt() {
       const now = Date.now();
       if (now - fraudRuntimeRef.current.lastClipboardCountAt < 250) return;
+      if (fraudRuntimeRef.current.submittedFraudFail) return;
+      const currentTotal = fraudCountsRef.current.tab + fraudCountsRef.current.clip;
+      if (currentTotal >= FRAUD_FAIL_TOTAL_EVENTS) {
+        fraudRuntimeRef.current.submittedFraudFail = true;
+        return;
+      }
       fraudRuntimeRef.current.lastClipboardCountAt = now;
 
       const nextTab = fraudCountsRef.current.tab;
@@ -1187,7 +1385,7 @@ export default function ExamPublicPage() {
       window.removeEventListener("focus", onWindowFocus);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
-  }, [step, attemptId, submitted]);
+  }, [step, attemptId, submitted, exam?.fraudEnabled]);
 
   useEffect(() => {
     if (step !== "exam" || showExamSummary || showQuestionMap) return;
@@ -1446,40 +1644,48 @@ export default function ExamPublicPage() {
                 </ul>
               </div>
 
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                <div className="flex items-center gap-2">
-                  <OctagonAlert className="h-5 w-5 text-rose-700" />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
-                    Penalizaciones (en rojo)
-                  </p>
+              {exam.fraudEnabled ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <div className="flex items-center gap-2">
+                    <OctagonAlert className="h-5 w-5 text-rose-700" />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Penalizaciones (en rojo)</p>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-xl border border-rose-200 bg-white px-3 py-2">
+                      <p className="text-xs font-semibold text-zinc-900">Copiar / pegar detectado</p>
+                      <p className="mt-1 text-[12px] text-zinc-700">Cada evento descuenta puntos.</p>
+                      <p className="mt-1 text-sm font-semibold text-rose-700">
+                        -{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} (0-5) / -{penaltyPerEvent0to50.toFixed(0)} (0-50)
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-rose-200 bg-white px-3 py-2">
+                      <p className="text-xs font-semibold text-zinc-900">Cambio de pestaña / ventana</p>
+                      <p className="mt-1 text-[12px] text-zinc-700">También cuenta como evento de fraude.</p>
+                      <p className="mt-1 text-sm font-semibold text-rose-700">
+                        -{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} (0-5) / -{penaltyPerEvent0to50.toFixed(0)} (0-50)
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 sm:col-span-2">
+                      <p className="text-xs font-semibold text-zinc-900">Límite de fraude alcanzado</p>
+                      <p className="mt-1 text-[12px] text-zinc-700">
+                        Si el total llega a <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong> eventos, el intento se marca como perdido.
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-rose-700">Reducción final: nota 0 (0-5 y 0-50)</p>
+                    </div>
+                  </div>
                 </div>
-
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-xl border border-rose-200 bg-white px-3 py-2">
-                    <p className="text-xs font-semibold text-zinc-900">Copiar / pegar detectado</p>
-                    <p className="mt-1 text-[12px] text-zinc-700">Cada evento descuenta puntos.</p>
-                    <p className="mt-1 text-sm font-semibold text-rose-700">
-                      -{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} (0-5) / -{penaltyPerEvent0to50.toFixed(0)} (0-50)
-                    </p>
+              ) : (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-emerald-700" />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Modo fraude desactivado</p>
                   </div>
-
-                  <div className="rounded-xl border border-rose-200 bg-white px-3 py-2">
-                    <p className="text-xs font-semibold text-zinc-900">Cambio de pestaña / ventana</p>
-                    <p className="mt-1 text-[12px] text-zinc-700">También cuenta como evento de fraude.</p>
-                    <p className="mt-1 text-sm font-semibold text-rose-700">
-                      -{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} (0-5) / -{penaltyPerEvent0to50.toFixed(0)} (0-50)
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 sm:col-span-2">
-                    <p className="text-xs font-semibold text-zinc-900">Límite de fraude alcanzado</p>
-                    <p className="mt-1 text-[12px] text-zinc-700">
-                      Si el total llega a <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong> eventos, el intento se marca como perdido.
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-rose-700">Reducción final: nota 0 (0-5 y 0-50)</p>
-                  </div>
+                  <p className="mt-2 text-sm text-emerald-800">Este examen no contará cambios de pestaña ni copy/paste.</p>
                 </div>
-              </div>
+              )}
 
               <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <ShieldCheck className="mt-0.5 h-5 w-5 text-zinc-700" />
@@ -1505,7 +1711,7 @@ export default function ExamPublicPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-zinc-900">Confirmo que leí y acepto las reglas</p>
                   <p className="mt-1 text-xs text-zinc-600">
-                    Incluye intento único, tiempo límite, penalizaciones por fraude y pérdida con nota 0 por límite de eventos.
+                    Incluye intento único, tiempo límite{exam.fraudEnabled ? ", penalizaciones por fraude y pérdida con nota 0 por límite de eventos." : "."}
                   </p>
                 </div>
                 <CheckCircle2 className={`h-5 w-5 shrink-0 ${rulesAccepted ? "text-emerald-600" : "text-zinc-300"}`} />
