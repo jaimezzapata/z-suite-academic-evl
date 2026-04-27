@@ -125,8 +125,8 @@ export default function StudyChapterPage({ params }: { params: Promise<{ slug: s
     return (
       <div className="min-h-screen bg-[#FAFAFA] text-zinc-900 selection:bg-indigo-100 selection:text-indigo-900">
         <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/85 backdrop-blur-xl">
-          <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="flex w-full items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-10">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100/50">
                 <LibraryBig className="h-5 w-5" />
               </div>
@@ -160,9 +160,9 @@ export default function StudyChapterPage({ params }: { params: Promise<{ slug: s
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6">
-          <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-            <aside className="lg:sticky lg:top-24 lg:h-[calc(100vh-140px)]">
+        <main className="w-full px-4 py-6 sm:px-6 lg:px-10">
+          <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+            <aside className="xl:sticky xl:top-24 xl:h-[calc(100dvh-140px)]">
               <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Cuadernillo</p>
                 <p className="mt-1 text-sm font-bold text-zinc-900">{doc.title}</p>
@@ -176,7 +176,7 @@ export default function StudyChapterPage({ params }: { params: Promise<{ slug: s
 
                 <div className="mt-4">
                   <p className="text-xs font-semibold text-zinc-500">Navegación</p>
-                  <div className="mt-2 max-h-[calc(100vh-320px)] space-y-2 overflow-auto pr-1">
+                  <div className="mt-2 max-h-[calc(100dvh-320px)] space-y-2 overflow-auto pr-1 xl:max-h-[calc(100dvh-320px)]">
                     {ordered.map((c) => {
                       const active = c.id === entryId;
                       return (
@@ -197,7 +197,7 @@ export default function StudyChapterPage({ params }: { params: Promise<{ slug: s
               </div>
             </aside>
 
-            <section className="space-y-4">
+            <section className="min-w-0 space-y-4">
               <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-5 py-4">
                   <div className="min-w-0">

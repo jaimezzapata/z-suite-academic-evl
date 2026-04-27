@@ -127,7 +127,7 @@ export const MarkdownViewer = memo(function MarkdownViewer({
   const withPrefix = (id: string) => (prefix ? `${prefix}-${id}` : id);
 
   return (
-    <div className="docs-markdown space-y-6 text-[15px] leading-relaxed text-zinc-800 antialiased">
+    <div className="docs-markdown space-y-6 text-[14px] leading-relaxed text-zinc-800 antialiased sm:text-[15px]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -138,7 +138,7 @@ export const MarkdownViewer = memo(function MarkdownViewer({
               <h1
                 {...props}
                 id={id}
-                className="scroll-mt-24 border-b border-zinc-200 pb-4 pt-8 text-4xl font-extrabold tracking-tight text-zinc-900 first:pt-0"
+                className="scroll-mt-24 border-b border-zinc-200 pb-4 pt-8 text-3xl font-extrabold tracking-tight text-zinc-900 first:pt-0 sm:text-4xl"
               />
             );
           },
@@ -149,7 +149,7 @@ export const MarkdownViewer = memo(function MarkdownViewer({
               <h2
                 {...props}
                 id={id}
-                className="scroll-mt-24 border-b border-zinc-100 pb-2 pt-8 text-2xl font-bold tracking-tight text-zinc-900"
+                className="scroll-mt-24 border-b border-zinc-100 pb-2 pt-8 text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl"
               />
             );
           },
@@ -160,11 +160,11 @@ export const MarkdownViewer = memo(function MarkdownViewer({
               <h3
                 {...props}
                 id={id}
-                className="scroll-mt-24 pt-6 text-xl font-semibold tracking-tight text-zinc-900"
+                className="scroll-mt-24 pt-6 text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl"
               />
             );
           },
-          p: (props) => <p {...props} className="text-[15px] leading-8 text-zinc-700" />,
+          p: (props) => <p {...props} className="text-[14px] leading-7 text-zinc-700 sm:text-[15px] sm:leading-8" />,
           a: (props) => {
             const href = typeof props.href === "string" ? props.href : "";
             const isHash = href.startsWith("#");

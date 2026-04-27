@@ -189,8 +189,8 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
         />
 
         <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/80 backdrop-blur-xl">
-          <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between gap-4 px-6 py-4">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="flex w-full items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-10">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100/50">
                 <LibraryBig className="h-5 w-5" />
               </div>
@@ -212,7 +212,7 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1100px] px-6 py-10 md:py-12">
+        <main className="w-full px-4 py-8 sm:px-6 md:py-10 lg:px-10">
           <motion.article
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -242,14 +242,14 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
                 </div>
               </section>
 
-              <section className="grid gap-6 lg:grid-cols-[300px_1fr]">
-                <aside className="lg:sticky lg:top-24 lg:h-[calc(100vh-140px)]">
+              <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <aside className="xl:sticky xl:top-24 xl:h-[calc(100dvh-140px)]">
                   <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-bold text-zinc-900">Navegación</p>
                       <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600">{doc.chapters.length}</span>
                     </div>
-                    <div className="mt-3 max-h-[calc(100vh-220px)] space-y-2 overflow-auto pr-1">
+                    <div className="mt-3 max-h-[calc(100dvh-220px)] space-y-2 overflow-auto pr-1 xl:max-h-[calc(100dvh-220px)]">
                       {doc.chapters.map((c) => {
                         const active = c.id === activeChapterId;
                         return (
@@ -275,7 +275,7 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
                   </div>
                 </aside>
 
-                <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+                <div className="min-w-0 rounded-2xl border border-zinc-200 bg-white shadow-sm">
                   <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-zinc-500">{doc.docKind === "booklet" ? "Cuadernillo" : "Documentación"}</p>

@@ -9,6 +9,10 @@ function toNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function toBoolean(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const code = toString(body?.code, "").trim();
@@ -79,6 +83,7 @@ export async function POST(req: Request) {
         questionCount: toNumber(foundRow.questionCount, 0),
         timeLimitMinutes: toNumber(foundRow.timeLimitMinutes, 60),
         documentationMarkdown: toString(foundRow.documentationMarkdown, ""),
+        fraudEnabled: toBoolean(foundRow.fraudEnabled, true),
       },
       questions,
     },
