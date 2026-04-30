@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState, use } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, use } from "react";
 import { ArrowLeft, ArrowRight, KeyRound, LibraryBig, RefreshCcw } from "lucide-react";
 import { MarkdownViewer } from "@/app/ui/markdown-viewer";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,6 +26,10 @@ function getSessionKey(slug: string) {
   return `zse:study:session:${slug}`;
 }
 
+function normalizeAccessCode(input: string) {
+  return input.trim().replace(/\D/g, "").slice(0, 6);
+}
+
 function readChapterValue(value: unknown, fallbackId: string) {
   const r = (value ?? {}) as Record<string, unknown>;
   return {
@@ -45,17 +49,19 @@ export default function StudyChapterPage({ params }: { params: Promise<{ slug: s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doc, setDoc] = useState<StudyChapterPayload | null>(null);
+  const autoTriedRef = useRef(false);
 
   const accessWithCode = useCallback(
     async (candidateCode: string) => {
-      if (!candidateCode.trim()) return;
+      const norm = normalizeAccessCode(candidateCode);
+      if (!norm) return;
       setLoading(true);
       setError(null);
       try {
         const res = await fetch("/api/study/access", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ slug, code: candidateCode.trim(), entryId }),
+          body: JSON.stringify({ slug, code: norm, entryId }),
         });
         const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
         if (!res.ok) {
@@ -91,7 +97,7 @@ export default function StudyChapterPage({ params }: { params: Promise<{ slug: s
         };
         setDoc(payload);
         const expiresAt = Date.now() + payload.sessionDays * 24 * 60 * 60 * 1000;
-        localStorage.setItem(getSessionKey(slug), JSON.stringify({ code: candidateCode.trim(), expiresAt }));
+        localStorage.setItem(getSessionKey(slug), JSON.stringify({ code: norm, expiresAt }));
       } catch {
         setError("No fue posible acceder al capítulo.");
       } finally {
@@ -113,6 +119,21 @@ export default function StudyChapterPage({ params }: { params: Promise<{ slug: s
       void accessWithCode(saved);
     } catch {}
   }
+
+  useEffect(() => {
+    if (autoTriedRef.current) return;
+    autoTriedRef.current = true;
+    try {
+      const url = new URL(window.location.href);
+      const fromUrl = normalizeAccessCode(url.searchParams.get("code") ?? "");
+      if (fromUrl) {
+        setCode(fromUrl);
+        void accessWithCode(fromUrl);
+        return;
+      }
+    } catch {}
+    useSavedCode();
+  }, [slug, entryId, accessWithCode]);
 
   const activeChapter = doc?.chapter;
   const ordered = useMemo(() => doc?.chapters ?? [], [doc?.chapters]);

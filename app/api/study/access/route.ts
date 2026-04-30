@@ -8,7 +8,10 @@ function toString(value: unknown, fallback = "") {
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const slug = toString(body?.slug, "").trim();
-  const code = toString(body?.code, "").trim();
+  const code = toString(body?.code, "")
+    .trim()
+    .replace(/\D/g, "")
+    .slice(0, 6);
   const entryId = toString(body?.entryId, "").trim();
 
   if (!slug || !code) {
