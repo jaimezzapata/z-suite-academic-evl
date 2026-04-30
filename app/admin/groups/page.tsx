@@ -5,6 +5,8 @@ import { useMemo, useState, useEffect } from "react";
 import { collection, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 import {
   Atom,
+  ArrowDown,
+  ArrowUp,
   BookOpen,
   Braces,
   Coffee,
@@ -17,6 +19,7 @@ import {
   Plus,
   RefreshCw,
   Rows3,
+  Save,
   Search,
   Terminal,
   Trash2,
@@ -44,6 +47,12 @@ type BookletRow = {
   subjectName: string;
   chaptersCount: number;
   active: boolean;
+};
+
+type ChapterRow = {
+  id: string;
+  index: number;
+  title: string;
 };
 
 function toCatalogItem(id: string, data: Record<string, unknown>): CatalogItem {
@@ -274,6 +283,12 @@ export default function AdminGroupsBookletsPage() {
   const [appendMarkdown, setAppendMarkdown] = useState("");
   const [appendModalOpen, setAppendModalOpen] = useState(false);
 
+  const [manageDocId, setManageDocId] = useState("");
+  const [manageModalOpen, setManageModalOpen] = useState(false);
+  const [manageLoading, setManageLoading] = useState(false);
+  const [manageSaving, setManageSaving] = useState(false);
+  const [manageChapters, setManageChapters] = useState<ChapterRow[]>([]);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -339,6 +354,98 @@ export default function AdminGroupsBookletsPage() {
       cancelled = true;
     };
   }, []);
+
+  async function loadManageChapters(docId: string) {
+    setManageLoading(true);
+    setError(null);
+    try {
+      const snap = await getDocs(
+        query(collection(firestore, "studyDocs", docId, "entries"), orderBy("weekIndex"), limit(300)),
+      );
+      const rows = snap.docs
+        .map((d) => {
+          const r = d.data() as Record<string, unknown>;
+          const idx = toNumber(r.weekIndex, 0);
+          const title = toString(r.title, "").trim() || `Capítulo ${idx || d.id}`;
+          return { id: d.id, index: idx, title };
+        })
+        .filter((x) => x.index >= 1)
+        .sort((a, b) => a.index - b.index);
+      setManageChapters(rows);
+    } catch {
+      setError("No fue posible cargar capítulos del cuadernillo.");
+    } finally {
+      setManageLoading(false);
+    }
+  }
+
+  async function saveManageOrder() {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      setError("Debes iniciar sesión como admin.");
+      return;
+    }
+    if (!manageDocId || manageChapters.length < 1) return;
+    setManageSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const token = await user.getIdToken(true);
+      const res = await fetch("/api/admin/booklets/reorder-chapters", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ docId: manageDocId, orderedIds: manageChapters.map((c) => c.id) }),
+      });
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        setError(typeof data?.error === "string" ? data.error : `No fue posible guardar el orden (HTTP ${res.status}).`);
+        return;
+      }
+      const nextCount = toNumber(data?.chaptersCount, manageChapters.length);
+      setBooklets((prev) => prev.map((b) => (b.id === manageDocId ? { ...b, chaptersCount: nextCount } : b)));
+      setSuccess("Orden actualizado.");
+      await loadManageChapters(manageDocId);
+    } catch {
+      setError("No fue posible guardar el orden.");
+    } finally {
+      setManageSaving(false);
+    }
+  }
+
+  async function deleteManageChapter(entryId: string) {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      setError("Debes iniciar sesión como admin.");
+      return;
+    }
+    if (!manageDocId) return;
+    const ok = window.confirm("¿Eliminar este capítulo? Esta acción renumera el cuadernillo.");
+    if (!ok) return;
+    setManageSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const token = await user.getIdToken(true);
+      const res = await fetch("/api/admin/booklets/delete-chapter", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ docId: manageDocId, entryId }),
+      });
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        setError(typeof data?.error === "string" ? data.error : `No fue posible eliminar (HTTP ${res.status}).`);
+        return;
+      }
+      const nextCount = toNumber(data?.chaptersCount, Math.max(0, manageChapters.length - 1));
+      setBooklets((prev) => prev.map((b) => (b.id === manageDocId ? { ...b, chaptersCount: nextCount } : b)));
+      setSuccess("Capítulo eliminado.");
+      await loadManageChapters(manageDocId);
+    } catch {
+      setError("No fue posible eliminar el capítulo.");
+    } finally {
+      setManageSaving(false);
+    }
+  }
 
   const canCreate = useMemo(() => {
     const segmentOk = institution === "SENA" ? !!fichaId : !!groupId;
@@ -652,6 +759,19 @@ export default function AdminGroupsBookletsPage() {
                       <Plus className="h-4 w-4" />
                       Capítulo
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManageDocId(b.id);
+                        setManageModalOpen(true);
+                        void loadManageChapters(b.id);
+                      }}
+                      className="zs-btn-secondary h-9 px-3"
+                      title="Gestionar capítulos"
+                    >
+                      <Rows3 className="h-4 w-4" />
+                      Gestionar
+                    </button>
                     <button type="button" onClick={() => void removeBooklet(b.id)} className="zs-btn-danger-soft h-9 px-3" title="Eliminar">
                       <Trash2 className="h-4 w-4" />
                       Eliminar
@@ -667,15 +787,15 @@ export default function AdminGroupsBookletsPage() {
             ) : null}
           </div>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-xl border border-border">
-            <table className="w-full table-fixed">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
+            <table className="min-w-[980px] w-full">
               <thead className="bg-muted/40 text-xs text-foreground/60">
                 <tr>
-                  <th className="w-[32%] px-3 py-2 text-left font-semibold">Cuadernillo</th>
-                  <th className="w-[24%] px-3 py-2 text-left font-semibold">Segmentación</th>
-                  <th className="w-[10%] px-3 py-2 text-left font-semibold">Cap.</th>
-                  <th className="w-[12%] px-3 py-2 text-left font-semibold">Código</th>
-                  <th className="w-[22%] px-3 py-2 text-right font-semibold">Acciones</th>
+                  <th className="w-[380px] px-3 py-2 text-left font-semibold">Cuadernillo</th>
+                  <th className="w-[260px] px-3 py-2 text-left font-semibold">Segmentación</th>
+                  <th className="w-[80px] px-3 py-2 text-left font-semibold whitespace-nowrap">Cap.</th>
+                  <th className="w-[120px] px-3 py-2 text-left font-semibold whitespace-nowrap">Código</th>
+                  <th className="w-[240px] px-3 py-2 text-right font-semibold whitespace-nowrap">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -704,8 +824,8 @@ export default function AdminGroupsBookletsPage() {
                       </td>
                       <td className="px-3 py-3 align-top text-sm font-semibold text-foreground">{b.chaptersCount}</td>
                       <td className="px-3 py-3 align-top font-mono text-sm tracking-wider text-foreground">{b.accessCode}</td>
-                      <td className="px-3 py-3 align-top">
-                        <div className="flex flex-wrap justify-end gap-2">
+                      <td className="px-3 py-3 align-top whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
                           <a href={`/study/${b.slug}`} target="_blank" rel="noreferrer" className="zs-btn-secondary h-8 px-2">
                             <ExternalLink className="h-4 w-4" />
                           </a>
@@ -737,6 +857,18 @@ export default function AdminGroupsBookletsPage() {
                             title="Agregar capítulo"
                           >
                             <Plus className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setManageDocId(b.id);
+                              setManageModalOpen(true);
+                              void loadManageChapters(b.id);
+                            }}
+                            className="zs-btn-secondary h-8 px-2"
+                            title="Gestionar capítulos"
+                          >
+                            <Rows3 className="h-4 w-4" />
                           </button>
                           <button type="button" onClick={() => void removeBooklet(b.id)} className="zs-btn-danger-soft h-8 px-2" title="Eliminar">
                             <Trash2 className="h-4 w-4" />
@@ -984,6 +1116,107 @@ export default function AdminGroupsBookletsPage() {
                   {saving ? "Guardando..." : "Guardar capítulo"}
                 </button>
               </div>
+            </div>
+          </div>
+        </ModalShell>
+      ) : null}
+
+      {manageModalOpen ? (
+        <ModalShell
+          title="Gestionar capítulos"
+          onClose={() => {
+            setManageModalOpen(false);
+            setManageDocId("");
+            setManageChapters([]);
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Reordenar y eliminar capítulos</p>
+              <p className="mt-1 text-xs text-foreground/60">
+                El orden se aplica renumerando los capítulos (C01, C02, ...). Los cambios se reflejan en el índice.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => void loadManageChapters(manageDocId)} className="zs-btn-secondary h-10" disabled={!manageDocId || manageLoading || manageSaving}>
+                <RefreshCw className={`h-4 w-4 ${manageLoading ? "animate-spin" : ""}`} />
+                Actualizar
+              </button>
+              <button type="button" onClick={() => void saveManageOrder()} className="zs-btn-primary h-10" disabled={!manageDocId || manageLoading || manageSaving || !manageChapters.length}>
+                <Save className="h-4 w-4" />
+                Guardar orden
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-border bg-white">
+            <div className="border-b border-border bg-muted/30 px-4 py-3">
+              <p className="text-xs font-semibold text-foreground/60">
+                {manageLoading ? "Cargando..." : `${manageChapters.length} capítulo(s)`}
+              </p>
+            </div>
+            <div className="divide-y divide-border">
+              {manageChapters.map((c, idx) => (
+                <div key={`${c.id}:${idx}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground/55">Capítulo {idx + 1}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{c.title}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="zs-btn-secondary h-9 w-9 px-0"
+                      aria-label="Subir"
+                      title="Subir"
+                      disabled={manageLoading || manageSaving || idx === 0}
+                      onClick={() => {
+                        setManageChapters((prev) => {
+                          if (idx <= 0) return prev;
+                          const copy = [...prev];
+                          const tmp = copy[idx - 1];
+                          copy[idx - 1] = copy[idx]!;
+                          copy[idx] = tmp!;
+                          return copy;
+                        });
+                      }}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="zs-btn-secondary h-9 w-9 px-0"
+                      aria-label="Bajar"
+                      title="Bajar"
+                      disabled={manageLoading || manageSaving || idx === manageChapters.length - 1}
+                      onClick={() => {
+                        setManageChapters((prev) => {
+                          if (idx >= prev.length - 1) return prev;
+                          const copy = [...prev];
+                          const tmp = copy[idx + 1];
+                          copy[idx + 1] = copy[idx]!;
+                          copy[idx] = tmp!;
+                          return copy;
+                        });
+                      }}
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="zs-btn-danger-soft h-9"
+                      disabled={manageLoading || manageSaving}
+                      onClick={() => void deleteManageChapter(c.id)}
+                      title="Eliminar capítulo"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!manageLoading && !manageChapters.length ? (
+                <div className="px-4 py-10 text-center text-sm text-foreground/55">Este cuadernillo no tiene capítulos.</div>
+              ) : null}
             </div>
           </div>
         </ModalShell>

@@ -1378,16 +1378,81 @@ export function BankDashboard() {
             </div>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200">
-            <table className="w-full table-fixed text-left">
+          <div className="mt-4 space-y-3 sm:hidden">
+            {pagedTable.map((r) => {
+              const subjectName = subjectNameById.get(r.subjectId) ?? (r.subjectId || "-");
+              const momentsLabel = r.momentIds
+                .map((id) => momentNameById.get(id) ?? id)
+                .slice(0, 2)
+                .join(", ");
+              const momentsExtra = Math.max(0, r.momentIds.length - 2);
+              return (
+                <div key={r.id} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-zinc-900 line-clamp-2">{r.statement || "-"}</div>
+                      <div className="mt-1 text-xs text-zinc-500">{subjectName}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badgeTone(r.status)}`}>
+                          {statusLabel(r.status)}
+                        </span>
+                        <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                          {typeLabel(r.type)}
+                        </span>
+                        <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                          {difficultyLabel(r.difficulty)}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-zinc-600">
+                        {momentsLabel || "-"}
+                        {momentsExtra ? <span className="ml-1 text-zinc-500">(+{momentsExtra} más)</span> : null}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void openEdit(r.id)}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        aria-label="Editar pregunta"
+                        title="Editar"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setPendingDelete(r);
+                        }}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                        aria-label="Eliminar pregunta"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {!pagedTable.length ? (
+              <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-10 text-center text-sm text-zinc-500">
+                {tableLoading ? "Cargando..." : "No hay preguntas para mostrar con esos filtros."}
+              </div>
+            ) : null}
+            <MinimalPagination pageCount={tablePageCount} page={tablePage} onChange={setTablePage} />
+          </div>
+
+          <div className="mt-4 hidden overflow-x-auto rounded-xl border border-zinc-200 sm:block">
+            <table className="min-w-[900px] w-full text-left">
               <thead className="bg-zinc-50">
                 <tr className="text-xs text-zinc-500">
-                  <th className="w-[36%] px-3 py-2 font-medium">Pregunta</th>
-                  <th className="w-[18%] px-3 py-2 font-medium">Materia</th>
-                  <th className="w-[14%] px-3 py-2 font-medium">Tipo</th>
-                  <th className="w-[14%] px-3 py-2 font-medium">Momentos</th>
-                  <th className="w-[10%] px-3 py-2 font-medium">Estado</th>
-                  <th className="w-[8%] px-3 py-2 font-medium">Acciones</th>
+                  <th className="px-3 py-2 font-medium">Pregunta</th>
+                  <th className="px-3 py-2 font-medium">Materia</th>
+                  <th className="px-3 py-2 font-medium">Tipo</th>
+                  <th className="px-3 py-2 font-medium">Momentos</th>
+                  <th className="px-3 py-2 font-medium">Estado</th>
+                  <th className="px-3 py-2 font-medium">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -1457,7 +1522,9 @@ export function BankDashboard() {
                 ) : null}
               </tbody>
             </table>
-            <MinimalPagination pageCount={tablePageCount} page={tablePage} onChange={setTablePage} />
+            <div className="min-w-[900px] border-t border-zinc-100 bg-white">
+              <MinimalPagination pageCount={tablePageCount} page={tablePage} onChange={setTablePage} />
+            </div>
           </div>
         </section>
       )}

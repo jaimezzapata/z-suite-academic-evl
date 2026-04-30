@@ -1346,7 +1346,138 @@ export function ResultsManager() {
           </div>
         ) : (
           <div className="mt-4">
-            <table className="w-full table-fixed border-collapse text-left text-sm">
+            <div className="space-y-3 sm:hidden">
+              <div className="flex items-center justify-between">
+                <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedIds((prev) => {
+                          const next = { ...prev };
+                          pagedRows.forEach((r) => {
+                            next[r.id] = true;
+                          });
+                          return next;
+                        });
+                      } else {
+                        setSelectedIds((prev) => {
+                          const next = { ...prev };
+                          pagedRows.forEach((r) => {
+                            delete next[r.id];
+                          });
+                          return next;
+                        });
+                      }
+                    }}
+                  />
+                  Seleccionar visibles
+                </label>
+                <p className="text-xs text-zinc-500">{pagedRows.length} en página</p>
+              </div>
+
+              {pagedRows.map((r) => (
+                <div key={r.id} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(selectedIds[r.id])}
+                          onChange={(e) => {
+                            setSelectedIds((prev) => {
+                              const next = { ...prev };
+                              if (e.target.checked) next[r.id] = true;
+                              else delete next[r.id];
+                              return next;
+                            });
+                          }}
+                          aria-label="Seleccionar"
+                        />
+                        <div className="truncate font-semibold text-zinc-900">{r.examName}</div>
+                      </div>
+                      <div className="mt-1 truncate text-xs text-zinc-500">
+                        Código <span className="font-semibold text-zinc-700">{r.examCode}</span> •{" "}
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone(r.status)}`}>
+                          {r.status}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-zinc-900">{r.studentFullName}</div>
+                      <div className="mt-0.5 text-xs text-zinc-500">
+                        {r.documentId} • {formatDate(r.submittedAt)}
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">0-5</p>
+                          <p className="mt-1 text-sm font-semibold tabular-nums text-zinc-900">{r.grade0to5.toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Fraude</p>
+                          <p className="mt-1 text-sm font-semibold tabular-nums text-zinc-900">{r.fraudTotal}</p>
+                        </div>
+                        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Malas</p>
+                          <p className={`mt-1 text-sm font-semibold tabular-nums ${r.wrongCount > 0 ? "text-rose-700" : "text-zinc-900"}`}>
+                            {r.wrongCount}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRow(r)}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        aria-label="Ver detalle"
+                        title="Ver detalle"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void exportAttemptPdf(r)}
+                        disabled={exportingAttemptId === r.id || exportingBulkZip}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                        aria-label="Descargar PDF"
+                        title="Descargar PDF"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(r);
+                        }}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                        aria-label="Eliminar intento"
+                        title="Eliminar intento"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {!visibleRows.length ? (
+                <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-10 text-center text-sm text-zinc-500">
+                  No hay resultados para mostrar.
+                </div>
+              ) : null}
+
+              <MinimalPagination
+                pageCount={pageCount}
+                page={safePage}
+                onChange={(next) => setPage(Math.max(0, Math.min(pageCount - 1, next)))}
+              />
+            </div>
+
+            <div className="hidden overflow-x-auto sm:block">
+            <table className="min-w-[980px] w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                   <th className="w-10 px-2 py-2">
@@ -1542,6 +1673,7 @@ export function ResultsManager() {
               page={safePage}
               onChange={(next) => setPage(Math.max(0, Math.min(pageCount - 1, next)))}
             />
+            </div>
           </div>
         )}
       </section>

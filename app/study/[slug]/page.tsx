@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, use } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, use } from "react";
 import { BookOpen, KeyRound, ArrowRight, LibraryBig, RefreshCcw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MarkdownViewer } from "@/app/ui/markdown-viewer";
@@ -27,6 +27,10 @@ function getSessionKey(slug: string) {
   return `zse:study:session:${slug}`;
 }
 
+function normalizeAccessCode(input: string) {
+  return input.trim().replace(/\D/g, "").slice(0, 6);
+}
+
 export default function StudyDocPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
@@ -38,6 +42,7 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
   const [chapterLoading, setChapterLoading] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [activeChapter, setActiveChapter] = useState<ChapterPayload | null>(null);
+  const autoTriedRef = useRef(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -100,14 +105,15 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
 
   const accessWithCode = useCallback(
     async (candidateCode: string) => {
-      if (!candidateCode.trim()) return;
+      const norm = normalizeAccessCode(candidateCode);
+      if (!norm) return;
       setLoading(true);
       setError(null);
       try {
         const res = await fetch("/api/study/access", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ slug, code: candidateCode.trim() }),
+          body: JSON.stringify({ slug, code: norm }),
         });
         const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
         if (!res.ok) {
@@ -143,7 +149,7 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
         };
         setDoc(payload);
         const expiresAt = Date.now() + payload.sessionDays * 24 * 60 * 60 * 1000;
-        localStorage.setItem(getSessionKey(slug), JSON.stringify({ code: candidateCode.trim(), expiresAt }));
+        localStorage.setItem(getSessionKey(slug), JSON.stringify({ code: norm, expiresAt }));
         const desired = (() => {
           try {
             return new URL(window.location.href).searchParams.get("c") ?? "";
@@ -153,7 +159,7 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
         })();
         const fallback = payload.chapters[0]?.id ?? "";
         const nextId = payload.chapters.some((c) => c.id === desired) ? desired : fallback;
-        if (nextId) await loadChapter(nextId, candidateCode.trim());
+        if (nextId) await loadChapter(nextId, norm);
       } catch {
         setError("No fue posible acceder a la documentación.");
       } finally {
@@ -175,6 +181,21 @@ export default function StudyDocPage({ params }: { params: Promise<{ slug: strin
       void accessWithCode(saved);
     } catch {}
   }
+
+  useEffect(() => {
+    if (autoTriedRef.current) return;
+    autoTriedRef.current = true;
+    try {
+      const url = new URL(window.location.href);
+      const fromUrl = normalizeAccessCode(url.searchParams.get("code") ?? "");
+      if (fromUrl) {
+        setCode(fromUrl);
+        void accessWithCode(fromUrl);
+        return;
+      }
+    } catch {}
+    useSavedCode();
+  }, [slug, accessWithCode]);
 
   const pageTitle = useMemo(() => doc?.title || "Consulta de documentación", [doc?.title]);
 
