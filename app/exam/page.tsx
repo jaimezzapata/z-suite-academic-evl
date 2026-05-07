@@ -848,6 +848,86 @@ export default function ExamPublicPage() {
   }, [attemptId, step, questions]);
 
   useEffect(() => {
+    if (!attemptId || !exam) return;
+    if (step === "code") return;
+    let cancelled = false;
+    const id = attemptId;
+    const accessCode = exam.accessCode;
+
+    async function pollAttempt() {
+      try {
+        const res = await fetch("/api/exam/attempt/status", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ attemptId: id, accessCode }),
+        });
+        const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+        if (!res.ok || cancelled) return;
+
+        const a = (data?.attempt ?? null) as Record<string, unknown> | null;
+        if (!a) return;
+        const status = toString(a.status, "in_progress");
+        const msg = toString(a.adminMessage, "") || null;
+        const msgAtMs = toNumber(a.adminMessageAtMs, 0) || null;
+        const nextKey = msg ? `${msgAtMs ?? "na"}:${msg}` : null;
+        setAdminMessage(msg);
+        setAdminMessageKey(nextKey);
+
+        if (status === "annulled" && step !== "result") {
+          setAnnulled(true);
+          setAnnulReason(
+            toString(
+              a.annulReason,
+              "Tu intento fue anulado por el docente. Nota asignada: 0.00, sin posibilidad de recuperacion.",
+            ),
+          );
+          setResult({
+            score5: 0,
+            score50: 0,
+            score5Raw: 0,
+            score50Raw: 0,
+            earned: 0,
+            total: toNumber(a.totalPoints, toNumber(a.questionCount, questions.length)),
+            fraudTabSwitches: toNumber(a.fraudTabSwitches, 0),
+            fraudClipboardAttempts: toNumber(a.fraudClipboardAttempts, 0),
+            fraudPenalty0to5: toNumber(a.fraudPenalty0to5, 0),
+            fraudForcedFail: toBoolean(a.fraudForcedFail, false),
+          });
+          setSubmitted(true);
+          setStep("result");
+          return;
+        }
+
+        if (status.toLowerCase().includes("submitted") && step !== "result" && !submitted) {
+          const score5 = toNumber(a.grade0to5, 0);
+          const score50 = toNumber(a.grade0to50, 0);
+          setResult({
+            score5,
+            score50,
+            score5Raw: toNumber(a.grade0to5Raw, score5),
+            score50Raw: toNumber(a.grade0to50Raw, score50),
+            earned: toNumber(a.earnedPoints, 0),
+            total: toNumber(a.totalPoints, questions.length),
+            fraudTabSwitches: toNumber(a.fraudTabSwitches, 0),
+            fraudClipboardAttempts: toNumber(a.fraudClipboardAttempts, 0),
+            fraudPenalty0to5: toNumber(a.fraudPenalty0to5, 0),
+            fraudForcedFail: toBoolean(a.fraudForcedFail, false),
+          });
+          setSubmitted(true);
+          setStep("result");
+        }
+      } catch {}
+    }
+
+    void pollAttempt();
+    const interval = window.setInterval(() => void pollAttempt(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [attemptId, exam, step, submitted, questions.length]);
+
+  useEffect(() => {
     if (!attemptId) return;
     try {
       const raw = localStorage.getItem(`zse:adminMsgDismissed:${attemptId}`);

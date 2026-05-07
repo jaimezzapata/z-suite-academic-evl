@@ -13,6 +13,24 @@ function toBoolean(value: unknown, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function toMillis(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  try {
+    if ("toMillis" in value && typeof (value as { toMillis?: unknown }).toMillis === "function") {
+      const ms = Number((value as { toMillis: () => number }).toMillis());
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if ("toDate" in value && typeof (value as { toDate?: unknown }).toDate === "function") {
+      const d = (value as { toDate: () => Date }).toDate();
+      const ms = d?.getTime?.();
+      return typeof ms === "number" && Number.isFinite(ms) ? ms : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const attemptId = toString(body?.attemptId, "").trim();
@@ -34,12 +52,18 @@ export async function POST(req: Request) {
   if (toString(row.accessCode, "") !== accessCode) return NextResponse.json({ error: "No autorizado." }, { status: 403 });
 
   const status = toString(row.status, "in_progress");
+  const adminMessage = toString(row.adminMessage, "").trim() || null;
+  const adminMessageAtMs = toMillis(row.adminMessageAt);
+  const annulReason = toString(row.annulReason, "").trim() || null;
   return NextResponse.json(
     {
       ok: true,
       attempt: {
         id: attemptId,
         status,
+        adminMessage,
+        adminMessageAtMs,
+        annulReason,
         grade0to5: toNumber(row.grade0to5, 0),
         grade0to50: toNumber(row.grade0to50, 0),
         grade0to5Raw: toNumber(row.grade0to5Raw, 0),
