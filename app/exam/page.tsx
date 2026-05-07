@@ -233,6 +233,9 @@ export default function ExamPublicPage() {
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
   const [adminMessageKey, setAdminMessageKey] = useState<string | null>(null);
   const [dismissedAdminMessageKey, setDismissedAdminMessageKey] = useState<string | null>(null);
+  const [broadcastMessage, setBroadcastMessage] = useState<string | null>(null);
+  const [broadcastMessageKey, setBroadcastMessageKey] = useState<string | null>(null);
+  const [dismissedBroadcastMessageKey, setDismissedBroadcastMessageKey] = useState<string | null>(null);
 
   const [fraudTabSwitches, setFraudTabSwitches] = useState(0);
   const [fraudClipboardAttempts, setFraudClipboardAttempts] = useState(0);
@@ -1176,74 +1179,79 @@ export default function ExamPublicPage() {
     expired = false,
     opts?: { forcedStatus?: "submitted" | "submitted_expired" | "submitted_fraud"; forceZero?: boolean },
   ) {
-    if (!attemptId || submitted || submitting) return;
+    if (!attemptId) {
+      setError("No se encontro el intento actual. Recarga el examen y vuelve a intentarlo.");
+      return;
+    }
+    if (submitted || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
       const fraudEnabled = exam?.fraudEnabled !== false;
       const currentAnswers = answersRef.current;
-      const totalQuestionsLocal = displayQuestions.length;
-      const correctCount = displayQuestions.reduce((acc, q) => acc + (isQuestionFullyCorrect(q) ? 1 : 0), 0);
-      const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
-      const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
-      const score5Raw = correctCount * valuePerQuestion0to5;
-      const score50Raw = correctCount * valuePerQuestion0to50;
 
       const fraudTab = fraudEnabled ? fraudCountsRef.current.tab : 0;
       const fraudClip = fraudEnabled ? fraudCountsRef.current.clip : 0;
-      const fraudTotal = fraudTab + fraudClip;
-      const fraudPenalty0to5 = fraudEnabled ? Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)) : 0;
-
-      const forcedZero = fraudEnabled ? Boolean(opts?.forceZero) : false;
       const forcedStatus = fraudEnabled ? opts?.forcedStatus : undefined;
-      const adjusted5 = forcedZero ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
-      const adjusted50 = forcedZero ? 0 : (adjusted5 / 5) * 50;
-      const score5 = Number(adjusted5.toFixed(2));
-      const score50 = Number(adjusted50.toFixed(2));
+      const forceZero = fraudEnabled ? Boolean(opts?.forceZero) : false;
 
-      await updateDoc(doc(firestore, "attempts", attemptId), {
-        status: forcedStatus ?? (expired ? "submitted_expired" : "submitted"),
-        answers: currentAnswers,
-        correctCount,
-        questionCount: totalQuestionsLocal,
-        questionOrder,
-        questionValue0to5: Number(valuePerQuestion0to5.toFixed(4)),
-        questionValue0to50: Number(valuePerQuestion0to50.toFixed(4)),
-        earnedPoints: Number(correctCount),
-        totalPoints: Number(totalQuestionsLocal),
-        grade0to5Raw: Number(score5Raw.toFixed(2)),
-        grade0to50Raw: Number(score50Raw.toFixed(2)),
-        grade0to5: score5,
-        grade0to50: score50,
-        fraudTabSwitches: fraudTab,
-        fraudClipboardAttempts: fraudClip,
-        fraudPenalty0to5,
-        fraudForcedFail: forcedZero,
-        gradeMethod: "per_question_equal",
-        submittedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const res = await fetch("/api/exam/attempt/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          attemptId,
+          accessCode: (exam?.accessCode ?? "").trim(),
+          expired,
+          forcedStatus,
+          forceZero,
+          answers: currentAnswers,
+          questionOrder,
+          currentQuestionIndex,
+          fraudTabSwitches: fraudTab,
+          fraudClipboardAttempts: fraudClip,
+        }),
       });
+      const contentType = res.headers.get("content-type") || "";
+      const isJson = contentType.includes("application/json");
+      const data = (isJson ? await res.json().catch(() => null) : null) as Record<string, unknown> | null;
+      const text = !isJson ? await res.text().catch(() => "") : "";
+      if (!res.ok) {
+        const fromJson = typeof data?.error === "string" ? data.error : "";
+        const normalized = text.replace(/\s+/g, " ").trim();
+        const looksHtml =
+          normalized.toLowerCase().startsWith("<!doctype") || normalized.toLowerCase().startsWith("<html");
+        const fromText = normalized && !looksHtml ? normalized.slice(0, 220) : "";
+        setError(fromJson || fromText || `HTTP ${res.status}: No fue posible enviar el examen.`);
+        return;
+      }
+
+      const r = (data?.result ?? null) as Record<string, unknown> | null;
+      if (!r) {
+        setError("No fue posible enviar el examen.");
+        return;
+      }
 
       try {
         localStorage.removeItem(RESUME_KEY);
       } catch {}
 
       setResult({
-        score5,
-        score50,
-        score5Raw: Number(score5Raw.toFixed(2)),
-        score50Raw: Number(score50Raw.toFixed(2)),
-        earned: Number(correctCount),
-        total: Number(totalQuestionsLocal),
-        fraudTabSwitches: fraudTab,
-        fraudClipboardAttempts: fraudClip,
-        fraudPenalty0to5,
-        fraudForcedFail: forcedZero,
+        score5: toNumber(r.score5, 0),
+        score50: toNumber(r.score50, 0),
+        score5Raw: toNumber(r.score5Raw, 0),
+        score50Raw: toNumber(r.score50Raw, 0),
+        earned: toNumber(r.earned, 0),
+        total: toNumber(r.total, 0),
+        fraudTabSwitches: toNumber(r.fraudTabSwitches, 0),
+        fraudClipboardAttempts: toNumber(r.fraudClipboardAttempts, 0),
+        fraudPenalty0to5: toNumber(r.fraudPenalty0to5, 0),
+        fraudForcedFail: toBoolean(r.fraudForcedFail, false),
       });
       setSubmitted(true);
       setStep("result");
-    } catch {
-      setError("No fue posible enviar el examen.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "No fue posible enviar el examen.";
+      setError(msg || "No fue posible enviar el examen.");
     } finally {
       setSubmitting(false);
     }
@@ -1556,7 +1564,7 @@ export default function ExamPublicPage() {
         </header>
 
 
-        {error ? (
+        {error && step !== "exam" ? (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </div>
@@ -1823,6 +1831,20 @@ export default function ExamPublicPage() {
 
         {step === "exam" && exam ? (
           <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-4">
+            {error ? (
+              <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto w-auto max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-lg">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 whitespace-pre-wrap">{error}</p>
+                  <button
+                    type="button"
+                    onClick={() => setError(null)}
+                    className="shrink-0 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="rounded-3xl border border-zinc-200 bg-white px-5 py-4 shadow-sm">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2171,6 +2193,11 @@ export default function ExamPublicPage() {
                   </div>
                   <CheckCircle2 className={`h-5 w-5 ${finalSubmitAccepted ? "text-indigo-600" : "text-zinc-300"}`} />
                 </button>
+                {!finalSubmitAccepted ? (
+                  <p className="mt-2 text-xs font-semibold text-rose-700">
+                    Debes activar la confirmación para poder enviar el examen.
+                  </p>
+                ) : null}
 
                 <div className="mt-4 flex items-center justify-between gap-2">
                   <button
@@ -2182,9 +2209,15 @@ export default function ExamPublicPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void submitAttempt(false)}
+                    onClick={() => {
+                      if (!finalSubmitAccepted) {
+                        setError("Debes activar la confirmación para poder enviar el examen.");
+                        return;
+                      }
+                      void submitAttempt(false);
+                    }}
                     className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={submitting || !finalSubmitAccepted}
+                    disabled={submitting}
                   >
                     <Save className="h-3.5 w-3.5" />
                     Finalizar envio definitivo
