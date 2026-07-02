@@ -877,38 +877,24 @@ export default function AdminWorkloadPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-10.5rem)] min-h-0 flex-col overflow-hidden">
-      <section className="zs-card flex min-h-0 flex-1 flex-col overflow-hidden p-3">
-        <div className="flex flex-wrap items-start justify-between gap-2">
+    <div className="space-y-4 pb-6">
+      <section className="zs-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-base font-semibold tracking-tight text-foreground">Carga horaria</h1>
-            {viewMode === "list" ? (
-              <p className="mt-1 text-xs text-foreground/55">
-                Registra franjas horarias por institución, sede, jornada, salón y materia.
-              </p>
-            ) : null}
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-foreground/65">
-              <span className="inline-flex rounded-full border border-border bg-surface px-2.5 py-0.5 font-medium">
-                Total: {loading ? "-" : rows.length}
-              </span>
-              <span className="inline-flex rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2.5 py-0.5 font-medium text-fuchsia-800">
-                CESDE: {loading ? "-" : counts.CESDE} | {loading ? "-" : `${formatHours(hourTotals.CESDE)} h`}
-              </span>
-              <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-800">
-                SENA: {loading ? "-" : counts.SENA} | {loading ? "-" : `${formatHours(hourTotals.SENA)} h`}
-              </span>
-              <span className="inline-flex rounded-full border border-border bg-surface px-2.5 py-0.5 font-medium">
-                Materias: {subjects.length}
-              </span>
-            </div>
+            <h1 className="text-lg font-semibold tracking-tight text-foreground">Carga horaria</h1>
+            <p className="mt-1 text-sm text-foreground/55">
+              {viewMode === "calendar"
+                ? "Agenda semanal por institución con creación rápida desde la cuadrícula."
+                : "Registra franjas horarias por institución, sede, jornada, salón y materia."}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => window.location.reload()} className="zs-btn-secondary h-7 px-3 text-xs">
+            <button type="button" onClick={() => window.location.reload()} className="zs-btn-secondary h-9 px-3 text-xs">
               <RefreshCw className="h-4 w-4" />
               Recargar
             </button>
-            <button type="button" onClick={() => openCreate()} className="zs-btn-primary h-7 px-3 text-xs">
+            <button type="button" onClick={() => openCreate()} className="zs-btn-primary h-9 px-3 text-xs">
               <Plus className="h-4 w-4" />
               Nueva carga
             </button>
@@ -924,7 +910,30 @@ export default function AdminWorkloadPage() {
           </div>
         ) : null}
 
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <article className="zs-card-muted px-3 py-3">
+            <p className="text-xs text-foreground/55">Cargas registradas</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{loading ? "-" : rows.length}</p>
+            <p className="mt-1 text-xs text-foreground/55">Vista completa del módulo</p>
+          </article>
+          <article className="zs-card-muted px-3 py-3">
+            <p className="text-xs text-foreground/55">CESDE</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-fuchsia-700">{loading ? "-" : counts.CESDE}</p>
+            <p className="mt-1 text-xs text-foreground/55">{loading ? "-" : `${formatHours(hourTotals.CESDE)} h académicas`}</p>
+          </article>
+          <article className="zs-card-muted px-3 py-3">
+            <p className="text-xs text-foreground/55">SENA</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-emerald-700">{loading ? "-" : counts.SENA}</p>
+            <p className="mt-1 text-xs text-foreground/55">{loading ? "-" : `${formatHours(hourTotals.SENA)} h registradas`}</p>
+          </article>
+          <article className="zs-card-muted px-3 py-3">
+            <p className="text-xs text-foreground/55">Materias activas</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{loading ? "-" : subjects.length}</p>
+            <p className="mt-1 text-xs text-foreground/55">Disponibles para asignación</p>
+          </article>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             {([
               { id: "CESDE", label: "CESDE", total: counts.CESDE },
@@ -983,7 +992,7 @@ export default function AdminWorkloadPage() {
         </div>
 
         {viewMode === "list" ? (
-          <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <div className="mt-4 space-y-3">
             {filteredRows.map((row) => (
               <div key={row.id} className="rounded-2xl border border-border bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1085,164 +1094,188 @@ export default function AdminWorkloadPage() {
             ) : null}
           </div>
         ) : (
-          <div className="mt-2 flex min-h-0 flex-1 flex-col">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold text-foreground">Agenda semanal</p>
-                <p className="text-[10px] text-foreground/50">{tab === "ALL" ? "CESDE + SENA" : tab} | 6:00 am - 9:30 pm</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCalendarWeekStart((prev) => addDays(prev, -7))}
-                  className="zs-btn-secondary h-7 px-3 text-xs"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Semana anterior
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalendarWeekStart(startOfWeek(new Date()))}
-                  className="zs-btn-secondary h-7 px-3 text-xs"
-                >
-                  Hoy
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalendarWeekStart((prev) => addDays(prev, 7))}
-                  className="zs-btn-secondary h-7 px-3 text-xs"
-                >
-                  Semana siguiente
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-              <div className="inline-flex items-center rounded-full border border-border bg-white px-2.5 py-1 text-[10px] font-medium text-foreground/70">
-                {formatWeekRange(calendarWeekStart)}
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-foreground/60">
-                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${eventTone("CESDE")}`}>
-                  <span className="h-2 w-2 rounded-full bg-fuchsia-500" />
-                  CESDE
-                </span>
-                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${eventTone("SENA")}`}>
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  SENA
-                </span>
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
-              <div className="h-full min-w-[980px] overflow-hidden rounded-2xl border border-border bg-white">
-                <div className="grid grid-cols-[78px_repeat(7,minmax(0,1fr))] border-b border-border bg-surface">
-                  <div className="border-r border-border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
-                    Hora
-                  </div>
-                  {calendarDays.map((day) => (
-                    <div key={isoDate(day)} className="border-r border-border px-2 py-2 last:border-r-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">{formatWeekday(day)}</p>
-                      <p className="mt-0.5 text-xs font-semibold text-foreground">{formatDayMonth(day)}</p>
-                    </div>
-                  ))}
+          <div className="mt-4">
+            <div className="zs-card p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold tracking-tight text-foreground">
+                    {tab === "ALL" ? "Calendario general" : `Calendario ${tab}`}
+                  </p>
+                  <p className="mt-1 text-sm text-foreground/55">
+                    Vista semanal de 6:00 am a 9:30 pm con acceso directo para crear, editar o eliminar cargas.
+                  </p>
                 </div>
+                <div className="inline-flex items-center rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-foreground/70">
+                  {formatWeekRange(calendarWeekStart)}
+                </div>
+              </div>
 
-                <div className="grid h-[calc(100%-41px)] grid-cols-[78px_repeat(7,minmax(0,1fr))]">
-                  <div className="relative h-full border-r border-border bg-surface/50">
-                    {CALENDAR_LABELS.map((label, index) => (
-                      <div
-                        key={label}
-                        className="absolute left-0 right-0 border-b border-dashed border-border/70 px-2 text-[9px] text-foreground/45"
-                        style={{ top: `${(index / CALENDAR_SLOTS) * 100}%`, height: `${100 / CALENDAR_SLOTS}%` }}
-                      >
-                        <span className="-translate-y-1/2 inline-block bg-surface/80 pr-2">{label}</span>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="zs-card-muted px-3 py-3">
+                  <p className="text-xs text-foreground/55">Rango horario</p>
+                  <p className="mt-1 text-lg font-semibold tracking-tight text-foreground">6:00 am - 9:30 pm</p>
+                  <p className="mt-1 text-xs text-foreground/55">{tab === "ALL" ? "CESDE + SENA" : tab}</p>
+                </div>
+                <div className="zs-card-muted px-3 py-3">
+                  <p className="text-xs text-foreground/55">Registros visibles</p>
+                  <p className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+                    {loading ? "-" : calendarEvents.length}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground/55">En la semana seleccionada</p>
+                </div>
+                <div className="zs-card-muted px-3 py-3">
+                  <p className="text-xs text-foreground/55">Instituciones</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-foreground/60">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${eventTone("CESDE")}`}>
+                      <span className="h-2 w-2 rounded-full bg-fuchsia-500" />
+                      CESDE
+                    </span>
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${eventTone("SENA")}`}>
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      SENA
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCalendarWeekStart((prev) => addDays(prev, -7))}
+                    className="zs-btn-secondary h-9 px-3 text-xs"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Semana anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarWeekStart(startOfWeek(new Date()))}
+                    className="zs-btn-secondary h-9 px-3 text-xs"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarWeekStart((prev) => addDays(prev, 7))}
+                    className="zs-btn-secondary h-9 px-3 text-xs"
+                  >
+                    Semana siguiente
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <div className="min-w-1024px overflow-hidden rounded-2xl border border-border bg-white">
+                  <div className="grid grid-cols-[78px_repeat(7,minmax(0,1fr))] border-b border-border bg-surface">
+                    <div className="border-r border-border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                      Hora
+                    </div>
+                    {calendarDays.map((day) => (
+                      <div key={isoDate(day)} className="border-r border-border px-2 py-2 last:border-r-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">{formatWeekday(day)}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-foreground">{formatDayMonth(day)}</p>
                       </div>
                     ))}
                   </div>
 
-                  {calendarDays.map((day, dayIndex) => {
-                    const items = calendarEvents.filter((event) => event.dayIndex === dayIndex);
-                    return (
-                      <div key={isoDate(day)} className="relative h-full border-r border-border last:border-r-0">
-                        {Array.from({ length: CALENDAR_SLOTS }).map((_, index) => (
-                          <button
-                            key={index}
-                            type="button"
-                            onClick={() =>
-                              openCreateFromCalendar(day, CALENDAR_START_MINUTES + index * CALENDAR_SLOT_MINUTES)
-                            }
-                            className="absolute left-0 right-0 border-b border-dashed border-border/70 text-left transition hover:bg-primary/5"
-                            style={{ top: `${(index / CALENDAR_SLOTS) * 100}%`, height: `${100 / CALENDAR_SLOTS}%` }}
-                            aria-label={`Registrar carga el ${formatDayMonth(day)} a las ${CALENDAR_LABELS[index]}`}
-                          />
-                        ))}
+                  <div className="grid h-960px md:h-1020px xl:h-1120px grid-cols-[78px_repeat(7,minmax(0,1fr))]">
+                    <div className="relative h-full border-r border-border bg-surface/50">
+                      {CALENDAR_LABELS.map((label, index) => (
+                        <div
+                          key={label}
+                          className="absolute left-0 right-0 border-b border-dashed border-border/70 px-2 text-[9px] text-foreground/45"
+                          style={{ top: `${(index / CALENDAR_SLOTS) * 100}%`, height: `${100 / CALENDAR_SLOTS}%` }}
+                        >
+                          <span className="-translate-y-1/2 inline-block bg-surface/80 pr-2">{label}</span>
+                        </div>
+                      ))}
+                    </div>
 
-                        {items.map((event) => (
-                          <div
-                            key={event.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => openEdit(event.row)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                openEdit(event.row);
+                    {calendarDays.map((day, dayIndex) => {
+                      const items = calendarEvents.filter((event) => event.dayIndex === dayIndex);
+                      return (
+                        <div key={isoDate(day)} className="relative h-full border-r border-border last:border-r-0">
+                          {Array.from({ length: CALENDAR_SLOTS }).map((_, index) => (
+                            <button
+                              key={index}
+                              type="button"
+                              onClick={() =>
+                                openCreateFromCalendar(day, CALENDAR_START_MINUTES + index * CALENDAR_SLOT_MINUTES)
                               }
-                            }}
-                            className={`absolute left-1 right-1 z-10 rounded-xl border px-2 py-1.5 text-left shadow-sm transition hover:ring-2 hover:ring-primary/20 ${event.tone}`}
-                            style={{ top: event.top, height: event.height, minHeight: "78px" }}
-                          >
-                            <div className="flex items-start justify-between gap-1.5">
-                              <p className="pr-1 text-[10px] font-semibold leading-3">{event.subjectName}</p>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEdit(event.row);
-                                  }}
-                                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
-                                  aria-label="Editar carga"
-                                >
-                                  <Edit3 className="h-2.5 w-2.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void removeRow(event.row);
-                                  }}
-                                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
-                                  aria-label="Eliminar carga"
-                                >
-                                  <Trash2 className="h-2.5 w-2.5" />
-                                </button>
+                              className="absolute left-0 right-0 border-b border-dashed border-border/70 text-left transition hover:bg-primary/5"
+                              style={{ top: `${(index / CALENDAR_SLOTS) * 100}%`, height: `${100 / CALENDAR_SLOTS}%` }}
+                              aria-label={`Registrar carga el ${formatDayMonth(day)} a las ${CALENDAR_LABELS[index]}`}
+                            />
+                          ))}
+
+                          {items.map((event) => (
+                            <div
+                              key={event.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => openEdit(event.row)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openEdit(event.row);
+                                }
+                              }}
+                              className={`absolute left-1.5 right-1.5 z-10 rounded-xl border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-primary/20 ${event.tone}`}
+                              style={{ top: event.top, height: event.height, minHeight: "92px" }}
+                            >
+                              <div className="flex items-start justify-between gap-1.5">
+                                <p className="pr-1 text-[10px] font-semibold leading-3.5">{event.subjectName}</p>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEdit(event.row);
+                                    }}
+                                    className="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
+                                    aria-label="Editar carga"
+                                  >
+                                    <Edit3 className="h-2.5 w-2.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void removeRow(event.row);
+                                    }}
+                                    className="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
+                                    aria-label="Eliminar carga"
+                                  >
+                                    <Trash2 className="h-2.5 w-2.5" />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-1.5 space-y-1 text-[9px] leading-3.5">
+                                <p className="whitespace-normal opacity-85">
+                                  {event.audienceName} | {event.classroom || "N/A"}
+                                </p>
+                                <p className="whitespace-normal font-medium">
+                                  {event.timeRange} | {event.hoursLabel}
+                                </p>
+                                <p className="whitespace-normal opacity-75">{event.shortDateRange}</p>
                               </div>
                             </div>
-                            <div className="mt-0.5 space-y-0.5 text-[9px] leading-3.5">
-                              <p className="whitespace-normal opacity-85">
-                                {event.audienceName} | {event.classroom || "N/A"}
-                              </p>
-                              <p className="whitespace-normal font-medium">
-                                {event.timeRange} | {event.hoursLabel}
-                              </p>
-                              <p className="whitespace-normal opacity-75">{event.shortDateRange}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {!calendarEvents.length ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-foreground/55">
-                {loading ? "Cargando calendario..." : `No hay registros de ${tab} en la semana seleccionada.`}
-              </div>
-            ) : null}
+              {!calendarEvents.length ? (
+                <div className="mt-4 rounded-2xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-foreground/55">
+                  {loading ? "Cargando calendario..." : `No hay registros de ${tab} en la semana seleccionada.`}
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
       </section>

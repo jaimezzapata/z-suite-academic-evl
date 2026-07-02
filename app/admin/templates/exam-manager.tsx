@@ -1129,7 +1129,7 @@ export function ExamManager() {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
-              <table className="w-full min-w-[1100px] table-fixed text-left text-sm">
+              <table className="w-full min-w-1100px table-fixed text-left text-sm">
                 <thead className="bg-zinc-50">
                   <tr className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                     <th className="w-[34%] px-3 py-2">Nombre</th>
@@ -1158,7 +1158,7 @@ export function ExamManager() {
                     return (
                       <tr key={row.id} className="border-t border-zinc-100 align-top">
                         <td className="px-3 py-2">
-                          <div className="whitespace-normal break-words font-medium text-zinc-950" title={row.name}>
+                          <div className="whitespace-normal wrap-break-word font-medium text-zinc-950" title={row.name}>
                             {row.name}
                           </div>
                           {row.documentationMarkdown.trim() ? (
@@ -1168,10 +1168,10 @@ export function ExamManager() {
                           ) : null}
                         </td>
                         <td className="px-3 py-2 text-xs text-zinc-600">
-                          <div className="whitespace-normal break-words">
+                          <div className="whitespace-normal wrap-break-word">
                             {subject} • {group}
                           </div>
-                          <div className="mt-1 whitespace-normal break-words text-zinc-500">
+                          <div className="mt-1 whitespace-normal wrap-break-word text-zinc-500">
                             {moment} • {shift} • {site}
                           </div>
                         </td>

@@ -55,7 +55,7 @@ function ModalShell({
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
-            className="relative flex h-full max-h-[860px] w-full max-w-[980px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="relative flex h-full max-h-860px w-full max-w-980px flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
           >
             <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-5 py-4">
               <div className="min-w-0">
@@ -895,7 +895,7 @@ export default function AdminAiDocsPage() {
 
               <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
                 {batchJson ? (
-                  <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap break-words text-xs text-zinc-900">
+                  <pre className="max-h-520px overflow-auto whitespace-pre-wrap wrap-break-word text-xs text-zinc-900">
                     {batchJson}
                   </pre>
                 ) : (
@@ -1271,7 +1271,7 @@ export default function AdminAiDocsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative flex h-full max-h-[800px] w-full max-w-[900px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+              className="relative flex h-full max-h-800px w-full max-w-900px flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             >
               <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-5 py-4">
                 <div>

@@ -36,7 +36,7 @@ export default function AdminLoginPage() {
     <div className="flex flex-1 items-center justify-center bg-background px-6 py-16">
       <div className="w-full max-w-sm zs-card p-6">
         <div className="mb-5 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-linear-to-br from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
             ZS
           </div>
           <div className="min-w-0">

@@ -1912,7 +1912,7 @@ export default function ExamPublicPage() {
         {step === "exam" && exam ? (
           <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-4">
             {error ? (
-              <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto w-auto max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-lg">
+              <div className="fixed inset-x-4 bottom-4 z-60 mx-auto w-auto max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-lg">
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 whitespace-pre-wrap">{error}</p>
                   <button
@@ -1999,7 +1999,7 @@ export default function ExamPublicPage() {
             </div>
 
             {adminMessage && adminMessageKey && dismissedAdminMessageKey !== adminMessageKey && !submitted ? (
-              <div className="fixed inset-0 z-[70]">
+              <div className="fixed inset-0 z-70">
                 <div className="absolute inset-0 bg-black/60" />
                 <div className="absolute inset-0 grid place-items-center px-4 py-10">
                   <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-2xl">

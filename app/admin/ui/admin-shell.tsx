@@ -70,7 +70,7 @@ function Sidebar({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-border px-5 py-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
           ZS
         </div>
         <div>
@@ -153,7 +153,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-20 border-b border-border bg-surface/80 backdrop-blur">
-            <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="mx-auto flex w-full max-w-1400px items-center justify-between gap-4 px-4 py-3 sm:px-6">
               <button
                 type="button"
                 onClick={() => setMobileOpen(true)}
@@ -180,7 +180,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-semibold text-white shadow-sm">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-violet-600 text-xs font-semibold text-white shadow-sm">
                     {initials}
                   </div>
                 )}
@@ -202,7 +202,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </header>
 
           <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">{children}</div>
+            <div className="mx-auto w-full max-w-1400px px-4 py-6 sm:px-6">{children}</div>
           </main>
         </div>
       </div>

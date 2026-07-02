@@ -208,7 +208,7 @@ function BookletCover({ title, subtitle }: { title: string; subtitle: string }) 
       <div className="relative p-6">
         <div className="rounded-3xl bg-white/25 p-5 shadow-sm ring-1 ring-black/10 backdrop-blur-sm">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-black/55">{theme.label}</p>
-          <p className="mt-3 max-h-[46px] overflow-hidden text-[18px] font-semibold leading-snug text-black/85">{title}</p>
+          <p className="mt-3 max-h-46px overflow-hidden text-[18px] font-semibold leading-snug text-black/85">{title}</p>
           <p className="mt-1 truncate text-sm font-medium text-black/60">{subtitle}</p>
           <div className="mt-4 flex items-center justify-between gap-2">
             <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/70">Cuadernillo</span>
@@ -695,7 +695,7 @@ export default function AdminGroupsBookletsPage() {
             </div>
           </div>
 
-          <label className="relative w-full sm:w-[340px]">
+          <label className="relative w-full sm:w-340px">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/45" />
             <input
               value={search}
@@ -812,14 +812,14 @@ export default function AdminGroupsBookletsPage() {
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto rounded-xl border border-border">
-            <table className="min-w-[980px] w-full">
+            <table className="min-w-980px w-full">
               <thead className="bg-muted/40 text-xs text-foreground/60">
                 <tr>
-                  <th className="w-[380px] px-3 py-2 text-left font-semibold">Cuadernillo</th>
-                  <th className="w-[260px] px-3 py-2 text-left font-semibold">Segmentación</th>
-                  <th className="w-[80px] px-3 py-2 text-left font-semibold whitespace-nowrap">Cap.</th>
-                  <th className="w-[120px] px-3 py-2 text-left font-semibold whitespace-nowrap">Código</th>
-                  <th className="w-[240px] px-3 py-2 text-right font-semibold whitespace-nowrap">Acciones</th>
+                  <th className="w-380px px-3 py-2 text-left font-semibold">Cuadernillo</th>
+                  <th className="w-260px px-3 py-2 text-left font-semibold">Segmentación</th>
+                  <th className="w-80px]px-3 py-2 text-left font-semibold whitespace-nowrap">Cap.</th>
+                  <th className="w-120px px-3 py-2 text-left font-semibold whitespace-nowrap">Código</th>
+                  <th className="w-240px px-3 py-2 text-right font-semibold whitespace-nowrap">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -1054,7 +1054,7 @@ export default function AdminGroupsBookletsPage() {
                   <textarea
                     value={chapterMarkdown}
                     onChange={(e) => setChapterMarkdown(e.target.value)}
-                    className="zs-input min-h-[180px] resize-y py-3"
+                    className="zs-input min-h-180px resize-y py-3"
                     placeholder="# Capítulo&#10;Contenido en markdown..."
                   />
                 </div>
@@ -1118,7 +1118,7 @@ export default function AdminGroupsBookletsPage() {
             <textarea
               value={appendMarkdown}
               onChange={(e) => setAppendMarkdown(e.target.value)}
-              className="zs-input min-h-[320px] resize-y py-3"
+              className="zs-input min-h-320px resize-y py-3"
               placeholder="# Nuevo capítulo&#10;Contenido..."
             />
             <div className="flex flex-wrap items-center justify-between gap-2">

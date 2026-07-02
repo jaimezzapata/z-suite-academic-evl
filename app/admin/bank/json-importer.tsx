@@ -201,7 +201,7 @@ export function JsonImporter() {
           value={rawJson}
           onChange={(e) => setRawJson(e.target.value)}
           placeholder='{"schemaVersion":"...","batch":{...},"catalog":{...},"questions":[...],"examTemplates":[...]}'
-          className="mt-3 min-h-[180px] w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-900 outline-none focus:border-zinc-400"
+          className="mt-3 min-h-180px w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-900 outline-none focus:border-zinc-400"
         />
         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
           <button

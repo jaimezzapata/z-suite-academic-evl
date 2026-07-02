@@ -150,7 +150,7 @@ function buildSparkPath(values: number[], w: number, h: number) {
 
 function MiniSparkline({ values }: { values: number[] }) {
   const path = useMemo(() => buildSparkPath(values, 88, 22), [values]);
-  if (!values.length) return <div className="h-6 w-[92px] rounded-md bg-zinc-100" />;
+  if (!values.length) return <div className="h-6 w-23 rounded-md bg-zinc-100" />;
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
   const span = Math.max(max - min, 1);
@@ -161,7 +161,7 @@ function MiniSparkline({ values }: { values: number[] }) {
   });
   const area = `M 0 22 L ${points.join(" ")} L 88 22 Z`.replaceAll(" ", " ");
   return (
-    <svg viewBox="0 0 88 22" className="h-6 w-[92px]">
+    <svg viewBox="0 0 88 22" className="h-6 w-92px">
       <path d={area} className="fill-zinc-100" />
       <path d={path} className="stroke-zinc-800 fill-none" strokeWidth={2} />
     </svg>
@@ -1232,7 +1232,7 @@ export function BankDashboard() {
             <select
               value={selectedSubjectId}
               onChange={(e) => setSelectedSubjectId(e.target.value)}
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400 sm:w-[240px]"
+              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400 sm:w-60"
             >
               <option value="">Todas las materias</option>
               {subjects.map((s) => (
@@ -1244,7 +1244,7 @@ export function BankDashboard() {
             <select
               value={selectedMomentId}
               onChange={(e) => setSelectedMomentId(e.target.value)}
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400 sm:w-[220px]"
+              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400 sm:w-220px"
             >
               <option value="">Todos los momentos</option>
               {moments.map((m) => (
@@ -1257,7 +1257,7 @@ export function BankDashboard() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por enunciado..."
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400 sm:w-[360px]"
+              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-zinc-400 sm:w-360px"
             />
           </div>
         </div>
@@ -1514,7 +1514,7 @@ export function BankDashboard() {
           </div>
 
           <div className="mt-4 hidden overflow-x-auto rounded-xl border border-zinc-200 sm:block">
-            <table className="min-w-[900px] w-full text-left">
+            <table className="min-w-900px w-full text-left">
               <thead className="bg-zinc-50">
                 <tr className="text-xs text-zinc-500">
                   <th className="px-3 py-2 font-medium">Pregunta</th>
@@ -1592,7 +1592,7 @@ export function BankDashboard() {
                 ) : null}
               </tbody>
             </table>
-            <div className="min-w-[900px] border-t border-zinc-100 bg-white">
+            <div className="min-w-900px border-t border-zinc-100 bg-white">
               <MinimalPagination pageCount={tablePageCount} page={tablePage} onChange={setTablePage} />
             </div>
           </div>

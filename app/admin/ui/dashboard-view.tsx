@@ -25,9 +25,16 @@ type DashboardData = {
       subjectsTotal: number;
       groupsTotal: number;
       fichasTotal: number;
+      sitesTotal: number;
+      shiftsTotal: number;
       momentsTotal: number;
       studyDocsActive: number;
       driveWorkspacesTotal: number;
+    teachingLoadsTotal: number;
+    teachingLoadsActive: number;
+    teachingHoursTotal: number;
+    teachingHoursCesde: number;
+    teachingHoursSena: number;
     attemptsTotal: number;
     attemptsSubmitted: number;
     attemptsInProgress: number;
@@ -116,6 +123,11 @@ function formatFixed(value: number, digits: number) {
   return value.toFixed(digits);
 }
 
+function formatHoursValue(value: number) {
+  if (!Number.isFinite(value)) return "-";
+  return Number.isInteger(value) ? `${value}` : value.toFixed(2);
+}
+
 function toDateFromTimestamp(value: unknown) {
   if (!value || typeof value !== "object") return null;
   try {
@@ -160,7 +172,7 @@ function MiniSparkline({
         ? "fill-indigo-50"
         : "fill-zinc-100";
   if (!values.length) {
-    return <div className="h-6 w-[92px] rounded-md bg-zinc-100" />;
+    return <div className="h-6 w-92px rounded-md bg-zinc-100" />;
   }
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
@@ -172,7 +184,7 @@ function MiniSparkline({
   });
   const area = `M 0 22 L ${points.join(" ")} L 88 22 Z`.replaceAll(" ", " ");
   return (
-    <svg viewBox="0 0 88 22" className="h-6 w-[92px]">
+    <svg viewBox="0 0 88 22" className="h-6 w-92px">
       <path d={area} className={fill} />
       <path d={path} className={`${stroke} fill-none`} strokeWidth={2} />
     </svg>
@@ -271,9 +283,16 @@ export function DashboardView() {
       subjectsTotal: 0,
       groupsTotal: 0,
       fichasTotal: 0,
+      sitesTotal: 0,
+      shiftsTotal: 0,
       momentsTotal: 0,
       studyDocsActive: 0,
       driveWorkspacesTotal: 0,
+      teachingLoadsTotal: 0,
+      teachingLoadsActive: 0,
+      teachingHoursTotal: 0,
+      teachingHoursCesde: 0,
+      teachingHoursSena: 0,
       attemptsTotal: 0,
       attemptsSubmitted: 0,
       attemptsInProgress: 0,
@@ -364,11 +383,14 @@ export function DashboardView() {
         add("subjectsTotal", () => getCountFromServer(collection(firestore, "subjects")));
         add("groupsTotal", () => getCountFromServer(collection(firestore, "groups")));
         add("fichasTotal", () => getCountFromServer(collection(firestore, "fichas")));
+        add("sitesTotal", () => getCountFromServer(collection(firestore, "sites")));
+        add("shiftsTotal", () => getCountFromServer(collection(firestore, "shifts")));
         add("momentsTotal", () => getCountFromServer(collection(firestore, "moments")));
         add("studyDocsActive", () =>
           getCountFromServer(query(collection(firestore, "studyDocs"), where("active", "==", true))),
         );
         add("driveWorkspacesTotal", () => getCountFromServer(collection(firestore, "driveWorkspaces")));
+        add("teachingLoads", () => getDocs(collection(firestore, "teachingLoads")));
         add("attemptsTotal", () => getCountFromServer(collection(firestore, "attempts")));
         add("attemptsSubmitted", () =>
           getCountFromServer(
@@ -424,6 +446,7 @@ export function DashboardView() {
         const fichaDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.fichas);
         const templateDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.templatesSample);
         const attemptDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.attemptsRecent);
+        const teachingLoadDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.teachingLoads);
 
         const groups = groupDocs.map((d) => ({
           id: d.id,
@@ -442,6 +465,29 @@ export function DashboardView() {
             groupId: safeToString(row.groupId, "sin-grupo"),
           };
         });
+
+        const teachingLoadSummary = teachingLoadDocs.reduce(
+          (acc, docSnap) => {
+            const row = docSnap.data() as Record<string, unknown>;
+            const institution = safeToString(row.institution, "CESDE").toUpperCase();
+            const durationMinutes =
+              typeof row.durationMinutes === "number" && Number.isFinite(row.durationMinutes) ? row.durationMinutes : 0;
+            const fallbackAcademicHours =
+              institution === "SENA" ? durationMinutes / 60 : durationMinutes / 45;
+            const academicHours =
+              typeof row.academicHours === "number" && Number.isFinite(row.academicHours)
+                ? row.academicHours
+                : fallbackAcademicHours;
+            const active = typeof row.active === "boolean" ? row.active : true;
+            acc.total += 1;
+            if (active) acc.active += 1;
+            acc.hoursTotal += academicHours;
+            if (institution === "SENA") acc.hoursSena += academicHours;
+            else acc.hoursCesde += academicHours;
+            return acc;
+          },
+          { total: 0, active: 0, hoursTotal: 0, hoursCesde: 0, hoursSena: 0 },
+        );
 
         const groupNameById = new Map([...groups, ...fichas].map((g) => [g.id, g.name]));
         const templateNameById = new Map(templates.map((t) => [t.id, t.name]));
@@ -580,9 +626,16 @@ export function DashboardView() {
           subjectsTotal: countFromAggregateSnap(out.subjectsTotal),
           groupsTotal: countFromAggregateSnap(out.groupsTotal),
           fichasTotal: countFromAggregateSnap(out.fichasTotal),
+          sitesTotal: countFromAggregateSnap(out.sitesTotal),
+          shiftsTotal: countFromAggregateSnap(out.shiftsTotal),
           momentsTotal: countFromAggregateSnap(out.momentsTotal),
           studyDocsActive: countFromAggregateSnap(out.studyDocsActive),
           driveWorkspacesTotal: countFromAggregateSnap(out.driveWorkspacesTotal),
+          teachingLoadsTotal: teachingLoadSummary.total,
+          teachingLoadsActive: teachingLoadSummary.active,
+          teachingHoursTotal: teachingLoadSummary.hoursTotal,
+          teachingHoursCesde: teachingLoadSummary.hoursCesde,
+          teachingHoursSena: teachingLoadSummary.hoursSena,
           attemptsTotal: countFromAggregateSnap(out.attemptsTotal),
           attemptsSubmitted: countFromAggregateSnap(out.attemptsSubmitted),
           attemptsInProgress: countFromAggregateSnap(out.attemptsInProgress),
@@ -637,33 +690,7 @@ export function DashboardView() {
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="zs-card p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-foreground/55">Exámenes publicados</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.publishedActive)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">Activos (status: published)</p>
-            </div>
-            <MiniSparkline values={data.activity14.values.slice(-10)} tone="indigo" />
-          </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Plantillas de examen</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.templatesTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Activas</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.templatesActive)}
-            </span>
-          </div>
-        </article>
-
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <article className="zs-card p-4">
           <p className="text-sm text-foreground/55">Banco de preguntas</p>
           <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
@@ -678,17 +705,80 @@ export function DashboardView() {
         </article>
 
         <article className="zs-card p-4">
+          <p className="text-sm text-foreground/55">Grupos CESDE</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+            {loading ? "-" : formatCompactNumber(data.counts.groupsTotal)}
+          </p>
+          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
+            <span>Materias</span>
+            <span className="font-semibold text-foreground">
+              {loading ? "-" : formatCompactNumber(data.counts.subjectsTotal)}
+            </span>
+          </div>
+        </article>
+
+        <article className="zs-card p-4">
+          <p className="text-sm text-foreground/55">Fichas SENA</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+            {loading ? "-" : formatCompactNumber(data.counts.fichasTotal)}
+          </p>
+          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
+            <span>Momentos</span>
+            <span className="font-semibold text-foreground">
+              {loading ? "-" : formatCompactNumber(data.counts.momentsTotal)}
+            </span>
+          </div>
+        </article>
+
+        <article className="zs-card p-4">
+          <p className="text-sm text-foreground/55">Carga horaria</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+            {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsTotal)}
+          </p>
+          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
+            <span>Activas</span>
+            <span className="font-semibold text-foreground">
+              {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsActive)}
+            </span>
+          </div>
+        </article>
+
+        <article className="zs-card p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm text-foreground/55">Resultados (7 días)</p>
+              <p className="text-sm text-foreground/55">Horas académicas</p>
               <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                {avgGrade7 === null ? "-" : `${formatFixed(avgGrade7, 2)} / 5`}
+                {loading ? "-" : formatHoursValue(data.counts.teachingHoursTotal)}
               </p>
               <p className="mt-1 text-xs text-foreground/55">
-                {data.summary7.submittedAttempts ? `${data.summary7.submittedAttempts} envíos` : "Sin envíos"}
+                {loading
+                  ? "-"
+                  : `CESDE ${formatHoursValue(data.counts.teachingHoursCesde)} h | SENA ${formatHoursValue(data.counts.teachingHoursSena)} h`}
               </p>
             </div>
-            <MiniSparkline values={data.gradeDist.map((b) => b.value)} tone="emerald" />
+            <MiniSparkline
+              values={[
+                data.counts.teachingHoursCesde,
+                data.counts.teachingHoursSena,
+                data.counts.teachingHoursTotal,
+              ]}
+              tone="emerald"
+            />
+          </div>
+        </article>
+
+        <article className="zs-card p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-foreground/55">Workspaces Drive</p>
+              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.driveWorkspacesTotal)}
+              </p>
+              <p className="mt-1 text-xs text-foreground/55">
+                {loading ? "-" : `${formatCompactNumber(data.counts.sitesTotal)} sedes | ${formatCompactNumber(data.counts.shiftsTotal)} jornadas`}
+              </p>
+            </div>
+            <MiniSparkline values={data.activity14.values.slice(-10)} tone="indigo" />
           </div>
         </article>
       </section>
@@ -730,8 +820,8 @@ export function DashboardView() {
         </article>
 
         <article className="zs-card p-5">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Banco</h2>
-          <p className="text-sm text-foreground/55">Estado real del banco y de los catálogos académicos.</p>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Operación académica</h2>
+          <p className="text-sm text-foreground/55">Catálogos, carga horaria, Drive y base documental real.</p>
 
           <div className="mt-4">
             <Donut
@@ -769,6 +859,18 @@ export function DashboardView() {
               </p>
             </div>
             <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Sedes</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.sitesTotal)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Jornadas</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.shiftsTotal)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
               <p className="text-xs text-foreground/55">Documentos activos</p>
               <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 {loading ? "-" : formatCompactNumber(data.counts.studyDocsActive)}
@@ -778,6 +880,24 @@ export function DashboardView() {
               <p className="text-xs text-foreground/55">Workspaces Drive</p>
               <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 {loading ? "-" : formatCompactNumber(data.counts.driveWorkspacesTotal)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Carga horaria</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsTotal)}
+              </p>
+              <p className="mt-1 text-xs text-foreground/55">
+                {loading ? "-" : `${formatHoursValue(data.counts.teachingHoursTotal)} h acumuladas`}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Exámenes publicados</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.publishedActive)}
+              </p>
+              <p className="mt-1 text-xs text-foreground/55">
+                {loading ? "-" : `${formatCompactNumber(data.counts.templatesTotal)} plantillas`}
               </p>
             </div>
           </div>

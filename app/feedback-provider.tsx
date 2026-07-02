@@ -147,7 +147,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     <FeedbackContext.Provider value={value}>
       {children}
 
-      <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-full max-w-sm flex-col gap-2">
+      <div className="pointer-events-none fixed right-4 top-4 z-80 flex w-full max-w-sm flex-col gap-2">
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -173,7 +173,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       </div>
 
       {confirmState.open ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-90 flex items-center justify-center p-4 sm:p-6">
           <button
             type="button"
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
