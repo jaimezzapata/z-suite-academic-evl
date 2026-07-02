@@ -9,7 +9,7 @@ import {
   Activity,
   BarChart3,
   Bot,
-  BookOpen,
+  CalendarDays,
   Folder,
   LayoutDashboard,
   Menu,
@@ -31,10 +31,9 @@ type NavEntry =
 
 const navItems: NavEntry[] = [
   { type: "link", label: "Dashboard", href: "/admin", hint: "Metricas generales", icon: LayoutDashboard },
-  { type: "link", label: "Banco", href: "/admin/bank", hint: "Preguntas y carga", icon: BookOpen },
+  { type: "link", label: "Banco", href: "/admin/bank", hint: "Preguntas y carga", icon: ClipboardList },
   { type: "link", label: "Examenes", href: "/admin/templates", hint: "Creacion y control", icon: ClipboardList },
-  { type: "link", label: "Grupos", href: "/admin/groups", hint: "Cuadernillos por grupo", icon: BookOpen },
-  // { type: "link", label: "Documentacion", href: "/admin/documentation", hint: "Central de publicación", icon: BookOpen },
+  { type: "link", label: "Carga horaria", href: "/admin/workload", hint: "Horarios por institución", icon: CalendarDays },
   { type: "link", label: "Drive", href: "/admin/drive", hint: "Archivos y estructura", icon: Folder },
   { type: "link", label: "IA Documentación", href: "/admin/settings/ai-docs", hint: "Generar y publicar", icon: Bot },
   { type: "link", label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },

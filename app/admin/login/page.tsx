@@ -2,11 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  GoogleAuthProvider,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-} from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
 
@@ -36,19 +32,6 @@ export default function AdminLoginPage() {
     }
   }
 
-  async function loginGoogle() {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
-      router.replace("/admin");
-    } catch {
-      setError("No fue posible iniciar sesion con Google.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="flex flex-1 items-center justify-center bg-background px-6 py-16">
       <div className="w-full max-w-sm zs-card p-6">
@@ -71,7 +54,7 @@ export default function AdminLoginPage() {
               type="email"
               className="zs-input"
               autoComplete="email"
-              placeholder="admin@colegio.edu"
+              placeholder="admin@correo.edu"
               disabled={submitting}
             />
           </label>
@@ -100,20 +83,6 @@ export default function AdminLoginPage() {
             className="zs-btn-primary h-11"
           >
             Entrar
-          </button>
-
-          <div className="flex items-center gap-3 py-1">
-            <div className="h-px flex-1 bg-border" />
-            <div className="text-xs text-foreground/55">o</div>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
-          <button
-            onClick={loginGoogle}
-            disabled={submitting}
-            className="zs-btn-secondary h-11"
-          >
-            Entrar con Google
           </button>
 
           <p className="text-xs text-foreground/55">

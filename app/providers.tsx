@@ -30,25 +30,39 @@ async function checkIsAdmin(uid: string) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [adminLoading, setAdminLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const unsub = onAuthStateChanged(firebaseAuth, async (u) => {
+      if (cancelled) return;
       setUser(u);
       if (u) {
+        setAdminLoading(true);
         try {
           const admin = await checkIsAdmin(u.uid);
+          if (cancelled) return;
           setIsAdmin(admin);
         } catch {
+          if (cancelled) return;
           setIsAdmin(false);
+        } finally {
+          if (!cancelled) setAdminLoading(false);
         }
       } else {
         setIsAdmin(false);
+        setAdminLoading(false);
       }
-      setLoading(false);
+      setAuthLoading(false);
     });
-    return () => unsub();
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
+
+  const loading = authLoading || adminLoading;
 
   const value = useMemo<AuthState>(
     () => ({

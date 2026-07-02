@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   collection,
   getCountFromServer,
@@ -12,12 +11,7 @@ import {
   where,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
-import { BookOpen, ClipboardList, BarChart3, Activity, Bot, Settings2, Folder } from "lucide-react";
-
-type GroupProgress = {
-  group: string;
-  value: number;
-};
+import { useAuth } from "@/app/providers";
 
 type DashboardData = {
   counts: {
@@ -28,6 +22,12 @@ type DashboardData = {
     questionsPublished: number;
     questionsDraft: number;
     questionsArchived: number;
+      subjectsTotal: number;
+      groupsTotal: number;
+      fichasTotal: number;
+      momentsTotal: number;
+      studyDocsActive: number;
+      driveWorkspacesTotal: number;
     attemptsTotal: number;
     attemptsSubmitted: number;
     attemptsInProgress: number;
@@ -46,7 +46,6 @@ type DashboardData = {
     status: string;
     fraud: number;
   }[];
-  completionByGroup: GroupProgress[];
 };
 
 function normalizeGradeTo5(item: Record<string, unknown>) {
@@ -257,21 +256,7 @@ function Donut({
 }
 
 export function DashboardView() {
-  const quickLinks: Array<{
-    href: string;
-    label: string;
-    hint: string;
-    icon: typeof BookOpen;
-  }> = [
-    { href: "/admin/bank", label: "Banco", hint: "Preguntas e importación", icon: BookOpen },
-    { href: "/admin/templates", label: "Exámenes", hint: "Plantillas y gestión", icon: ClipboardList },
-    { href: "/admin/drive", label: "Drive", hint: "Archivos y estructura", icon: Folder },
-    { href: "/admin/results", label: "Resultados", hint: "Notas y trazabilidad", icon: BarChart3 },
-    { href: "/admin/live", label: "Activos", hint: "Códigos y monitoreo", icon: Activity },
-    { href: "/admin/settings/ai-docs", label: "IA", hint: "README y JSON", icon: Bot },
-    { href: "/admin/settings", label: "Ajustes", hint: "Catálogos y configuración", icon: Settings2 },
-  ];
-
+  const { loading: authLoading, isAdmin, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DashboardData>({
@@ -283,6 +268,12 @@ export function DashboardView() {
       questionsPublished: 0,
       questionsDraft: 0,
       questionsArchived: 0,
+      subjectsTotal: 0,
+      groupsTotal: 0,
+      fichasTotal: 0,
+      momentsTotal: 0,
+      studyDocsActive: 0,
+      driveWorkspacesTotal: 0,
       attemptsTotal: 0,
       attemptsSubmitted: 0,
       attemptsInProgress: 0,
@@ -294,13 +285,20 @@ export function DashboardView() {
     summary7: { avgGrade: null, fraudAttempts: 0, submittedAttempts: 0 },
     topExams7: [],
     latestAttempts: [],
-    completionByGroup: [],
   });
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadDashboard() {
+      if (authLoading) {
+        setLoading(true);
+        return;
+      }
+      if (!user || !isAdmin) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
       let issuesHint: string | null = null;
@@ -363,6 +361,14 @@ export function DashboardView() {
         add("questionsArchived", () =>
           getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "archived"))),
         );
+        add("subjectsTotal", () => getCountFromServer(collection(firestore, "subjects")));
+        add("groupsTotal", () => getCountFromServer(collection(firestore, "groups")));
+        add("fichasTotal", () => getCountFromServer(collection(firestore, "fichas")));
+        add("momentsTotal", () => getCountFromServer(collection(firestore, "moments")));
+        add("studyDocsActive", () =>
+          getCountFromServer(query(collection(firestore, "studyDocs"), where("active", "==", true))),
+        );
+        add("driveWorkspacesTotal", () => getCountFromServer(collection(firestore, "driveWorkspaces")));
         add("attemptsTotal", () => getCountFromServer(collection(firestore, "attempts")));
         add("attemptsSubmitted", () =>
           getCountFromServer(
@@ -378,12 +384,20 @@ export function DashboardView() {
         add("attemptsAnnulled", () =>
           getCountFromServer(query(collection(firestore, "attempts"), where("status", "==", "annulled"))),
         );
-        add("groups", () => getDocs(query(collection(firestore, "groups"), orderBy("name"), limit(12))));
-        add("questionsSample", () => getDocs(query(collection(firestore, "questions"), limit(500))));
+        add("groups", () => getDocs(query(collection(firestore, "groups"), orderBy("name"), limit(300))));
+        add("fichas", () => getDocs(query(collection(firestore, "fichas"), orderBy("name"), limit(800))));
         add("templatesSample", () => getDocs(query(collection(firestore, "examTemplates"), limit(60))));
         add("attemptsRecent", () =>
           getDocs(query(collection(firestore, "attempts"), orderBy("submittedAt", "desc"), limit(500))),
         );
+
+        const [questionsTotalSnap, questionsPublishedSnap, questionsDraftSnap, questionsArchivedSnap] =
+          await Promise.all([
+            getCountFromServer(collection(firestore, "questions")),
+            getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "published"))),
+            getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "draft"))),
+            getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "archived"))),
+          ]);
 
         const entries = Object.entries(fetches);
         const settled = await Promise.allSettled(entries.map(([, p]) => p));
@@ -407,7 +421,7 @@ export function DashboardView() {
         }
 
         const groupDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.groups);
-        const questionDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.questionsSample);
+        const fichaDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.fichas);
         const templateDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.templatesSample);
         const attemptDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.attemptsRecent);
 
@@ -415,21 +429,9 @@ export function DashboardView() {
           id: d.id,
           name: safeToString(d.data().name, d.id),
         }));
-
-        const questionCountByGroup = new Map<string, number>();
-        questionDocs.forEach((docSnap) => {
-          const row = docSnap.data() as Record<string, unknown>;
-          const groupIds = Array.isArray(row.groupIds) ? row.groupIds : [];
-          groupIds.forEach((id) => {
-            if (typeof id !== "string") return;
-            questionCountByGroup.set(id, (questionCountByGroup.get(id) ?? 0) + 1);
-          });
-        });
-
-        const maxGroupQuestions = Math.max(...Array.from(questionCountByGroup.values()), 1);
-        const completionByGroup: GroupProgress[] = groups.map((g) => ({
-          group: g.name,
-          value: Math.round(((questionCountByGroup.get(g.id) ?? 0) / maxGroupQuestions) * 100),
+        const fichas = fichaDocs.map((d) => ({
+          id: d.id,
+          name: safeToString(d.data().name, d.id),
         }));
 
         const templates = templateDocs.map((docSnap) => {
@@ -441,7 +443,7 @@ export function DashboardView() {
           };
         });
 
-        const groupNameById = new Map(groups.map((g) => [g.id, g.name]));
+        const groupNameById = new Map([...groups, ...fichas].map((g) => [g.id, g.name]));
         const templateNameById = new Map(templates.map((t) => [t.id, t.name]));
         const templateGroupById = new Map(templates.map((t) => [t.id, t.groupId]));
 
@@ -571,10 +573,16 @@ export function DashboardView() {
           templatesTotal: countFromAggregateSnap(out.templatesTotal),
           templatesActive: countFromAggregateSnap(out.templatesActive),
           publishedActive: countFromAggregateSnap(out.publishedActive),
-          questionsTotal: countFromAggregateSnap(out.questionsTotal),
-          questionsPublished: countFromAggregateSnap(out.questionsPublished),
-          questionsDraft: countFromAggregateSnap(out.questionsDraft),
-          questionsArchived: countFromAggregateSnap(out.questionsArchived),
+          questionsTotal: questionsTotalSnap.data().count,
+          questionsPublished: questionsPublishedSnap.data().count,
+          questionsDraft: questionsDraftSnap.data().count,
+          questionsArchived: questionsArchivedSnap.data().count,
+          subjectsTotal: countFromAggregateSnap(out.subjectsTotal),
+          groupsTotal: countFromAggregateSnap(out.groupsTotal),
+          fichasTotal: countFromAggregateSnap(out.fichasTotal),
+          momentsTotal: countFromAggregateSnap(out.momentsTotal),
+          studyDocsActive: countFromAggregateSnap(out.studyDocsActive),
+          driveWorkspacesTotal: countFromAggregateSnap(out.driveWorkspacesTotal),
           attemptsTotal: countFromAggregateSnap(out.attemptsTotal),
           attemptsSubmitted: countFromAggregateSnap(out.attemptsSubmitted),
           attemptsInProgress: countFromAggregateSnap(out.attemptsInProgress),
@@ -590,7 +598,6 @@ export function DashboardView() {
             summary7,
             topExams7,
             latestAttempts,
-            completionByGroup,
           });
         }
       } catch (err) {
@@ -617,7 +624,7 @@ export function DashboardView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authLoading, isAdmin, user]);
 
   const avgGrade7 = data.summary7.avgGrade;
   const fraud7 = data.summary7.fraudAttempts;
@@ -629,35 +636,6 @@ export function DashboardView() {
           {error}
         </div>
       ) : null}
-
-      <section className="zs-card p-4">
-        <div className="mb-3">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Accesos directos</h2>
-          <p className="text-sm text-foreground/55">Navega rápido a los módulos clave del panel.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {quickLinks.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="group rounded-xl border border-border bg-surface px-4 py-3 transition hover:bg-muted"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground">{item.label}</p>
-                    <p className="mt-0.5 text-xs text-foreground/55">{item.hint}</p>
-                  </div>
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-foreground/70 group-hover:bg-primary group-hover:text-primary-foreground">
-                    <Icon className="h-4 w-4" />
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <article className="zs-card p-4">
@@ -753,7 +731,7 @@ export function DashboardView() {
 
         <article className="zs-card p-5">
           <h2 className="text-lg font-semibold tracking-tight text-foreground">Banco</h2>
-          <p className="text-sm text-foreground/55">Estado de preguntas y distribución por grupo.</p>
+          <p className="text-sm text-foreground/55">Estado real del banco y de los catálogos académicos.</p>
 
           <div className="mt-4">
             <Donut
@@ -765,23 +743,43 @@ export function DashboardView() {
             />
           </div>
 
-          <div className="mt-5 space-y-3">
-            {data.completionByGroup.map((item) => (
-              <div key={item.group}>
-                <div className="mb-1 flex items-center justify-between text-xs text-foreground/65">
-                  <span className="truncate">{item.group}</span>
-                  <span>{item.value}%</span>
-                </div>
-                <div className="h-2 rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${item.value}%` }} />
-                </div>
-              </div>
-            ))}
-            {!data.completionByGroup.length ? (
-              <div className="zs-card-muted px-3 py-6 text-center text-sm text-foreground/55">
-                {loading ? "Cargando análisis..." : "No hay grupos/preguntas para analizar."}
-              </div>
-            ) : null}
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Materias</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.subjectsTotal)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Grupos CESDE</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.groupsTotal)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Fichas SENA</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.fichasTotal)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Momentos</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.momentsTotal)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Documentos activos</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.studyDocsActive)}
+              </p>
+            </div>
+            <div className="zs-card-muted px-3 py-3">
+              <p className="text-xs text-foreground/55">Workspaces Drive</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                {loading ? "-" : formatCompactNumber(data.counts.driveWorkspacesTotal)}
+              </p>
+            </div>
           </div>
         </article>
       </section>

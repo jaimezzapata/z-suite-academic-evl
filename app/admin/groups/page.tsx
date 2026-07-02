@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { firebaseAuth, firestore } from "@/lib/firebase/client";
+import { useFeedback } from "@/app/feedback-provider";
 
 type CatalogItem = { id: string; name: string };
 
@@ -250,6 +251,7 @@ function ModalShell({
 }
 
 export default function AdminGroupsBookletsPage() {
+  const feedback = useFeedback();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -416,10 +418,17 @@ export default function AdminGroupsBookletsPage() {
     const user = firebaseAuth.currentUser;
     if (!user) {
       setError("Debes iniciar sesión como admin.");
+      feedback.error("Debes iniciar sesión como admin.");
       return;
     }
     if (!manageDocId) return;
-    const ok = window.confirm("¿Eliminar este capítulo? Esta acción renumera el cuadernillo.");
+    const ok = await feedback.confirm({
+      title: "Eliminar capítulo",
+      description: "Esta acción elimina el capítulo y renumera el cuadernillo.",
+      confirmLabel: "Eliminar capítulo",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
     if (!ok) return;
     setManageSaving(true);
     setError(null);
@@ -433,15 +442,19 @@ export default function AdminGroupsBookletsPage() {
       });
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (!res.ok) {
-        setError(typeof data?.error === "string" ? data.error : `No fue posible eliminar (HTTP ${res.status}).`);
+        const message = typeof data?.error === "string" ? data.error : `No fue posible eliminar (HTTP ${res.status}).`;
+        setError(message);
+        feedback.error(message);
         return;
       }
       const nextCount = toNumber(data?.chaptersCount, Math.max(0, manageChapters.length - 1));
       setBooklets((prev) => prev.map((b) => (b.id === manageDocId ? { ...b, chaptersCount: nextCount } : b)));
       setSuccess("Capítulo eliminado.");
+      feedback.success("Capítulo eliminado.");
       await loadManageChapters(manageDocId);
     } catch {
       setError("No fue posible eliminar el capítulo.");
+      feedback.error("No fue posible eliminar el capítulo.");
     } finally {
       setManageSaving(false);
     }
@@ -594,9 +607,16 @@ export default function AdminGroupsBookletsPage() {
     const user = firebaseAuth.currentUser;
     if (!user) {
       setError("Debes iniciar sesión como admin.");
+      feedback.error("Debes iniciar sesión como admin.");
       return;
     }
-    const ok = window.confirm("¿Eliminar este cuadernillo y todos sus capítulos?");
+    const ok = await feedback.confirm({
+      title: "Eliminar cuadernillo",
+      description: "Se eliminará el cuadernillo junto con todos sus capítulos.",
+      confirmLabel: "Eliminar cuadernillo",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
     if (!ok) return;
     setSaving(true);
     setError(null);
@@ -610,13 +630,17 @@ export default function AdminGroupsBookletsPage() {
       });
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (!res.ok) {
-        setError(typeof data?.error === "string" ? data.error : `No fue posible eliminar (HTTP ${res.status}).`);
+        const message = typeof data?.error === "string" ? data.error : `No fue posible eliminar (HTTP ${res.status}).`;
+        setError(message);
+        feedback.error(message);
         return;
       }
       setBooklets((prev) => prev.filter((b) => b.id !== docId));
       setSuccess("Cuadernillo eliminado.");
+      feedback.success("Cuadernillo eliminado.");
     } catch {
       setError("No fue posible eliminar el cuadernillo.");
+      feedback.error("No fue posible eliminar el cuadernillo.");
     } finally {
       setSaving(false);
     }

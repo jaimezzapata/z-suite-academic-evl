@@ -4,7 +4,7 @@
     "batchId": "YYYY-MM-DD-subject-group-moment-batch-001",
     "importedAt": "YYYY-MM-DDT00:00:00Z",
     "importMode": "append_only",
-    "createdBy": "admin@colegio.edu",
+    "createdBy": "admin@correoedu",
     "notes": "Describe el contenido del lote (materia/grupo/momento y rango de preguntas)."
   },
   "catalog": {

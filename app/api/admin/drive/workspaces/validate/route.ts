@@ -6,6 +6,11 @@ function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+function adminFirestoreError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return `No fue posible validar el admin en Firestore. Revisa FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON o los permisos de la service account. ${message}`.trim();
+}
+
 function nodeIdFromPath(pathKey: string) {
   return pathKey.replace(/\//g, "__").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 250);
 }
@@ -38,7 +43,12 @@ async function assertAdmin(req: Request) {
     return { ok: false as const, status: 401, error: `Token inválido o expirado. ${msg}` };
   }
 
-  const adminSnap = await adminDb.collection("admins").doc(uid).get();
+  let adminSnap: FirebaseFirestore.DocumentSnapshot;
+  try {
+    adminSnap = await adminDb.collection("admins").doc(uid).get();
+  } catch (err) {
+    return { ok: false as const, status: 500, error: adminFirestoreError(err) };
+  }
   if (!adminSnap.exists) return { ok: false as const, status: 403, error: "Forbidden" };
 
   return { ok: true as const, adminDb };
@@ -176,4 +186,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
