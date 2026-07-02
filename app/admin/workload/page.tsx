@@ -93,7 +93,7 @@ type WorkloadFilters = {
 
 const EMPTY_FORM: TeachingLoadForm = {
   institution: "CESDE",
-  period: `${new Date().getFullYear()}-01`,
+  period: periodFromDate(isoDate(new Date())),
   subjectId: "",
   audienceId: "",
   siteId: "",
@@ -200,8 +200,14 @@ function dayNameFromIsoDate(value: string) {
 }
 
 function periodFromDate(value: string) {
-  const year = value.slice(0, 4);
-  return /^\d{4}$/.test(year) ? `${year}-01` : `${new Date().getFullYear()}-01`;
+  const parsed = parseLocalDate(value);
+  if (parsed) {
+    const periodCode = parsed.getMonth() + 1 >= 7 ? "02" : "01";
+    return `${parsed.getFullYear()}-${periodCode}`;
+  }
+  const fallbackDate = new Date();
+  const fallbackPeriodCode = fallbackDate.getMonth() + 1 >= 7 ? "02" : "01";
+  return `${fallbackDate.getFullYear()}-${fallbackPeriodCode}`;
 }
 
 function normalizeInstitutionTab(value: "CESDE" | "SENA" | "ALL") {
@@ -605,7 +611,7 @@ export default function AdminWorkloadPage() {
 
   function closeModal() {
     setModalOpen(false);
-    resetForm(tab);
+    resetForm(normalizeInstitutionTab(tab));
   }
 
   function updateField<K extends keyof TeachingLoadForm>(key: K, value: TeachingLoadForm[K]) {
