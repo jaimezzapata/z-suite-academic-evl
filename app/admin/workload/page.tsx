@@ -1188,7 +1188,7 @@ export default function AdminWorkloadPage() {
               </div>
 
               <div className="mt-4 overflow-x-auto">
-                <div className="min-w-1024px overflow-hidden rounded-2xl border border-border bg-white">
+                <div className="min-w-[1024px] overflow-hidden rounded-2xl border border-border bg-white">
                   <div className="grid grid-cols-[78px_repeat(7,minmax(0,1fr))] border-b border-border bg-surface">
                     <div className="border-r border-border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
                       Hora
@@ -1201,7 +1201,7 @@ export default function AdminWorkloadPage() {
                     ))}
                   </div>
 
-                  <div className="grid h-960px md:h-1020px xl:h-1120px grid-cols-[78px_repeat(7,minmax(0,1fr))]">
+                  <div className="grid h-[960px] md:h-[1020px] xl:h-[1120px] grid-cols-[78px_repeat(7,minmax(0,1fr))]">
                     <div className="relative h-full border-r border-border bg-surface/50">
                       {CALENDAR_LABELS.map((label, index) => (
                         <div
