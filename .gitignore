@@ -36,6 +36,7 @@ yarn-error.log*
 
 # local secrets
 /.secrets
+/docs/credentials-backup.local.md
 
 # vercel
 .vercel
