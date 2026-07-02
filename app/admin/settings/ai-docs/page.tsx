@@ -81,6 +81,18 @@ function ModalShell({
 
 type CatalogItem = { id: string; name: string };
 type ReadmeTemplateId = "custom" | "standard_detailed_v1";
+type ReadmeBatchMetadata = {
+  subjectId: string;
+  subjectName: string;
+  groupId: string;
+  groupName: string;
+  momentId: string;
+  momentName: string;
+  questionCount: number;
+  timeLimitMinutes: number;
+  gradingScale: string;
+  allowedQuestionTypes: string[];
+};
 
 const README_TEMPLATE_OPTIONS: Array<{ id: ReadmeTemplateId; label: string; description: string }> = [
   {
@@ -290,9 +302,104 @@ const STANDARD_DETAILED_TEMPLATE_CONTEXT = [
   "Cada capítulo debe ser autocontenido y entendible sin depender de otros, pero puede mencionar el 'siguiente tema' al final si aporta.",
 ].join("\n");
 
+const QUESTION_TYPE_OPTIONS = [
+  { id: "single_choice", label: "Selección única" },
+  { id: "multiple_choice", label: "Selección múltiple" },
+  { id: "open_concept", label: "Abierta" },
+  { id: "puzzle_order", label: "Ordenar" },
+  { id: "puzzle_match", label: "Emparejar" },
+  { id: "puzzle_cloze", label: "Completar" },
+];
+
 function toCatalogItem(id: string, data: Record<string, unknown>): CatalogItem {
   const name = typeof data.name === "string" && data.name.trim() ? data.name : id;
   return { id, name };
+}
+
+function parseMetadataScalar(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function extractReadmeBatchMetadata(markdown: string) {
+  const startMarker = "<!-- BATCH_METADATA_START -->";
+  const endMarker = "<!-- BATCH_METADATA_END -->";
+  const start = markdown.indexOf(startMarker);
+  const end = markdown.indexOf(endMarker);
+  if (start === -1 || end === -1 || end <= start) {
+    return { ok: false as const, error: "El README aún no tiene el bloque obligatorio de metadatos del JSON." };
+  }
+
+  const section = markdown.slice(start + startMarker.length, end).trim();
+  const fenceMatch = section.match(/```(?:yaml|yml)?\s*([\s\S]*?)```/i);
+  const raw = (fenceMatch?.[1] ?? section).trim();
+  if (!raw) {
+    return { ok: false as const, error: "El bloque de metadatos del README está vacío." };
+  }
+
+  const meta: Record<string, string | string[]> = {};
+  let listKey = "";
+  raw.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const listMatch = /^-\s+(.+)$/.exec(trimmed);
+    if (listMatch && listKey) {
+      const current = Array.isArray(meta[listKey]) ? (meta[listKey] as string[]) : [];
+      current.push(parseMetadataScalar(listMatch[1]));
+      meta[listKey] = current;
+      return;
+    }
+    const scalarMatch = /^([A-Za-z][A-Za-z0-9]*):\s*(.*)$/.exec(trimmed);
+    if (!scalarMatch) return;
+    const [, key, value] = scalarMatch;
+    if (value.trim()) {
+      meta[key] = parseMetadataScalar(value);
+      listKey = "";
+      return;
+    }
+    meta[key] = [];
+    listKey = key;
+  });
+
+  const allowedQuestionTypes = Array.isArray(meta.allowedQuestionTypes)
+    ? (meta.allowedQuestionTypes as string[]).map((item) => parseMetadataScalar(item)).filter(Boolean)
+    : [];
+
+  const parsed: ReadmeBatchMetadata = {
+    subjectId: parseMetadataScalar(String(meta.subjectId ?? "")),
+    subjectName: parseMetadataScalar(String(meta.subjectName ?? meta.subjectId ?? "")),
+    groupId: parseMetadataScalar(String(meta.groupId ?? "")),
+    groupName: parseMetadataScalar(String(meta.groupName ?? meta.groupId ?? "")),
+    momentId: parseMetadataScalar(String(meta.momentId ?? "")),
+    momentName: parseMetadataScalar(String(meta.momentName ?? meta.momentId ?? "")),
+    questionCount: Number(parseMetadataScalar(String(meta.questionCount ?? ""))) || 0,
+    timeLimitMinutes: Number(parseMetadataScalar(String(meta.timeLimitMinutes ?? ""))) || 0,
+    gradingScale: parseMetadataScalar(String(meta.gradingScale ?? "0_50")) || "0_50",
+    allowedQuestionTypes,
+  };
+
+  if (
+    !parsed.subjectId ||
+    !parsed.groupId ||
+    !parsed.momentId ||
+    !parsed.subjectName ||
+    !parsed.groupName ||
+    !parsed.momentName ||
+    !parsed.questionCount ||
+    !parsed.timeLimitMinutes ||
+    !parsed.allowedQuestionTypes.length
+  ) {
+    return { ok: false as const, error: "El README tiene metadatos incompletos para generar el JSON." };
+  }
+
+  return { ok: true as const, value: parsed };
 }
 
 export default function AdminAiDocsPage() {
@@ -412,9 +519,20 @@ export default function AdminAiDocsPage() {
   }, []);
 
   const canGenerate = useMemo(
-    () => topics.trim().length > 0 && criteria.trim().length > 0 && !loading,
-    [topics, criteria, loading],
+    () =>
+      topics.trim().length > 0 &&
+      criteria.trim().length > 0 &&
+      !!subjectId &&
+      !!groupId &&
+      !!momentId &&
+      questionCount >= 1 &&
+      timeLimitMinutes >= 1 &&
+      allowedQuestionTypes.length > 0 &&
+      !loading,
+    [topics, criteria, subjectId, groupId, momentId, questionCount, timeLimitMinutes, allowedQuestionTypes.length, loading],
   );
+
+  const readmeBatchMetadata = useMemo(() => extractReadmeBatchMetadata(markdown), [markdown]);
 
   async function generate(
     overrides?: Partial<{
@@ -461,6 +579,16 @@ export default function AdminAiDocsPage() {
         lengthHint: payloadLengthHint,
         modelVariant: payloadGeminiVariant,
         readmeTemplate,
+        subjectId,
+        subjectName: subjects.find((s) => s.id === subjectId)?.name ?? subjectId,
+        groupId,
+        groupName: groups.find((g) => g.id === groupId)?.name ?? groupId,
+        momentId,
+        momentName: moments.find((m) => m.id === momentId)?.name ?? momentId,
+        questionCount,
+        timeLimitMinutes,
+        gradingScale: "0_50",
+        allowedQuestionTypes,
       };
       const res = await fetch("/api/admin/ai-readme", {
         method: "POST",
@@ -487,16 +615,8 @@ export default function AdminAiDocsPage() {
   }
 
   const canGenerateBatch = useMemo(() => {
-    return (
-      !batchLoading &&
-      !!markdown.trim() &&
-      !!subjectId &&
-      !!groupId &&
-      !!momentId &&
-      questionCount >= 1 &&
-      allowedQuestionTypes.length > 0
-    );
-  }, [batchLoading, markdown, subjectId, groupId, momentId, questionCount, allowedQuestionTypes.length]);
+    return !batchLoading && !!markdown.trim() && readmeBatchMetadata.ok;
+  }, [batchLoading, markdown, readmeBatchMetadata]);
 
   async function generateQuestionBatch() {
     const user = firebaseAuth.currentUser;
@@ -508,9 +628,6 @@ export default function AdminAiDocsPage() {
     setBatchError(null);
     try {
       const token = await user.getIdToken(true);
-      const subject = subjects.find((s) => s.id === subjectId);
-      const group = groups.find((g) => g.id === groupId);
-      const moment = moments.find((m) => m.id === momentId);
 
       const res = await fetch("/api/admin/ai-question-batch", {
         method: "POST",
@@ -521,16 +638,6 @@ export default function AdminAiDocsPage() {
         body: JSON.stringify({
           modelVariant: geminiVariant,
           documentationMarkdown: markdown,
-          subjectId,
-          subjectName: subject?.name,
-          groupId,
-          groupName: group?.name,
-          momentId,
-          momentName: moment?.name,
-          questionCount,
-          timeLimitMinutes,
-          gradingScale: "0_50",
-          allowedQuestionTypes,
         }),
       });
 
@@ -794,7 +901,7 @@ export default function AdminAiDocsPage() {
                 ) : (
                   <div className="grid gap-1 py-6 text-center">
                     <p className="text-sm font-semibold text-zinc-900">Sin JSON</p>
-                    <p className="text-sm text-zinc-500">Configura los parámetros y genera el batch.</p>
+                    <p className="text-sm text-zinc-500">Genera o edita el README con sus metadatos y luego crea el batch.</p>
                   </div>
                 )}
               </div>
@@ -922,6 +1029,116 @@ export default function AdminAiDocsPage() {
               />
             </label>
 
+            {catalogError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {catalogError}
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+              <div>
+                <p className="text-sm font-semibold text-zinc-900">Metadatos del JSON</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Estos datos se incrustan dentro del README y luego el JSON se genera únicamente a partir de ese bloque.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-zinc-700">Materia</span>
+                  <select
+                    value={subjectId}
+                    onChange={(e) => setSubjectId(e.target.value)}
+                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                  >
+                    <option value="">Seleccionar</option>
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-zinc-700">Grupo</span>
+                  <select
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value)}
+                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                  >
+                    <option value="">Seleccionar</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-zinc-700">Momento</span>
+                  <select
+                    value={momentId}
+                    onChange={(e) => setMomentId(e.target.value)}
+                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                  >
+                    <option value="">Seleccionar</option>
+                    {moments.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-zinc-700">Preguntas</span>
+                  <input
+                    type="number"
+                    value={questionCount}
+                    onChange={(e) => setQuestionCount(Number(e.target.value))}
+                    min={1}
+                    max={200}
+                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-zinc-700">Tiempo (min)</span>
+                  <input
+                    type="number"
+                    value={timeLimitMinutes}
+                    onChange={(e) => setTimeLimitMinutes(Number(e.target.value))}
+                    min={1}
+                    max={300}
+                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-2">
+                <p className="text-xs font-semibold text-zinc-700">Tipos permitidos</p>
+                <div className="flex flex-wrap gap-2">
+                  {QUESTION_TYPE_OPTIONS.map((t) => {
+                    const active = allowedQuestionTypes.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleAllowedType(t.id)}
+                        className={`h-9 rounded-xl px-3 text-sm font-semibold transition ${
+                          active ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-zinc-500">Seleccionados: {allowedQuestionTypes.join(", ") || "Ninguno"}</p>
+              </div>
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
               <p className="text-xs text-zinc-500">
                 <span className="font-semibold text-zinc-700">Gemini</span>
@@ -955,8 +1172,8 @@ export default function AdminAiDocsPage() {
 
       <ModalShell
         open={batchFormOpen}
-        title="Configurar Batch JSON"
-        subtitle="Selecciona materia/grupo/momento y parámetros. Luego genera el JSON."
+        title="Generar Batch JSON"
+        subtitle="El JSON se construye únicamente desde los metadatos incrustados en el README."
         onClose={() => setBatchFormOpen(false)}
       >
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -966,115 +1183,50 @@ export default function AdminAiDocsPage() {
             </div>
           ) : null}
 
-          {catalogError ? (
-            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {catalogError}
-            </div>
-          ) : null}
-
           <div className="mt-4 grid gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Materia</span>
-                <select
-                  value={subjectId}
-                  onChange={(e) => setSubjectId(e.target.value)}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-                >
-                  <option value="">Seleccionar</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Grupo</span>
-                <select
-                  value={groupId}
-                  onChange={(e) => setGroupId(e.target.value)}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-                >
-                  <option value="">Seleccionar</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <label className="grid gap-1">
-              <span className="text-xs font-semibold text-zinc-700">Momento</span>
-              <select
-                value={momentId}
-                onChange={(e) => setMomentId(e.target.value)}
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-              >
-                <option value="">Seleccionar</option>
-                {moments.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Preguntas</span>
-                <input
-                  type="number"
-                  value={questionCount}
-                  onChange={(e) => setQuestionCount(Number(e.target.value))}
-                  min={1}
-                  max={200}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-zinc-700">Tiempo (min)</span>
-                <input
-                  type="number"
-                  value={timeLimitMinutes}
-                  onChange={(e) => setTimeLimitMinutes(Number(e.target.value))}
-                  min={1}
-                  max={300}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-                />
-              </label>
-            </div>
-
-            <div className="grid gap-2">
-              <p className="text-xs font-semibold text-zinc-700">Tipos de pregunta</p>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { id: "single_choice", label: "Selección única" },
-                  { id: "multiple_choice", label: "Selección múltiple" },
-                  { id: "open_concept", label: "Abierta" },
-                  { id: "puzzle_order", label: "Ordenar" },
-                  { id: "puzzle_match", label: "Emparejar" },
-                  { id: "puzzle_cloze", label: "Completar" },
-                ].map((t) => {
-                  const active = allowedQuestionTypes.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => toggleAllowedType(t.id)}
-                      className={`h-9 rounded-xl px-3 text-sm font-semibold transition ${
-                        active ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
+            {readmeBatchMetadata.ok ? (
+              <div className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Materia</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900">{readmeBatchMetadata.value.subjectName}</p>
+                    <p className="text-xs text-zinc-500">{readmeBatchMetadata.value.subjectId}</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Grupo</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900">{readmeBatchMetadata.value.groupName}</p>
+                    <p className="text-xs text-zinc-500">{readmeBatchMetadata.value.groupId}</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Momento</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900">{readmeBatchMetadata.value.momentName}</p>
+                    <p className="text-xs text-zinc-500">{readmeBatchMetadata.value.momentId}</p>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Preguntas</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900">{readmeBatchMetadata.value.questionCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Tiempo</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900">{readmeBatchMetadata.value.timeLimitMinutes} min</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Escala</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900">{readmeBatchMetadata.value.gradingScale}</p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Tipos permitidos</p>
+                  <p className="mt-1 text-sm text-zinc-900">{readmeBatchMetadata.value.allowedQuestionTypes.join(", ")}</p>
+                </div>
               </div>
-              <p className="text-xs text-zinc-500">Seleccionados: {allowedQuestionTypes.join(", ")}</p>
-            </div>
+            ) : (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+                {readmeBatchMetadata.error}
+              </div>
+            )}
 
             {batchError ? (
               <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{batchError}</div>

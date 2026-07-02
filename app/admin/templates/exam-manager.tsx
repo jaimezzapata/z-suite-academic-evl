@@ -464,6 +464,7 @@ export function ExamManager() {
         return Number.isFinite(n) && n > 0 ? n : null;
       }
 
+      const publishSubjectName = namesById.get(`subjects:${publishTarget.subjectId}`) ?? publishTarget.subjectId;
       const questionSnap = await getDocs(
         query(
           collection(firestore, "questions"),
@@ -476,7 +477,7 @@ export function ExamManager() {
       const candidates = questionSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
       if (candidates.length === 0) {
         setError(
-          "No se encontraron preguntas para la materia seleccionada. Esto suele pasar cuando la materia (catalogo) tiene un ID diferente al subjectId que tienen las preguntas importadas. Solución: usa la materia creada por el import JSON (ID estable) o vuelve a importar el lote con el subjectId correcto.",
+          `No se encontraron preguntas publicadas para la materia seleccionada (${publishSubjectName}). ID esperado: ${publishTarget.subjectId}. Verifica que las preguntas importadas usen exactamente ese subjectId y que el catálogo de materias sea la fuente de verdad.`,
         );
         return;
       }
@@ -1826,9 +1827,6 @@ export function ExamManager() {
               <p className="font-semibold text-zinc-900">{publishTarget.name}</p>
               <p className="mt-1">Preguntas a seleccionar: {publishTarget.questionCount}</p>
               <p>Tiempo limite: {publishTarget.timeLimitMinutes || 60} minutos</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Filtro: materia + grupo + momento del examen.
-              </p>
             </div>
 
             <div className="mt-4 flex items-center justify-end gap-2">

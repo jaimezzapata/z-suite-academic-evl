@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 
 type GeminiModelVariant = "flash" | "pro";
+type ReadmeBatchMetadata = {
+  subjectId: string;
+  subjectName: string;
+  groupId: string;
+  groupName: string;
+  momentId: string;
+  momentName: string;
+  questionCount: number;
+  timeLimitMinutes: number;
+  gradingScale: string;
+  allowedQuestionTypes: string[];
+};
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -9,6 +21,10 @@ function toString(value: unknown, fallback = "") {
 
 function toNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function requiredEnv(name: string) {
@@ -113,6 +129,108 @@ function extractJsonObject(text: string) {
   } catch {
     return { ok: false as const, error: "La IA no devolvió un JSON válido." };
   }
+}
+
+function parseMetadataScalar(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function extractReadmeBatchMetadata(markdown: string) {
+  const startMarker = "<!-- BATCH_METADATA_START -->";
+  const endMarker = "<!-- BATCH_METADATA_END -->";
+  const start = markdown.indexOf(startMarker);
+  const end = markdown.indexOf(endMarker);
+  if (start === -1 || end === -1 || end <= start) {
+    return { ok: false as const, error: "El README no contiene el bloque obligatorio de metadatos del JSON." };
+  }
+
+  const section = markdown.slice(start + startMarker.length, end).trim();
+  const fenceMatch = section.match(/```(?:yaml|yml)?\s*([\s\S]*?)```/i);
+  const raw = (fenceMatch?.[1] ?? section).trim();
+  if (!raw) {
+    return { ok: false as const, error: "El bloque de metadatos del README está vacío." };
+  }
+
+  const meta: Record<string, string | string[]> = {};
+  let listKey = "";
+  raw.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const listMatch = /^-\s+(.+)$/.exec(trimmed);
+    if (listMatch && listKey) {
+      const current = Array.isArray(meta[listKey]) ? (meta[listKey] as string[]) : [];
+      current.push(parseMetadataScalar(listMatch[1]));
+      meta[listKey] = current;
+      return;
+    }
+    const scalarMatch = /^([A-Za-z][A-Za-z0-9]*):\s*(.*)$/.exec(trimmed);
+    if (!scalarMatch) return;
+    const [, key, value] = scalarMatch;
+    if (value.trim()) {
+      meta[key] = parseMetadataScalar(value);
+      listKey = "";
+      return;
+    }
+    meta[key] = [];
+    listKey = key;
+  });
+
+  const allowedRaw = Array.isArray(meta.allowedQuestionTypes) ? meta.allowedQuestionTypes : [];
+  const allowedQuestionTypes = allowedRaw
+    .map((item) => parseMetadataScalar(item))
+    .filter(Boolean)
+    .slice(0, 6);
+
+  const questionCount = clamp(Number(parseMetadataScalar(String(meta.questionCount ?? ""))) || 0, 1, 200);
+  const timeLimitMinutes = clamp(Number(parseMetadataScalar(String(meta.timeLimitMinutes ?? ""))) || 0, 1, 300);
+
+  const parsed: ReadmeBatchMetadata = {
+    subjectId: parseMetadataScalar(String(meta.subjectId ?? "")),
+    subjectName: parseMetadataScalar(String(meta.subjectName ?? meta.subjectId ?? "")),
+    groupId: parseMetadataScalar(String(meta.groupId ?? "")),
+    groupName: parseMetadataScalar(String(meta.groupName ?? meta.groupId ?? "")),
+    momentId: parseMetadataScalar(String(meta.momentId ?? "")),
+    momentName: parseMetadataScalar(String(meta.momentName ?? meta.momentId ?? "")),
+    questionCount,
+    timeLimitMinutes,
+    gradingScale: parseMetadataScalar(String(meta.gradingScale ?? "0_50")) || "0_50",
+    allowedQuestionTypes,
+  };
+
+  if (!parsed.subjectId || !parsed.groupId || !parsed.momentId) {
+    return {
+      ok: false as const,
+      error: "El README debe incluir subjectId, groupId y momentId en el bloque de metadatos.",
+    };
+  }
+  if (!parsed.subjectName || !parsed.groupName || !parsed.momentName) {
+    return {
+      ok: false as const,
+      error: "El README debe incluir subjectName, groupName y momentName en el bloque de metadatos.",
+    };
+  }
+  if (!parsed.allowedQuestionTypes.length) {
+    return {
+      ok: false as const,
+      error: "El README debe incluir allowedQuestionTypes en el bloque de metadatos.",
+    };
+  }
+  if (!parsed.questionCount || !parsed.timeLimitMinutes) {
+    return {
+      ok: false as const,
+      error: "El README debe incluir questionCount y timeLimitMinutes en el bloque de metadatos.",
+    };
+  }
+
+  return { ok: true as const, value: parsed };
 }
 
 function makeId(prefix: string, seed: string) {
@@ -346,31 +464,26 @@ export async function POST(req: Request) {
   const geminiVariant: GeminiModelVariant = geminiVariantRaw === "pro" ? "pro" : "flash";
 
   const documentationMarkdown = toString(body?.documentationMarkdown, "").trim();
-  const subjectId = toString(body?.subjectId, "").trim();
-  const subjectName = toString(body?.subjectName, subjectId).trim();
-  const groupId = toString(body?.groupId, "").trim();
-  const groupName = toString(body?.groupName, groupId).trim();
-  const momentId = toString(body?.momentId, "").trim();
-  const momentName = toString(body?.momentName, momentId).trim();
-  const questionCount = Math.max(1, Math.min(200, Math.floor(toNumber(body?.questionCount, 45))));
-  const timeLimitMinutes = Math.max(1, Math.min(300, Math.floor(toNumber(body?.timeLimitMinutes, 60))));
-  const gradingScale = toString(body?.gradingScale, "0_50").trim() || "0_50";
-
-  const allowedTypesRaw = Array.isArray(body?.allowedQuestionTypes) ? body?.allowedQuestionTypes : [];
-  const allowedQuestionTypes = (allowedTypesRaw as unknown[])
-    .map((v) => toString(v, "").trim())
-    .filter(Boolean)
-    .slice(0, 6);
 
   if (!documentationMarkdown) {
     return NextResponse.json({ error: "Debes proporcionar la documentación (Markdown)." }, { status: 400 });
   }
-  if (!subjectId || !groupId || !momentId) {
-    return NextResponse.json({ error: "Debes seleccionar materia, grupo y momento." }, { status: 400 });
+  const metadata = extractReadmeBatchMetadata(documentationMarkdown);
+  if (!metadata.ok) {
+    return NextResponse.json({ error: metadata.error }, { status: 400 });
   }
-  if (!allowedQuestionTypes.length) {
-    return NextResponse.json({ error: "Debes seleccionar al menos un tipo de pregunta." }, { status: 400 });
-  }
+  const {
+    subjectId,
+    subjectName,
+    groupId,
+    groupName,
+    momentId,
+    momentName,
+    questionCount,
+    timeLimitMinutes,
+    gradingScale,
+    allowedQuestionTypes,
+  } = metadata.value;
 
   const apiKey = requiredEnv("AI_GEMINI_API_KEY");
   const baseUrl = (process.env.AI_GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
@@ -382,6 +495,7 @@ export async function POST(req: Request) {
     "Devuelve SOLO un JSON válido. No uses Markdown. No uses texto adicional.",
     `Basate EXCLUSIVAMENTE en esta documentación (Markdown):\n${documentationMarkdown}`,
     "",
+    "Los metadatos obligatorios del lote están dentro del README. No inventes ni alteres IDs, nombres, cantidades ni tipos permitidos.",
     "Objetivo:",
     `- Generar exactamente ${questionCount} preguntas para:`,
     `  - Materia: ${subjectName}`,

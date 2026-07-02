@@ -14,7 +14,6 @@ export function JsonImporter() {
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
   const [rawJson, setRawJson] = useState("");
   const [sourceJson, setSourceJson] = useState("");
-  const [dryRun, setDryRun] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
@@ -139,7 +138,7 @@ export function JsonImporter() {
           "content-type": "application/json",
           authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ payload, dryRun }),
+        body: JSON.stringify({ payload }),
       });
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (!res.ok) {
@@ -161,7 +160,7 @@ export function JsonImporter() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold tracking-tight text-zinc-950">Importar JSON</h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Sube un lote JSON (append_only) o pégalo como texto para cargarlo a Firestore desde la interfaz.
+            Sube un lote JSON o pégalo como texto para validarlo e importarlo a Firestore usando los catálogos actuales.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -232,6 +231,11 @@ export function JsonImporter() {
         </div>
       </div>
 
+      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        El import ya no crea materias, grupos, momentos, sedes ni jornadas. Todos los IDs del JSON deben existir primero en
+        los catálogos del sistema.
+      </div>
+
       {fileName ? (
         <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
           Archivo: <strong>{fileName}</strong>
@@ -271,19 +275,14 @@ export function JsonImporter() {
         </div>
       )}
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
-          <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-          Simular (dry-run)
-        </label>
-
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         <button
           type="button"
           onClick={() => void importBatch()}
           disabled={!payload || loading}
           className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {loading ? "Importando..." : dryRun ? "Validar importación" : "Importar a Firestore"}
+          {loading ? "Importando..." : "Importar a Firestore"}
         </button>
       </div>
 

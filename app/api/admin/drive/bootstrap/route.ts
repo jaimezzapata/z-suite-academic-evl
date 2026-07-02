@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { createDriveFolder, ensureDriveFolder, getDriveRootFolderId, getOAuthDriveClient } from "@/lib/google/drive";
 import { FieldValue } from "firebase-admin/firestore";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import {
+  createAppsScriptDriveStructure,
+  getAppsScriptDriveRootFolderId,
+  getAppsScriptDriveStructure,
+} from "@/lib/google/apps-script-drive";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -29,14 +33,14 @@ function parseISODate(value: string) {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
-function formatISODate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDays(date: Date, days: number) {
-  const d = new Date(date.getTime());
-  d.setUTCDate(d.getUTCDate() + days);
-  return d;
+function toPeriodParts(value: string) {
+  const v = value.trim().toUpperCase();
+  const match = v.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  return {
+    year: Number.parseInt(match[1]!, 10),
+    periodCode: match[2]!,
+  };
 }
 
 function makeWorkspaceId(parts: string[]) {
@@ -96,10 +100,10 @@ export async function POST(req: Request) {
   const institution = toString(body?.institution, "").trim();
   const period = toString(body?.period, "").trim();
   const campus = toString(body?.campus, "").trim();
-  const shift = toString(body?.shift, "").trim();
-  const mode = toString(body?.mode, "fixedWeeks").trim();
+  const jornada = toString(body?.jornada, "").trim();
+  const dayOfWeek1 = toString(body?.dayOfWeek1, "").trim();
+  const dayOfWeek2 = toString(body?.dayOfWeek2, "").trim();
   const startDateRaw = toString(body?.startDate, "").trim();
-  const endDateRaw = toString(body?.endDate, "").trim();
 
   if (debug) {
     console.log("[drive/bootstrap] start", {
@@ -109,10 +113,10 @@ export async function POST(req: Request) {
       groupId,
       period,
       campus,
-      shift,
-      mode,
+      jornada,
+      dayOfWeek1,
+      dayOfWeek2,
       startDateRaw,
-      endDateRaw,
     });
   }
 
@@ -121,25 +125,20 @@ export async function POST(req: Request) {
   if (!institution) return NextResponse.json({ error: "Debes seleccionar una institución." }, { status: 400 });
   if (!period) return NextResponse.json({ error: "Debes indicar el periodo (ej. 2026-01)." }, { status: 400 });
   if (!campus) return NextResponse.json({ error: "Debes indicar la sede." }, { status: 400 });
+  if (!jornada) return NextResponse.json({ error: "Debes indicar la jornada." }, { status: 400 });
+  if (!dayOfWeek1) return NextResponse.json({ error: "Debes indicar el primer día de clase." }, { status: 400 });
 
   const startDate = parseISODate(startDateRaw);
   if (!startDate) return NextResponse.json({ error: "Fecha de inicio inválida." }, { status: 400 });
-  const endDate = endDateRaw ? parseISODate(endDateRaw) : null;
-  if (endDateRaw && !endDate) return NextResponse.json({ error: "Fecha de fin inválida." }, { status: 400 });
+
+  const periodParts = toPeriodParts(period);
+  if (!periodParts) {
+    return NextResponse.json({ error: "El periodo debe tener formato YYYY-PP, por ejemplo 2026-01." }, { status: 400 });
+  }
 
   const isCesde = institution.toUpperCase() === "CESDE";
   const isSena = institution.toUpperCase() === "SENA";
   const weekCount = isCesde ? 18 : 11;
-
-  const expectedEnd = addDays(startDate, (weekCount - 1) * 7);
-  if (mode === "range" && endDate) {
-    if (endDate.getTime() < expectedEnd.getTime()) {
-      return NextResponse.json(
-        { error: `La fecha fin no alcanza para ${weekCount} semanas desde la fecha inicio.` },
-        { status: 400 },
-      );
-    }
-  }
 
   const subjectsSnap = await adminDb.collection("subjects").doc(subjectId).get();
   const subjectName = subjectsSnap.exists ? toString(subjectsSnap.data()?.name, subjectId) : subjectId;
@@ -153,47 +152,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Ya existe una estructura con esos datos." }, { status: 409 });
   }
 
-  const tokenSnap = await adminDb.collection("driveOauthTokens").doc(uid).get();
-  const refreshToken = tokenSnap.exists ? toString(tokenSnap.data()?.refreshToken, "").trim() : "";
-  if (!refreshToken) {
-    return NextResponse.json({ error: "Debes conectar Drive para crear estructuras." }, { status: 412 });
-  }
-  let oauthDrive: ReturnType<typeof getOAuthDriveClient>;
+  let driveRootId = "";
   try {
-    oauthDrive = getOAuthDriveClient(refreshToken);
+    driveRootId = getAppsScriptDriveRootFolderId();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Credenciales OAuth inválidas.";
+    const msg = err instanceof Error ? err.message : "Falta la carpeta raíz de Drive.";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 
-  const driveRootId = getDriveRootFolderId();
-
-  let driveInstitution: Awaited<ReturnType<typeof createDriveFolder>>;
-  let drivePeriod: Awaited<ReturnType<typeof createDriveFolder>>;
-  let driveCampus: Awaited<ReturnType<typeof createDriveFolder>>;
-  let driveGroup: Awaited<ReturnType<typeof createDriveFolder>>;
-  let driveAdmin: Awaited<ReturnType<typeof createDriveFolder>>;
-  let drivePublic: Awaited<ReturnType<typeof createDriveFolder>>;
-
+  let createdStructure: Awaited<ReturnType<typeof createAppsScriptDriveStructure>>;
+  let driveStructure: Awaited<ReturnType<typeof getAppsScriptDriveStructure>>;
   try {
-    const rootParent = driveRootId ?? undefined;
-    if (debug) console.log("[drive/bootstrap] ensure institution", { opId, name: institution.toUpperCase(), parentId: rootParent ?? null });
-    if (!rootParent) {
-      return NextResponse.json({ error: "Falta GOOGLE_DRIVE_ROOT_FOLDER_ID en configuración." }, { status: 500 });
-    }
-    driveInstitution = await ensureDriveFolder({ name: institution.toUpperCase(), parentId: rootParent, drive: oauthDrive });
-    if (debug) console.log("[drive/bootstrap] create period", { opId, name: period, parentId: driveInstitution.id });
-    drivePeriod = await ensureDriveFolder({ name: period, parentId: driveInstitution.id, drive: oauthDrive });
-    if (debug) console.log("[drive/bootstrap] create campus", { opId, name: campus, parentId: drivePeriod.id });
-    driveCampus = await ensureDriveFolder({ name: campus, parentId: drivePeriod.id, drive: oauthDrive });
-    if (debug) console.log("[drive/bootstrap] create group", { opId, name: groupName, parentId: driveCampus.id });
-    driveGroup = await ensureDriveFolder({ name: groupName, parentId: driveCampus.id, drive: oauthDrive });
-    if (debug) console.log("[drive/bootstrap] create admin/public", { opId, parentId: driveGroup.id });
-    driveAdmin = await ensureDriveFolder({ name: "admin", parentId: driveGroup.id, drive: oauthDrive });
-    drivePublic = await ensureDriveFolder({ name: "publica", parentId: driveGroup.id, drive: oauthDrive });
+    createdStructure = await createAppsScriptDriveStructure({
+      rootFolderId: driveRootId,
+      institution: institution.toUpperCase(),
+      year: periodParts.year,
+      periodCode: periodParts.periodCode,
+      subjectName,
+      cohortCode: groupName,
+      dayOfWeek1,
+      dayOfWeek2,
+      jornada,
+      sede: campus,
+      startDate: startDateRaw,
+    });
+    driveStructure = await getAppsScriptDriveStructure({
+      publicFolderId: createdStructure.publicFolderId,
+    });
   } catch (err) {
-    if (debug) console.log("[drive/bootstrap] drive error", { opId, error: errorToObject(err) });
-    const msg = err instanceof Error ? err.message : "No fue posible crear carpetas en Drive.";
+    if (debug) console.log("[drive/bootstrap] apps-script error", { opId, error: errorToObject(err) });
+    const msg = err instanceof Error ? err.message : "No fue posible crear la estructura con Apps Script.";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 
@@ -207,25 +195,30 @@ export async function POST(req: Request) {
       groupId,
       groupName,
       period,
+      year: periodParts.year,
+      periodCode: periodParts.periodCode,
       campus,
-      shift,
-      mode: mode === "range" ? "range" : "fixedWeeks",
-      weekCount,
-      startDate: formatISODate(startDate),
-      endDate: endDate ? formatISODate(endDate) : formatISODate(expectedEnd),
+      jornada,
+      dayOfWeek1,
+      dayOfWeek2,
+      weekCount: driveStructure.weeks.length || weekCount,
+      startDate: startDateRaw,
       drive: {
         rootFolderId: driveRootId,
-        institutionFolderId: driveInstitution.id,
-        periodFolderId: drivePeriod.id,
-        campusFolderId: driveCampus.id,
-        groupFolderId: driveGroup.id,
-        groupFolderUrl: driveGroup.webViewLink,
-        adminFolderId: driveAdmin.id,
-        adminFolderUrl: driveAdmin.webViewLink,
-        publicFolderId: drivePublic.id,
-        publicFolderUrl: drivePublic.webViewLink,
+        groupFolderId: driveStructure.classFolder.folderId,
+        groupFolderUrl: driveStructure.classFolder.folderUrl,
+        adminFolderId: driveStructure.privateFolder?.folderId ?? "",
+        adminFolderUrl: driveStructure.privateFolder?.folderUrl ?? "",
+        publicFolderId: driveStructure.publicFolder.folderId,
+        publicFolderUrl: driveStructure.publicFolder.folderUrl,
       },
       stats: { totalFiles: 0, docsFiles: 0, starredFiles: 0 },
+      health: {
+        broken: false,
+        issues: [],
+        lastCheckedAt: now,
+      },
+      source: "apps_script",
       createdAt: now,
       updatedAt: now,
     },
@@ -249,102 +242,43 @@ export async function POST(req: Request) {
 
   pushNode({
     pathKey: "group",
-    name: groupName,
+    name: driveStructure.classFolder.folderName,
     kind: "group",
     parentPathKey: null,
-    driveFolderId: driveGroup.id,
-    driveFolderUrl: driveGroup.webViewLink,
+    driveFolderId: driveStructure.classFolder.folderId,
+    driveFolderUrl: driveStructure.classFolder.folderUrl,
   });
-  pushNode({
-    pathKey: "admin",
-    name: "admin",
-    kind: "admin",
-    parentPathKey: "group",
-    driveFolderId: driveAdmin.id,
-    driveFolderUrl: driveAdmin.webViewLink,
-  });
+  if (driveStructure.privateFolder) {
+    pushNode({
+      pathKey: "admin",
+      name: driveStructure.privateFolder.folderName,
+      kind: "admin",
+      parentPathKey: "group",
+      driveFolderId: driveStructure.privateFolder.folderId,
+      driveFolderUrl: driveStructure.privateFolder.folderUrl,
+    });
+  }
   pushNode({
     pathKey: "publica",
-    name: "publica",
+    name: driveStructure.publicFolder.folderName,
     kind: "public",
     parentPathKey: "group",
-    driveFolderId: drivePublic.id,
-    driveFolderUrl: drivePublic.webViewLink,
+    driveFolderId: driveStructure.publicFolder.folderId,
+    driveFolderUrl: driveStructure.publicFolder.folderUrl,
   });
 
-  if (isCesde) {
-    for (const moment of ["M1", "M2", "M3"]) {
-      let mFolder: Awaited<ReturnType<typeof createDriveFolder>>;
-      try {
-        if (debug) console.log("[drive/bootstrap] ensure moment", { opId, moment, parentId: drivePublic.id });
-        mFolder = await ensureDriveFolder({ name: moment, parentId: drivePublic.id, drive: oauthDrive });
-      } catch (err) {
-        if (debug) console.log("[drive/bootstrap] moment error", { opId, moment, error: errorToObject(err) });
-        const msg = err instanceof Error ? err.message : "No fue posible crear carpetas de momento en Drive.";
-        return NextResponse.json({ error: msg }, { status: 500 });
-      }
-      pushNode({
-        pathKey: `publica/${moment}`,
-        name: moment,
-        kind: "moment",
-        parentPathKey: "publica",
-        driveFolderId: mFolder.id,
-        driveFolderUrl: mFolder.webViewLink,
-        meta: { moment },
-      });
-      for (let w = 1; w <= weekCount; w++) {
-        const date = addDays(startDate, (w - 1) * 7);
-        const dateLabel = formatISODate(date);
-        const weekName = `S${pad2(w)} - ${dateLabel}`;
-        let wk: Awaited<ReturnType<typeof createDriveFolder>>;
-        try {
-          if (debug && (w === 1 || w === weekCount || w % 6 === 0)) {
-            console.log("[drive/bootstrap] ensure week", { opId, moment, week: w, name: weekName, parentId: mFolder.id });
-          }
-          wk = await ensureDriveFolder({ name: weekName, parentId: mFolder.id, drive: oauthDrive });
-        } catch (err) {
-          if (debug) console.log("[drive/bootstrap] week error", { opId, moment, week: w, error: errorToObject(err) });
-          const msg = err instanceof Error ? err.message : "No fue posible crear carpetas de semana en Drive.";
-          return NextResponse.json({ error: msg }, { status: 500 });
-        }
-        pushNode({
-          pathKey: `publica/${moment}/S${pad2(w)}`,
-          name: weekName,
-          kind: "week",
-          parentPathKey: `publica/${moment}`,
-          driveFolderId: wk.id,
-          driveFolderUrl: wk.webViewLink,
-          meta: { moment, week: w, date: dateLabel },
-        });
-      }
-    }
-  } else {
-    for (let w = 1; w <= weekCount; w++) {
-      const date = addDays(startDate, (w - 1) * 7);
-      const dateLabel = formatISODate(date);
-      const weekName = `S${pad2(w)} - ${dateLabel}`;
-      let wk: Awaited<ReturnType<typeof createDriveFolder>>;
-      try {
-        if (debug && (w === 1 || w === weekCount || w % 4 === 0)) {
-          console.log("[drive/bootstrap] ensure week", { opId, week: w, name: weekName, parentId: drivePublic.id });
-        }
-        wk = await ensureDriveFolder({ name: weekName, parentId: drivePublic.id, drive: oauthDrive });
-      } catch (err) {
-        if (debug) console.log("[drive/bootstrap] week error", { opId, week: w, error: errorToObject(err) });
-        const msg = err instanceof Error ? err.message : "No fue posible crear carpetas de semana en Drive.";
-        return NextResponse.json({ error: msg }, { status: 500 });
-      }
-      pushNode({
-        pathKey: `publica/S${pad2(w)}`,
-        name: weekName,
-        kind: "week",
-        parentPathKey: "publica",
-        driveFolderId: wk.id,
-        driveFolderUrl: wk.webViewLink,
-        meta: { week: w, date: dateLabel },
-      });
-    }
-  }
+  driveStructure.weeks.forEach((week, index) => {
+    const weekNumber = typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber) ? week.weekNumber : index + 1;
+    pushNode({
+      pathKey: `publica/S${pad2(weekNumber)}`,
+      name: week.folderName,
+      kind: "week",
+      parentPathKey: "publica",
+      driveFolderId: week.folderId,
+      driveFolderUrl: week.folderUrl,
+      meta: { week: weekNumber },
+    });
+  });
 
   const batch = adminDb.batch();
   nodes.forEach((n) => {
@@ -370,11 +304,12 @@ export async function POST(req: Request) {
       ok: true,
       workspaceId,
       drive: {
-        groupFolderUrl: driveGroup.webViewLink,
-        adminFolderUrl: driveAdmin.webViewLink,
-        publicFolderUrl: drivePublic.webViewLink,
+        groupFolderUrl: driveStructure.classFolder.folderUrl,
+        adminFolderUrl: driveStructure.privateFolder?.folderUrl ?? "",
+        publicFolderUrl: driveStructure.publicFolder.folderUrl,
       },
-      weekCount,
+      weekCount: driveStructure.weeks.length || weekCount,
+      message: createdStructure.message,
     },
     { status: 200 },
   );

@@ -99,6 +99,7 @@ function buildPrompts({
   audience,
   context,
   lengthHint,
+  batchMetadata,
 }: {
   templateId: string;
   topics: string;
@@ -106,6 +107,7 @@ function buildPrompts({
   audience: string;
   context: string;
   lengthHint: string;
+  batchMetadata: string;
 }) {
   const systemPrompt =
     templateId === "standard_detailed_v1"
@@ -126,6 +128,7 @@ function buildPrompts({
           "9) ## Referencias (3–6 recursos)",
           "No incluyas tabla de contenidos global.",
           "Evita relleno: cada párrafo debe aportar valor didáctico.",
+          "Incluye de forma obligatoria el bloque de metadatos del JSON exactamente como se indica, sin cambiar IDs ni cantidades.",
         ].join("\n")
       : [
           "Eres un generador experto de README académico (documento estructurado).",
@@ -134,6 +137,7 @@ function buildPrompts({
           "Regla: respeta estrictamente la plantilla indicada en 'Criterios'.",
           "Incluye tabla de contenidos y secciones numeradas si la plantilla lo exige.",
           "No agregues secciones extra fuera de la plantilla.",
+          "Incluye de forma obligatoria el bloque de metadatos del JSON exactamente como se indica, sin cambiar IDs ni cantidades.",
         ].join("\n");
 
   const userPrompt = [
@@ -142,6 +146,7 @@ function buildPrompts({
     `Audiencia:\n${audience}`,
     `Contexto adicional:\n${context || "N/A"}`,
     `Longitud esperada:\n${lengthHint}`,
+    `Bloque obligatorio de metadatos del JSON (copialo exacto en el README):\n${batchMetadata}`,
   ].join("\n\n");
 
   return { systemPrompt, userPrompt };
@@ -281,11 +286,61 @@ export async function POST(req: Request) {
   const lengthHint = toString(body?.lengthHint, "media").trim();
   const geminiVariantRaw = toString(body?.modelVariant, "flash").trim().toLowerCase();
   const geminiVariant: GeminiModelVariant = geminiVariantRaw === "pro" ? "pro" : "flash";
+  const subjectId = toString(body?.subjectId, "").trim();
+  const subjectName = toString(body?.subjectName, subjectId).trim();
+  const groupId = toString(body?.groupId, "").trim();
+  const groupName = toString(body?.groupName, groupId).trim();
+  const momentId = toString(body?.momentId, "").trim();
+  const momentName = toString(body?.momentName, momentId).trim();
+  const questionCount = Math.max(1, Math.min(200, Number(body?.questionCount) || 0));
+  const timeLimitMinutes = Math.max(1, Math.min(300, Number(body?.timeLimitMinutes) || 0));
+  const gradingScale = toString(body?.gradingScale, "0_50").trim() || "0_50";
+  const allowedQuestionTypes = Array.isArray(body?.allowedQuestionTypes)
+    ? (body?.allowedQuestionTypes as unknown[]).map((item) => toString(item, "").trim()).filter(Boolean).slice(0, 6)
+    : [];
 
   if (!topics) return NextResponse.json({ error: "Debes indicar al menos un tema." }, { status: 400 });
   if (!criteria) return NextResponse.json({ error: "Debes indicar criterios de generación." }, { status: 400 });
+  if (!subjectId || !groupId || !momentId) {
+    return NextResponse.json({ error: "Debes definir materia, grupo y momento para incrustarlos en el README." }, { status: 400 });
+  }
+  if (!subjectName || !groupName || !momentName) {
+    return NextResponse.json({ error: "Faltan nombres legibles de materia, grupo o momento para el README." }, { status: 400 });
+  }
+  if (!questionCount || !timeLimitMinutes || !allowedQuestionTypes.length) {
+    return NextResponse.json(
+      { error: "Debes definir cantidad, tiempo y tipos permitidos para incrustarlos en el README." },
+      { status: 400 },
+    );
+  }
 
-  const { systemPrompt, userPrompt } = buildPrompts({ templateId, topics, criteria, audience, context, lengthHint });
+  const batchMetadata = [
+    "<!-- BATCH_METADATA_START -->",
+    "```yaml",
+    `subjectId: ${subjectId}`,
+    `subjectName: "${subjectName}"`,
+    `groupId: ${groupId}`,
+    `groupName: "${groupName}"`,
+    `momentId: ${momentId}`,
+    `momentName: "${momentName}"`,
+    `questionCount: ${questionCount}`,
+    `timeLimitMinutes: ${timeLimitMinutes}`,
+    `gradingScale: ${gradingScale}`,
+    "allowedQuestionTypes:",
+    ...allowedQuestionTypes.map((item) => `  - ${item}`),
+    "```",
+    "<!-- BATCH_METADATA_END -->",
+  ].join("\n");
+
+  const { systemPrompt, userPrompt } = buildPrompts({
+    templateId,
+    topics,
+    criteria,
+    audience,
+    context,
+    lengthHint,
+    batchMetadata,
+  });
 
   try {
     const result = await generateWithGemini(systemPrompt, userPrompt, geminiVariant);

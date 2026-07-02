@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { getOAuthDriveClient } from "@/lib/google/drive";
+import { getAppsScriptDriveStructure } from "@/lib/google/apps-script-drive";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
+}
+
+function nodeIdFromPath(pathKey: string) {
+  return pathKey.replace(/\//g, "__").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 250);
+}
+
+function pad2(value: number) {
+  return value < 10 ? `0${value}` : `${value}`;
 }
 
 async function assertAdmin(req: Request) {
@@ -33,29 +41,20 @@ async function assertAdmin(req: Request) {
   const adminSnap = await adminDb.collection("admins").doc(uid).get();
   if (!adminSnap.exists) return { ok: false as const, status: 403, error: "Forbidden" };
 
-  return { ok: true as const, adminDb, uid };
+  return { ok: true as const, adminDb };
 }
 
-function classifyDriveError(err: unknown) {
-  const e = err as any;
-  const status = typeof e?.code === "number" ? e.code : typeof e?.response?.status === "number" ? e.response.status : null;
-  const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Error";
-  if (status === 404) return { kind: "not_found", status, message };
-  if (status === 403) return { kind: "forbidden", status, message };
-  return { kind: "unknown", status, message };
-}
-
-async function checkFolder(drive: ReturnType<typeof getOAuthDriveClient>, folderId: string) {
+async function deleteCollection(ref: FirebaseFirestore.CollectionReference, batchSize = 400) {
   try {
-    const res = await drive.files.get({
-      fileId: folderId,
-      fields: "id, name, trashed",
-      supportsAllDrives: true,
-    });
-    const trashed = Boolean(res.data.trashed);
-    return { ok: !trashed, trashed, name: res.data.name ?? "", error: null as any };
-  } catch (err) {
-    return { ok: false, trashed: false, name: "", error: classifyDriveError(err) };
+    while (true) {
+      const snap = await ref.limit(batchSize).get();
+      if (snap.empty) return;
+      const batch = ref.firestore.batch();
+      snap.docs.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+    }
+  } catch {
+    return;
   }
 }
 
@@ -63,7 +62,6 @@ export async function POST(req: Request) {
   const admin = await assertAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
   const adminDb = admin.adminDb;
-  const uid = admin.uid;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const workspaceId = toString(body?.workspaceId, "").trim();
@@ -74,43 +72,108 @@ export async function POST(req: Request) {
   if (!wsSnap.exists) return NextResponse.json({ error: "Workspace no encontrado." }, { status: 404 });
   const ws = wsSnap.data() as Record<string, unknown>;
   const driveInfo = (ws.drive as Record<string, unknown> | undefined) ?? {};
-  const groupFolderId = toString(driveInfo.groupFolderId, "").trim();
-  const adminFolderId = toString(driveInfo.adminFolderId, "").trim();
   const publicFolderId = toString(driveInfo.publicFolderId, "").trim();
-
-  const tokenSnap = await adminDb.collection("driveOauthTokens").doc(uid).get();
-  const refreshToken = tokenSnap.exists ? toString(tokenSnap.data()?.refreshToken, "").trim() : "";
-  if (!refreshToken) return NextResponse.json({ error: "Debes conectar Drive." }, { status: 412 });
-
-  let drive: ReturnType<typeof getOAuthDriveClient>;
-  try {
-    drive = getOAuthDriveClient(refreshToken);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Credenciales OAuth inválidas.";
-    return NextResponse.json({ error: msg }, { status: 500 });
+  if (!publicFolderId) {
+    return NextResponse.json({ error: "La estructura no tiene carpeta pública registrada." }, { status: 400 });
   }
 
-  const results: Array<{ key: string; folderId: string; ok: boolean; trashed?: boolean; error?: any }> = [];
-  if (groupFolderId) results.push({ key: "group", folderId: groupFolderId, ...(await checkFolder(drive, groupFolderId)) });
-  if (adminFolderId) results.push({ key: "admin", folderId: adminFolderId, ...(await checkFolder(drive, adminFolderId)) });
-  if (publicFolderId) results.push({ key: "public", folderId: publicFolderId, ...(await checkFolder(drive, publicFolderId)) });
-
-  const issues = results.filter((r) => !r.ok).map((r) => ({ key: r.key, folderId: r.folderId, error: r.error, trashed: r.trashed }));
-  const broken = issues.length > 0;
-  const now = new Date();
-
-  await wsRef.set(
-    {
-      health: {
-        broken,
-        issues,
-        lastCheckedAt: now,
+  try {
+    const structure = await getAppsScriptDriveStructure({ publicFolderId });
+    const now = new Date();
+    await wsRef.set(
+      {
+        weekCount: structure.weeks.length,
+        drive: {
+          groupFolderId: structure.classFolder.folderId,
+          groupFolderUrl: structure.classFolder.folderUrl,
+          adminFolderId: structure.privateFolder?.folderId ?? "",
+          adminFolderUrl: structure.privateFolder?.folderUrl ?? "",
+          publicFolderId: structure.publicFolder.folderId,
+          publicFolderUrl: structure.publicFolder.folderUrl,
+        },
+        health: {
+          broken: false,
+          issues: [],
+          lastCheckedAt: now,
+        },
+        updatedAt: now,
       },
-      updatedAt: now,
-    },
-    { merge: true },
-  );
+      { merge: true },
+    );
 
-  return NextResponse.json({ ok: true, broken, issues }, { status: 200 });
+    const nodesRef = wsRef.collection("nodes");
+    await deleteCollection(nodesRef, 400);
+
+    const batch = adminDb.batch();
+    const nodes = [
+      {
+        pathKey: "group",
+        name: structure.classFolder.folderName,
+        kind: "group",
+        parentPathKey: null,
+        driveFolderId: structure.classFolder.folderId,
+        driveFolderUrl: structure.classFolder.folderUrl,
+      },
+      ...(structure.privateFolder
+        ? [
+            {
+              pathKey: "admin",
+              name: structure.privateFolder.folderName,
+              kind: "admin",
+              parentPathKey: "group",
+              driveFolderId: structure.privateFolder.folderId,
+              driveFolderUrl: structure.privateFolder.folderUrl,
+            },
+          ]
+        : []),
+      {
+        pathKey: "publica",
+        name: structure.publicFolder.folderName,
+        kind: "public",
+        parentPathKey: "group",
+        driveFolderId: structure.publicFolder.folderId,
+        driveFolderUrl: structure.publicFolder.folderUrl,
+      },
+      ...structure.weeks.map((week, index) => {
+        const weekNumber =
+          typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber) ? week.weekNumber : index + 1;
+        return {
+          pathKey: `publica/S${pad2(weekNumber)}`,
+          name: week.folderName,
+          kind: "week",
+          parentPathKey: "publica",
+          driveFolderId: week.folderId,
+          driveFolderUrl: week.folderUrl,
+          meta: { week: weekNumber },
+        };
+      }),
+    ];
+
+    nodes.forEach((node) => {
+      batch.set(
+        nodesRef.doc(nodeIdFromPath(node.pathKey)),
+        { ...node, workspaceId, createdAt: now, updatedAt: now },
+        { merge: true },
+      );
+    });
+    await batch.commit();
+
+    return NextResponse.json({ ok: true, broken: false, issues: [], weekCount: structure.weeks.length }, { status: 200 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No fue posible consultar la estructura en Apps Script.";
+    const now = new Date();
+    await wsRef.set(
+      {
+        health: {
+          broken: true,
+          issues: [{ key: "apps_script", message }],
+          lastCheckedAt: now,
+        },
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 

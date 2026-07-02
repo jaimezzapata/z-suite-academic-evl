@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { collection, deleteDoc, doc, getCountFromServer, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
-import { firestore } from "@/lib/firebase/client";
+import { firebaseAuth, firestore } from "@/lib/firebase/client";
 import { MinimalPagination } from "@/app/admin/ui/minimal-pagination";
 
 type Stat = { label: string; value: number };
@@ -320,6 +320,10 @@ export function BankDashboard() {
   const [pendingDelete, setPendingDelete] = useState<QuestionTableRow | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeConfirm, setWipeConfirm] = useState("");
+  const [wipeError, setWipeError] = useState<string | null>(null);
+  const [wipingAll, setWipingAll] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editMode, setEditMode] = useState<"edit" | "create">("edit");
@@ -903,6 +907,60 @@ export function BankDashboard() {
     }
   }
 
+  async function wipeAllQuestions() {
+    if (wipeConfirm.trim().toUpperCase() !== "ELIMINAR") return;
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      setWipeError("Debes iniciar sesión como admin.");
+      return;
+    }
+    setWipingAll(true);
+    setWipeError(null);
+    try {
+      const token = await user.getIdToken(true);
+      const res = await fetch("/api/admin/wipe-collection", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: "questions", confirm: "ELIMINAR" }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+        const message =
+          typeof payload?.error === "string" ? payload.error : "No fue posible eliminar todas las preguntas.";
+        setWipeError(message);
+        return;
+      }
+      setData({
+        counts: { total: 0, published: 0, draft: 0, archived: 0 },
+        byType: [],
+        byDifficulty: [],
+        topSubjects: [],
+        topGroups: [],
+        topMoments: [],
+        quality: { missingStatus: 0, missingPoints: 0, missingGroups: 0, missingMoments: 0 },
+        preview: [],
+      });
+      setTableSource([]);
+      setTablePage(0);
+      setPreviewPage(0);
+      setTableError(null);
+      setPreviewError(null);
+      setSearch("");
+      setTableSearch("");
+      setPendingDelete(null);
+      setDeleteError(null);
+      setWipeOpen(false);
+      setWipeConfirm("");
+    } catch {
+      setWipeError("No fue posible eliminar todas las preguntas.");
+    } finally {
+      setWipingAll(false);
+    }
+  }
+
   const filteredPreview = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return data.preview;
@@ -1286,6 +1344,18 @@ export function BankDashboard() {
                 className="inline-flex h-10 items-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
               >
                 Recargar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setWipeError(null);
+                  setWipeConfirm("");
+                  setWipeOpen(true);
+                }}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+              >
+                <Trash2 className="h-4 w-4" />
+                Borrar todas
               </button>
               <button
                 type="button"
@@ -1961,6 +2031,86 @@ export function BankDashboard() {
                   className="inline-flex h-10 items-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? "Guardando..." : editMode === "create" ? "Crear pregunta" : "Guardar cambios"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {wipeOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+              onClick={() => (wipingAll ? null : setWipeOpen(false))}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-zinc-950">Borrar todo el banco</p>
+                  <p className="mt-1 text-sm text-zinc-600">Esto eliminará todas las preguntas de la colección `questions`.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => (wipingAll ? null : setWipeOpen(false))}
+                  className="rounded-xl p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-60"
+                  disabled={wipingAll}
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 px-5 py-4">
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                  Acción irreversible. Se borrarán también las subcolecciones dentro de `questions` si existieran.
+                </div>
+
+                {wipeError ? (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {wipeError}
+                  </div>
+                ) : null}
+
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-zinc-700">Confirmación</span>
+                  <input
+                    value={wipeConfirm}
+                    onChange={(e) => setWipeConfirm(e.target.value)}
+                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                    placeholder="Escribe ELIMINAR"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 bg-white px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setWipeOpen(false)}
+                  disabled={wipingAll}
+                  className="inline-flex h-10 items-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void wipeAllQuestions()}
+                  disabled={wipingAll || wipeConfirm.trim().toUpperCase() !== "ELIMINAR"}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {wipingAll ? "Eliminando..." : "Eliminar todo"}
                 </button>
               </div>
             </motion.div>
