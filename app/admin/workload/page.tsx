@@ -908,7 +908,7 @@ export default function AdminWorkloadPage() {
               <RefreshCw className="h-4 w-4" />
               Recargar
             </button>
-            <button type="button" onClick={openCreate} className="zs-btn-primary h-7 px-3 text-xs">
+            <button type="button" onClick={() => openCreate()} className="zs-btn-primary h-7 px-3 text-xs">
               <Plus className="h-4 w-4" />
               Nueva carga
             </button>
