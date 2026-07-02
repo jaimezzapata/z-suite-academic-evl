@@ -350,49 +350,39 @@ function CollectionPanel({
             Cargando...
           </div>
         ) : filtered.length ? (
-          <div className="overflow-hidden rounded-xl border border-zinc-200">
-            <div className="grid grid-cols-[1fr_150px_84px_112px] items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-600">
-              <div className="text-zinc-600">Nombre</div>
-              <div className="text-zinc-600">ID</div>
-              <div className="text-zinc-600">Estado</div>
-              <div className="text-right text-zinc-600">Acciones</div>
-            </div>
-
-            <div className="max-h-[52vh] overflow-y-auto">
+          <>
+            <div className="space-y-3 md:hidden">
               {filtered.map((r) => {
                 const disabled = savingId === r.id;
                 return (
-                  <div
-                    key={r.id}
-                    className="grid grid-cols-[1fr_150px_84px_112px] items-center gap-3 border-b border-zinc-100 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-zinc-900">{r.name}</p>
+                  <div key={r.id} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-zinc-900">{r.name}</p>
+                        <p className="mt-1 break-all font-mono text-xs text-zinc-600">{r.id}</p>
+                      </div>
+                      <span
+                        className={`inline-flex shrink-0 items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                          r.active ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                        }`}
+                      >
+                        {r.active ? "Activo" : "Inactivo"}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-mono text-xs text-zinc-700">{r.id}</span>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => void copyId(r.id)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
                         title="Copiar ID"
                         aria-label="Copiar ID"
                       >
                         {copiedId === r.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                        Copiar ID
                       </button>
-                    </div>
-
-                    <span
-                      className={`inline-flex items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
-                        r.active ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-zinc-100 text-zinc-700 ring-zinc-200"
-                      }`}
-                    >
-                      {r.active ? "Activo" : "Inactivo"}
-                    </span>
-
-                    <div className="flex items-center justify-end gap-2">
-                      <IconButton
+                      <button
+                        type="button"
                         onClick={() => {
                           setError(null);
                           setEditId(r.id);
@@ -400,28 +390,99 @@ function CollectionPanel({
                           setEditOpen(true);
                         }}
                         disabled={disabled}
-                        className="h-8 w-8 rounded-lg"
-                        aria-label="Editar"
-                        title="Editar"
+                        className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Pencil className="h-4 w-4" />
-                      </IconButton>
-                      <IconButton
-                        variant={r.active ? "danger" : "secondary"}
-                        onClick={() => toggleActive(r.id, !r.active)}
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void toggleActive(r.id, !r.active)}
                         disabled={disabled}
-                        className="h-8 w-8 rounded-lg"
-                        aria-label={r.active ? "Inactivar" : "Activar"}
-                        title={r.active ? "Inactivar" : "Activar"}
+                        className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Power className="h-4 w-4" />
-                      </IconButton>
+                        {r.active ? "Inactivar" : "Activar"}
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+
+            <div className="hidden overflow-hidden rounded-xl border border-zinc-200 md:block">
+              <div className="grid grid-cols-[1fr_150px_84px_112px] items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-600">
+                <div className="text-zinc-600">Nombre</div>
+                <div className="text-zinc-600">ID</div>
+                <div className="text-zinc-600">Estado</div>
+                <div className="text-right text-zinc-600">Acciones</div>
+              </div>
+
+              <div className="max-h-[52vh] overflow-y-auto">
+                {filtered.map((r) => {
+                  const disabled = savingId === r.id;
+                  return (
+                    <div
+                      key={r.id}
+                      className="grid grid-cols-[1fr_150px_84px_112px] items-center gap-3 border-b border-zinc-100 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-zinc-900">{r.name}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-mono text-xs text-zinc-700">{r.id}</span>
+                        <button
+                          type="button"
+                          onClick={() => void copyId(r.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                          title="Copiar ID"
+                          aria-label="Copiar ID"
+                        >
+                          {copiedId === r.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                        </button>
+                      </div>
+
+                      <span
+                        className={`inline-flex items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                          r.active ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                        }`}
+                      >
+                        {r.active ? "Activo" : "Inactivo"}
+                      </span>
+
+                      <div className="flex items-center justify-end gap-2">
+                        <IconButton
+                          onClick={() => {
+                            setError(null);
+                            setEditId(r.id);
+                            setEditName(r.name);
+                            setEditOpen(true);
+                          }}
+                          disabled={disabled}
+                          className="h-8 w-8 rounded-lg"
+                          aria-label="Editar"
+                          title="Editar"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton
+                          variant={r.active ? "danger" : "secondary"}
+                          onClick={() => toggleActive(r.id, !r.active)}
+                          disabled={disabled}
+                          className="h-8 w-8 rounded-lg"
+                          aria-label={r.active ? "Inactivar" : "Activar"}
+                          title={r.active ? "Inactivar" : "Activar"}
+                        >
+                          <Power className="h-4 w-4" />
+                        </IconButton>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         ) : (
           <div className="rounded-xl bg-zinc-50 px-3 py-5 text-center text-sm text-zinc-500">
             Sin registros. Crea el primero con “Nuevo”.
@@ -793,43 +854,40 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
         {loading ? (
           <div className="rounded-xl bg-zinc-50 px-3 py-5 text-center text-sm text-zinc-500">Cargando...</div>
         ) : filtered.length ? (
-          <div className="overflow-hidden rounded-xl border border-zinc-200">
-            <div className="grid grid-cols-[1fr_140px_84px_112px] items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-600">
-              <div>Ficha</div>
-              <div>Trimestre</div>
-              <div>Estado</div>
-              <div className="text-right">Acciones</div>
-            </div>
-            <div className="max-h-[52vh] overflow-y-auto">
+          <>
+            <div className="space-y-3 md:hidden">
               {filtered.map((r) => {
                 const disabled = savingId === r.id;
                 const trimesterName = trimesterNameById.get(r.trimesterId) ?? (r.trimesterId ? r.trimesterId : "—");
                 return (
-                  <div key={r.id} className="grid grid-cols-[1fr_140px_84px_112px] items-center gap-3 border-b border-zinc-100 px-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-sm font-semibold text-zinc-900">{r.number}</p>
+                  <div key={r.id} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm font-semibold text-zinc-900">{r.number}</p>
+                        <p className="mt-1 text-xs text-zinc-600">Trimestre: {trimesterName}</p>
+                      </div>
+                      <span
+                        className={`inline-flex shrink-0 items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                          r.active ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                        }`}
+                      >
+                        {r.active ? "Activo" : "Inactivo"}
+                      </span>
                     </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-zinc-700">{trimesterName}</p>
-                    </div>
-                    <span
-                      className={`inline-flex items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
-                        r.active ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-zinc-100 text-zinc-700 ring-zinc-200"
-                      }`}
-                    >
-                      {r.active ? "Activo" : "Inactivo"}
-                    </span>
-                    <div className="flex items-center justify-end gap-2">
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => void copyId(r.id)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
                         title="Copiar ficha"
                         aria-label="Copiar ficha"
                       >
                         {copiedId === r.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                        Copiar ficha
                       </button>
-                      <IconButton
+                      <button
+                        type="button"
                         onClick={() => {
                           setError(null);
                           setEditId(r.id);
@@ -838,28 +896,94 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
                           setEditOpen(true);
                         }}
                         disabled={disabled}
-                        className="h-8 w-8 rounded-lg"
-                        aria-label="Editar"
-                        title="Editar"
+                        className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Pencil className="h-4 w-4" />
-                      </IconButton>
-                      <IconButton
-                        variant={r.active ? "danger" : "secondary"}
+                        Editar
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void toggleActive(r.id, !r.active)}
                         disabled={disabled}
-                        className="h-8 w-8 rounded-lg"
-                        aria-label={r.active ? "Inactivar" : "Activar"}
-                        title={r.active ? "Inactivar" : "Activar"}
+                        className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Power className="h-4 w-4" />
-                      </IconButton>
+                        {r.active ? "Inactivar" : "Activar"}
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+
+            <div className="hidden overflow-hidden rounded-xl border border-zinc-200 md:block">
+              <div className="grid grid-cols-[1fr_140px_84px_112px] items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-600">
+                <div>Ficha</div>
+                <div>Trimestre</div>
+                <div>Estado</div>
+                <div className="text-right">Acciones</div>
+              </div>
+              <div className="max-h-[52vh] overflow-y-auto">
+                {filtered.map((r) => {
+                  const disabled = savingId === r.id;
+                  const trimesterName = trimesterNameById.get(r.trimesterId) ?? (r.trimesterId ? r.trimesterId : "—");
+                  return (
+                    <div key={r.id} className="grid grid-cols-[1fr_140px_84px_112px] items-center gap-3 border-b border-zinc-100 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-sm font-semibold text-zinc-900">{r.number}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm text-zinc-700">{trimesterName}</p>
+                      </div>
+                      <span
+                        className={`inline-flex items-center justify-center rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                          r.active ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                        }`}
+                      >
+                        {r.active ? "Activo" : "Inactivo"}
+                      </span>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void copyId(r.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                          title="Copiar ficha"
+                          aria-label="Copiar ficha"
+                        >
+                          {copiedId === r.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                        </button>
+                        <IconButton
+                          onClick={() => {
+                            setError(null);
+                            setEditId(r.id);
+                            setEditNumber(r.number);
+                            setEditTrimesterId(r.trimesterId);
+                            setEditOpen(true);
+                          }}
+                          disabled={disabled}
+                          className="h-8 w-8 rounded-lg"
+                          aria-label="Editar"
+                          title="Editar"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton
+                          variant={r.active ? "danger" : "secondary"}
+                          onClick={() => void toggleActive(r.id, !r.active)}
+                          disabled={disabled}
+                          className="h-8 w-8 rounded-lg"
+                          aria-label={r.active ? "Inactivar" : "Activar"}
+                          title={r.active ? "Inactivar" : "Activar"}
+                        >
+                          <Power className="h-4 w-4" />
+                        </IconButton>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         ) : (
           <div className="rounded-xl bg-zinc-50 px-3 py-5 text-center text-sm text-zinc-500">Sin fichas. Crea la primera con “Nuevo”.</div>
         )}

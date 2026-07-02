@@ -157,6 +157,7 @@ export function ExamManager() {
   const [documentationMarkdown, setDocumentationMarkdown] = useState("");
   const [docFileName, setDocFileName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "table">(() => {
@@ -798,6 +799,21 @@ export function ExamManager() {
     } catch {}
   }, [viewMode]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 767px)");
+    const syncViewport = () => setIsMobile(media.matches);
+    syncViewport();
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", syncViewport);
+      return () => media.removeEventListener("change", syncViewport);
+    }
+    media.addListener(syncViewport);
+    return () => media.removeListener(syncViewport);
+  }, []);
+
+  const effectiveViewMode = isMobile ? "cards" : viewMode;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -817,30 +833,36 @@ export function ExamManager() {
               className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 sm:w-72"
             />
           </label>
-          <div className="inline-flex items-center rounded-xl border border-zinc-200 bg-white p-1">
-            <button
-              type="button"
-              onClick={() => setViewMode("table")}
-              className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
-                viewMode === "table" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"
-              }`}
-              aria-pressed={viewMode === "table"}
-            >
-              <Table2 className="h-4 w-4" />
-              Tabla
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("cards")}
-              className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
-                viewMode === "cards" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"
-              }`}
-              aria-pressed={viewMode === "cards"}
-            >
-              <LayoutGrid className="h-4 w-4" />
-              Cards
-            </button>
-          </div>
+          {isMobile ? (
+            <div className="inline-flex h-11 items-center rounded-full border border-zinc-200 bg-zinc-50 px-3 text-xs font-medium text-zinc-600">
+              En móvil se muestran cards
+            </div>
+          ) : (
+            <div className="inline-flex items-center rounded-xl border border-zinc-200 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("table")}
+                className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
+                  viewMode === "table" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"
+                }`}
+                aria-pressed={viewMode === "table"}
+              >
+                <Table2 className="h-4 w-4" />
+                Tabla
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("cards")}
+                className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
+                  viewMode === "cards" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"
+                }`}
+                aria-pressed={viewMode === "cards"}
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Cards
+              </button>
+            </div>
+          )}
           <IconButton
             onClick={() => setFiltersOpen((v) => !v)}
             className="h-11 w-11"
@@ -1019,7 +1041,7 @@ export function ExamManager() {
             Cargando examenes...
           </div>
         ) : filteredRows.length ? (
-          viewMode === "cards" ? (
+          effectiveViewMode === "cards" ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {filteredRows.map((row) => {
                 const subject = (namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId) || "N/A";

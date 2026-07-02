@@ -256,6 +256,7 @@ export default function AdminGroupsBookletsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   const [subjects, setSubjects] = useState<CatalogItem[]>([]);
   const [groups, setGroups] = useState<CatalogItem[]>([]);
@@ -355,6 +356,19 @@ export default function AdminGroupsBookletsPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 767px)");
+    const syncViewport = () => setIsMobile(media.matches);
+    syncViewport();
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", syncViewport);
+      return () => media.removeEventListener("change", syncViewport);
+    }
+    media.addListener(syncViewport);
+    return () => media.removeListener(syncViewport);
   }, []);
 
   async function loadManageChapters(docId: string) {
@@ -667,32 +681,38 @@ export default function AdminGroupsBookletsPage() {
               <Plus className="h-4 w-4" />
               Crear cuadernillo
             </button>
-            <div className="inline-flex items-center overflow-hidden rounded-xl border border-border bg-white">
-              <button
-                type="button"
-                onClick={() => setViewMode("cards")}
-                className={`inline-flex h-10 items-center gap-2 px-3 text-sm font-semibold ${
-                  viewMode === "cards" ? "bg-primary/10 text-primary" : "text-foreground/70 hover:bg-muted"
-                }`}
-                aria-label="Vista tarjetas"
-                title="Vista tarjetas"
-              >
-                <LayoutGrid className="h-4 w-4" />
-                Cards
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("table")}
-                className={`inline-flex h-10 items-center gap-2 border-l border-border px-3 text-sm font-semibold ${
-                  viewMode === "table" ? "bg-primary/10 text-primary" : "text-foreground/70 hover:bg-muted"
-                }`}
-                aria-label="Vista tabla"
-                title="Vista tabla"
-              >
-                <Rows3 className="h-4 w-4" />
-                Tabla
-              </button>
-            </div>
+            {isMobile ? (
+              <div className="inline-flex h-10 items-center rounded-full border border-border bg-muted/40 px-3 text-xs font-medium text-foreground/65">
+                En móvil se muestran cards
+              </div>
+            ) : (
+              <div className="inline-flex items-center overflow-hidden rounded-xl border border-border bg-white">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("cards")}
+                  className={`inline-flex h-10 items-center gap-2 px-3 text-sm font-semibold ${
+                    viewMode === "cards" ? "bg-primary/10 text-primary" : "text-foreground/70 hover:bg-muted"
+                  }`}
+                  aria-label="Vista tarjetas"
+                  title="Vista tarjetas"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  Cards
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("table")}
+                  className={`inline-flex h-10 items-center gap-2 border-l border-border px-3 text-sm font-semibold ${
+                    viewMode === "table" ? "bg-primary/10 text-primary" : "text-foreground/70 hover:bg-muted"
+                  }`}
+                  aria-label="Vista tabla"
+                  title="Vista tabla"
+                >
+                  <Rows3 className="h-4 w-4" />
+                  Tabla
+                </button>
+              </div>
+            )}
           </div>
 
           <label className="relative w-full sm:w-340px">
@@ -722,7 +742,7 @@ export default function AdminGroupsBookletsPage() {
           </button>
         </div>
 
-        {viewMode === "cards" ? (
+        {isMobile || viewMode === "cards" ? (
           <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredBooklets.map((b) => (
               <div key={b.id} className="zs-card overflow-hidden">

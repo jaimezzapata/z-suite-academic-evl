@@ -938,39 +938,65 @@ export function DashboardView() {
           <h2 className="text-lg font-semibold tracking-tight text-foreground">Últimos resultados</h2>
           <p className="text-sm text-foreground/55">Vista rápida de envíos recientes.</p>
           {data.latestAttempts.length ? (
-            <div className="mt-4 overflow-hidden rounded-xl border border-border bg-surface">
-              <table className="w-full table-fixed text-left">
-                <thead className="bg-muted">
-                  <tr className="text-xs text-foreground/55">
-                    <th className="w-[14%] px-3 py-2 font-medium">Fecha</th>
-                    <th className="w-[34%] px-3 py-2 font-medium">Examen</th>
-                    <th className="w-[28%] px-3 py-2 font-medium">Estudiante</th>
-                    <th className="w-[14%] px-3 py-2 font-medium">Nota</th>
-                    <th className="w-[10%] px-3 py-2 font-medium">Fraude</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.latestAttempts.map((row) => (
-                    <tr key={`${row.when}-${row.exam}-${row.student}`} className="border-t border-border/60 text-sm text-foreground/70">
-                      <td className="px-3 py-2 text-xs text-foreground/65">{row.when}</td>
-                      <td className="px-3 py-2">
-                        <div className="truncate font-medium text-foreground">{row.exam}</div>
-                        <div className="truncate text-xs text-foreground/55">{row.status}</div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="truncate">{row.student}</div>
-                      </td>
-                      <td className="px-3 py-2 font-medium text-foreground">{row.grade}</td>
-                      <td className="px-3 py-2">
-                        <span className={row.fraud > 0 ? "font-semibold text-amber-700" : "text-foreground/55"}>
-                          {row.fraud}
-                        </span>
-                      </td>
+            <>
+              <div className="mt-4 space-y-3 sm:hidden">
+                {data.latestAttempts.map((row) => (
+                  <div
+                    key={`${row.when}-${row.exam}-${row.student}`}
+                    className="rounded-xl border border-border bg-surface p-3 text-sm text-foreground/70"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">{row.exam}</p>
+                        <p className="mt-1 text-xs text-foreground/55">{row.status}</p>
+                      </div>
+                      <span className="shrink-0 text-xs text-foreground/55">{row.when}</span>
+                    </div>
+                    <p className="mt-3 truncate text-sm">{row.student}</p>
+                    <div className="mt-3 flex items-center justify-between text-xs">
+                      <span className="font-medium text-foreground">{row.grade}</span>
+                      <span className={row.fraud > 0 ? "font-semibold text-amber-700" : "text-foreground/55"}>
+                        Fraude: {row.fraud}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 hidden overflow-hidden rounded-xl border border-border bg-surface sm:block">
+                <table className="w-full table-fixed text-left">
+                  <thead className="bg-muted">
+                    <tr className="text-xs text-foreground/55">
+                      <th className="w-[14%] px-3 py-2 font-medium">Fecha</th>
+                      <th className="w-[34%] px-3 py-2 font-medium">Examen</th>
+                      <th className="w-[28%] px-3 py-2 font-medium">Estudiante</th>
+                      <th className="w-[14%] px-3 py-2 font-medium">Nota</th>
+                      <th className="w-[10%] px-3 py-2 font-medium">Fraude</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {data.latestAttempts.map((row) => (
+                      <tr key={`${row.when}-${row.exam}-${row.student}`} className="border-t border-border/60 text-sm text-foreground/70">
+                        <td className="px-3 py-2 text-xs text-foreground/65">{row.when}</td>
+                        <td className="px-3 py-2">
+                          <div className="truncate font-medium text-foreground">{row.exam}</div>
+                          <div className="truncate text-xs text-foreground/55">{row.status}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="truncate">{row.student}</div>
+                        </td>
+                        <td className="px-3 py-2 font-medium text-foreground">{row.grade}</td>
+                        <td className="px-3 py-2">
+                          <span className={row.fraud > 0 ? "font-semibold text-amber-700" : "text-foreground/55"}>
+                            {row.fraud}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <div className="mt-4 zs-card-muted px-3 py-6 text-center text-sm text-foreground/55">
               {loading ? "Cargando..." : "Aún no hay envíos para mostrar."}

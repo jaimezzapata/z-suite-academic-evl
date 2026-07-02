@@ -169,7 +169,87 @@ export default function AdminDocumentationHubPage() {
           </button>
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200">
+        <div className="mt-4 space-y-4 md:hidden">
+          {subjects.map((s) => {
+            const rows = (docsBySubject.get(s.id) ?? []).sort((a, b) => a.institution.localeCompare(b.institution));
+            return (
+              <div key={s.id} className="rounded-xl border border-zinc-200 bg-white p-4">
+                <div className="min-w-0">
+                  <div className="font-medium text-zinc-900">{s.name}</div>
+                  <div className="text-xs text-zinc-500">{s.id}</div>
+                </div>
+                {rows.length ? (
+                  <div className="mt-3 space-y-2">
+                    {rows.map((d) => {
+                      const urlPath = `/study/${d.slug}`;
+                      const url = buildAbsolute(urlPath);
+                      const cutoff =
+                        d.institution === "CESDE"
+                          ? `${d.cutoffWeek ? `S${d.cutoffWeek}` : "-"} ${d.cutoffMoment ? `· ${d.cutoffMoment}` : ""}`.trim()
+                          : d.cutoffWeek
+                            ? `Semana ${d.cutoffWeek}`
+                            : "-";
+                      return (
+                        <div key={d.id} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="rounded-full bg-white px-2 py-1 font-semibold text-zinc-800">{d.institution}</span>
+                            <span className="text-zinc-500">Hasta: {cutoff || "-"}</span>
+                          </div>
+                          <div className="mt-2 break-all text-xs text-zinc-500">{urlPath}</div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <a
+                              href={urlPath}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Abrir
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard.writeText(url)}
+                              className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                            >
+                              <Copy className="h-4 w-4" />
+                              URL
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard.writeText(d.accessCode)}
+                              className="inline-flex h-8 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                            >
+                              <Copy className="h-4 w-4" />
+                              Código
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingDelete(d)}
+                              disabled={deleteLoadingId === d.id}
+                              className="inline-flex h-8 items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              {deleteLoadingId === d.id ? "Eliminando..." : "Eliminar"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-3 text-xs text-zinc-500">Sin publicación aún.</div>
+                )}
+              </div>
+            );
+          })}
+          {!subjects.length ? (
+            <div className="rounded-xl border border-zinc-200 bg-white px-3 py-6 text-center text-sm text-zinc-500">
+              {loading ? "Cargando..." : "No hay materias."}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-4 hidden overflow-hidden rounded-xl border border-zinc-200 md:block">
           <table className="w-full table-fixed text-left">
             <thead className="bg-zinc-50">
               <tr className="text-xs text-zinc-500">

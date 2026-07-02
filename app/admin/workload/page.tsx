@@ -318,6 +318,7 @@ export default function AdminWorkloadPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const feedback = useFeedback();
 
   const [subjects, setSubjects] = useState<CatalogItem[]>([]);
@@ -434,6 +435,19 @@ export default function AdminWorkloadPage() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 767px)");
+    const syncViewport = () => setIsMobile(media.matches);
+    syncViewport();
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", syncViewport);
+      return () => media.removeEventListener("change", syncViewport);
+    }
+    media.addListener(syncViewport);
+    return () => media.removeListener(syncViewport);
+  }, []);
+
   const rowsByInstitution = useMemo(() => {
     if (tab === "ALL") return rows;
     return rows.filter((row) => (row.institution || "CESDE").toUpperCase() === tab);
@@ -513,6 +527,7 @@ export default function AdminWorkloadPage() {
     if (!currentDurationMinutes) return 0;
     return roundHours(currentDurationMinutes / (form.institution === "CESDE" ? 45 : 60));
   }, [currentDurationMinutes, form.institution]);
+  const effectiveViewMode = isMobile ? "list" : viewMode;
 
   const calendarDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(calendarWeekStart, index)),
@@ -968,30 +983,36 @@ export default function AdminWorkloadPage() {
             <span className="inline-flex rounded-full border border-border bg-white px-2.5 py-0.5 text-[10px] font-medium text-foreground/70">
               {filteredRows.length} registro(s)
             </span>
-            <div className="inline-flex rounded-2xl border border-border bg-surface p-1">
-              {([
-                { id: "calendar", label: "Calendario" },
-                { id: "list", label: "Registros" },
-              ] as const).map((item) => {
-                const active = viewMode === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setViewMode(item.id)}
-                  className={`inline-flex h-7 items-center rounded-xl px-3 text-xs font-semibold transition ${
-                      active ? "bg-zinc-950 text-white shadow-sm" : "text-foreground/65 hover:text-foreground"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
+            {isMobile ? (
+              <span className="inline-flex rounded-full border border-border bg-surface px-3 py-1 text-[11px] font-medium text-foreground/70">
+                En móvil se muestra solo el listado
+              </span>
+            ) : (
+              <div className="inline-flex rounded-2xl border border-border bg-surface p-1">
+                {([
+                  { id: "calendar", label: "Calendario" },
+                  { id: "list", label: "Registros" },
+                ] as const).map((item) => {
+                  const active = viewMode === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setViewMode(item.id)}
+                      className={`inline-flex h-7 items-center rounded-xl px-3 text-xs font-semibold transition ${
+                        active ? "bg-zinc-950 text-white shadow-sm" : "text-foreground/65 hover:text-foreground"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {viewMode === "list" ? (
+        {effectiveViewMode === "list" ? (
           <div className="mt-4 space-y-3">
             {filteredRows.map((row) => (
               <div key={row.id} className="rounded-2xl border border-border bg-white p-4 shadow-sm">
