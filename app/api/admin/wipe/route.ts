@@ -47,6 +47,8 @@ export async function POST(req: Request) {
     "subjects",
     "studyDocs",
     "trimesters",
+    "teachingLoads",
+    "driveWorkspaces",
   ];
 
   for (const name of collections) {

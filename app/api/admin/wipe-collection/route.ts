@@ -18,6 +18,8 @@ const ALLOWED_COLLECTIONS = [
   "subjects",
   "studyDocs",
   "trimesters",
+  "teachingLoads",
+  "driveWorkspaces",
 ] as const;
 
 type AllowedCollection = (typeof ALLOWED_COLLECTIONS)[number];
