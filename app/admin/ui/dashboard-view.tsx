@@ -139,6 +139,10 @@ function formatHoursValue(value: number) {
   return Number.isInteger(value) ? `${value}` : value.toFixed(2);
 }
 
+function formatChartValue(value: unknown) {
+  return formatCompactNumber(Number(value ?? 0));
+}
+
 function calculatePercentage(value: number, total: number) {
   if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return 0;
   return Math.max(0, Math.min(100, (value / total) * 100));
@@ -794,7 +798,7 @@ export function DashboardView() {
                       backgroundColor: "rgba(255,255,255,0.96)",
                       color: "#0f172a",
                     }}
-                    formatter={(value: number) => [formatCompactNumber(Number(value)), "Envios"]}
+                    formatter={(value) => [formatChartValue(value), "Envios"]}
                   />
                   <Area type="monotone" dataKey="value" stroke="#8fbcd4" strokeWidth={3} fill="#dceef4" fillOpacity={0.95} />
                 </AreaChart>
@@ -918,12 +922,12 @@ export function DashboardView() {
                       axisLine={false}
                       tickLine={false}
                       tick={{ fill: CHART_COLORS.slate, fontSize: 12 }}
-                      tickFormatter={(value: number) => formatCompactNumber(Number(value))}
+                      tickFormatter={(value) => formatChartValue(value)}
                     />
                     <Tooltip
                       cursor={{ fill: "rgba(109, 94, 246, 0.08)" }}
                       contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
-                      formatter={(value: number) => [formatCompactNumber(Number(value)), "Intentos"]}
+                      formatter={(value) => [formatChartValue(value), "Intentos"]}
                     />
                     <Bar dataKey="value" radius={[12, 12, 0, 0]}>
                       {attemptsStatusData.map((entry) => (
@@ -973,7 +977,7 @@ export function DashboardView() {
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: CHART_COLORS.slate, fontSize: 12 }}
-                    tickFormatter={(value: number) => formatCompactNumber(Number(value))}
+                    tickFormatter={(value) => formatChartValue(value)}
                   />
                   <YAxis
                     type="category"
@@ -986,7 +990,7 @@ export function DashboardView() {
                   <Tooltip
                     cursor={{ fill: "rgba(16, 185, 129, 0.08)" }}
                     contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
-                    formatter={(value: number) => [formatCompactNumber(Number(value)), "Activos"]}
+                    formatter={(value) => [formatChartValue(value), "Activos"]}
                   />
                   <Bar dataKey="value" radius={[0, 12, 12, 0]}>
                     {activeModulesChartData.map((entry) => (
@@ -1125,7 +1129,7 @@ export function DashboardView() {
                     <PieChart>
                       <Tooltip
                         contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
-                        formatter={(value: number) => [formatCompactNumber(Number(value)), "Resultados"]}
+                        formatter={(value) => [formatChartValue(value), "Resultados"]}
                       />
                       <Pie
                         data={gradeDistData}

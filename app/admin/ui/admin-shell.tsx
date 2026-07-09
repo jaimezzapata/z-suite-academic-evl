@@ -24,6 +24,17 @@ type NavItem = {
   href: string;
   hint: string;
   icon: React.ComponentType<{ className?: string }>;
+  accent: {
+    iconBg: string;
+    iconColor: string;
+    hoverIconBg: string;
+    hoverIconColor: string;
+    activeBg: string;
+    activeBorder: string;
+    activeText: string;
+    activeHint: string;
+    rail: string;
+  };
 };
 
 type NavEntry =
@@ -31,18 +42,207 @@ type NavEntry =
   | { type: "section"; label: string };
 
 const navItems: NavEntry[] = [
-  { type: "link", label: "Dashboard", href: "/admin", hint: "Metricas generales", icon: LayoutDashboard },
-  { type: "link", label: "Banco", href: "/admin/bank", hint: "Preguntas y carga", icon: ClipboardList },
-  { type: "link", label: "Examenes", href: "/admin/templates", hint: "Creacion y control", icon: ClipboardList },
-  { type: "link", label: "Carga horaria", href: "/admin/workload", hint: "Horarios por institución", icon: CalendarDays },
-  { type: "link", label: "Drive", href: "/admin/drive", hint: "Archivos y estructura", icon: Folder },
-  { type: "link", label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },
-  { type: "link", label: "Resultados", href: "/admin/results", hint: "Notas y exportaciones", icon: BarChart3 },
-  { type: "section", label: "Ajustes" },
-  { type: "link", label: "Catalogos", href: "/admin/settings", hint: "Materias, grupos y momentos", icon: Settings2 },
-  { type: "link", label: "IA Documentación", href: "/admin/settings/ai-docs", hint: "Generar y publicar", icon: Bot },
-  { type: "link", label: "IA Test", href: "/admin/settings/ia-test", hint: "Probar Gemini", icon: Bot },
-  { type: "link", label: "Firebase", href: "/admin/settings/firebase", hint: "Herramientas y limpieza", icon: Wrench },
+  { type: "section", label: "Operacion" },
+  {
+    type: "link",
+    label: "Dashboard",
+    href: "/admin",
+    hint: "Metricas generales",
+    icon: LayoutDashboard,
+    accent: {
+      iconBg: "bg-violet-100",
+      iconColor: "text-violet-700",
+      hoverIconBg: "group-hover:bg-violet-100",
+      hoverIconColor: "group-hover:text-violet-700",
+      activeBg: "bg-violet-50",
+      activeBorder: "ring-violet-200",
+      activeText: "text-violet-700",
+      activeHint: "text-violet-600/80",
+      rail: "bg-violet-300",
+    },
+  },
+  {
+    type: "link",
+    label: "Banco",
+    href: "/admin/bank",
+    hint: "Preguntas y carga",
+    icon: ClipboardList,
+    accent: {
+      iconBg: "bg-fuchsia-100",
+      iconColor: "text-fuchsia-700",
+      hoverIconBg: "group-hover:bg-fuchsia-100",
+      hoverIconColor: "group-hover:text-fuchsia-700",
+      activeBg: "bg-fuchsia-50",
+      activeBorder: "ring-fuchsia-200",
+      activeText: "text-fuchsia-700",
+      activeHint: "text-fuchsia-600/80",
+      rail: "bg-fuchsia-300",
+    },
+  },
+  {
+    type: "link",
+    label: "Examenes",
+    href: "/admin/templates",
+    hint: "Creacion y control",
+    icon: FileText,
+    accent: {
+      iconBg: "bg-indigo-100",
+      iconColor: "text-indigo-700",
+      hoverIconBg: "group-hover:bg-indigo-100",
+      hoverIconColor: "group-hover:text-indigo-700",
+      activeBg: "bg-indigo-50",
+      activeBorder: "ring-indigo-200",
+      activeText: "text-indigo-700",
+      activeHint: "text-indigo-600/80",
+      rail: "bg-indigo-300",
+    },
+  },
+  {
+    type: "link",
+    label: "Carga horaria",
+    href: "/admin/workload",
+    hint: "Horarios por institucion",
+    icon: CalendarDays,
+    accent: {
+      iconBg: "bg-rose-100",
+      iconColor: "text-rose-700",
+      hoverIconBg: "group-hover:bg-rose-100",
+      hoverIconColor: "group-hover:text-rose-700",
+      activeBg: "bg-rose-50",
+      activeBorder: "ring-rose-200",
+      activeText: "text-rose-700",
+      activeHint: "text-rose-600/80",
+      rail: "bg-rose-300",
+    },
+  },
+  {
+    type: "link",
+    label: "Drive",
+    href: "/admin/drive",
+    hint: "Archivos y estructura",
+    icon: Folder,
+    accent: {
+      iconBg: "bg-amber-100",
+      iconColor: "text-amber-700",
+      hoverIconBg: "group-hover:bg-amber-100",
+      hoverIconColor: "group-hover:text-amber-700",
+      activeBg: "bg-amber-50",
+      activeBorder: "ring-amber-200",
+      activeText: "text-amber-700",
+      activeHint: "text-amber-700/75",
+      rail: "bg-amber-300",
+    },
+  },
+  {
+    type: "link",
+    label: "Activos",
+    href: "/admin/live",
+    hint: "Codigos y monitoreo",
+    icon: Activity,
+    accent: {
+      iconBg: "bg-emerald-100",
+      iconColor: "text-emerald-700",
+      hoverIconBg: "group-hover:bg-emerald-100",
+      hoverIconColor: "group-hover:text-emerald-700",
+      activeBg: "bg-emerald-50",
+      activeBorder: "ring-emerald-200",
+      activeText: "text-emerald-700",
+      activeHint: "text-emerald-700/75",
+      rail: "bg-emerald-300",
+    },
+  },
+  {
+    type: "link",
+    label: "Resultados",
+    href: "/admin/results",
+    hint: "Notas y exportaciones",
+    icon: BarChart3,
+    accent: {
+      iconBg: "bg-sky-100",
+      iconColor: "text-sky-700",
+      hoverIconBg: "group-hover:bg-sky-100",
+      hoverIconColor: "group-hover:text-sky-700",
+      activeBg: "bg-sky-50",
+      activeBorder: "ring-sky-200",
+      activeText: "text-sky-700",
+      activeHint: "text-sky-700/75",
+      rail: "bg-sky-300",
+    },
+  },
+  { type: "section", label: "Configuracion" },
+  {
+    type: "link",
+    label: "Catalogos",
+    href: "/admin/settings",
+    hint: "Materias, grupos y momentos",
+    icon: Settings2,
+    accent: {
+      iconBg: "bg-stone-100",
+      iconColor: "text-stone-700",
+      hoverIconBg: "group-hover:bg-stone-100",
+      hoverIconColor: "group-hover:text-stone-700",
+      activeBg: "bg-stone-50",
+      activeBorder: "ring-stone-200",
+      activeText: "text-stone-700",
+      activeHint: "text-stone-600/80",
+      rail: "bg-stone-300",
+    },
+  },
+  {
+    type: "link",
+    label: "Firebase",
+    href: "/admin/settings/firebase",
+    hint: "Herramientas y limpieza",
+    icon: Wrench,
+    accent: {
+      iconBg: "bg-slate-100",
+      iconColor: "text-slate-700",
+      hoverIconBg: "group-hover:bg-slate-100",
+      hoverIconColor: "group-hover:text-slate-700",
+      activeBg: "bg-slate-50",
+      activeBorder: "ring-slate-200",
+      activeText: "text-slate-700",
+      activeHint: "text-slate-600/80",
+      rail: "bg-slate-300",
+    },
+  },
+  { type: "section", label: "IA" },
+  {
+    type: "link",
+    label: "IA Documentacion",
+    href: "/admin/settings/ai-docs",
+    hint: "Generar y publicar",
+    icon: Bot,
+    accent: {
+      iconBg: "bg-purple-100",
+      iconColor: "text-purple-700",
+      hoverIconBg: "group-hover:bg-purple-100",
+      hoverIconColor: "group-hover:text-purple-700",
+      activeBg: "bg-purple-50",
+      activeBorder: "ring-purple-200",
+      activeText: "text-purple-700",
+      activeHint: "text-purple-600/80",
+      rail: "bg-purple-300",
+    },
+  },
+  {
+    type: "link",
+    label: "IA Test",
+    href: "/admin/settings/ia-test",
+    hint: "Probar Gemini",
+    icon: Bot,
+    accent: {
+      iconBg: "bg-cyan-100",
+      iconColor: "text-cyan-700",
+      hoverIconBg: "group-hover:bg-cyan-100",
+      hoverIconColor: "group-hover:text-cyan-700",
+      activeBg: "bg-cyan-50",
+      activeBorder: "ring-cyan-200",
+      activeText: "text-cyan-700",
+      activeHint: "text-cyan-600/80",
+      rail: "bg-cyan-300",
+    },
+  },
 ];
 
 function getInitials(name: string | null, email: string | null) {
@@ -57,14 +257,9 @@ function getActiveNavItem(pathname: string) {
     if (item.href === "/admin") return pathname === "/admin";
     return pathname === item.href || pathname.startsWith(`${item.href}/`);
   });
-  if (!matches.length) {
-    console.log("[getActiveNavItem] No matches for pathname:", pathname);
-    return null;
-  }
+  if (!matches.length) return null;
   const sorted = matches.sort((a, b) => b.href.length - a.href.length);
-  const result = sorted[0] ?? null;
-  console.log("[getActiveNavItem] Matches:", matches, "Selected:", result);
-  return result;
+  return sorted[0] ?? null;
 }
 
 function Sidebar({
@@ -81,8 +276,8 @@ function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-border px-5 py-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-200 text-xs font-semibold text-violet-700 shadow-sm">
           ZS
         </div>
         <div>
@@ -91,13 +286,13 @@ function Sidebar({
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+      <nav className="flex-1 space-y-0.5 p-2.5">
         {navItems.map((item) => {
           if (item.type === "section") {
             return (
               <div
                 key={item.label}
-                className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-foreground/50"
+                className="px-2.5 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/35"
               >
                 {item.label}
               </div>
@@ -110,18 +305,29 @@ function Sidebar({
               key={item.label}
               href={item.href}
               onClick={onNavigate}
-              className={`group flex items-start gap-3 rounded-xl px-3 py-2.5 transition ${
+              className={`group relative flex items-start gap-2.5 rounded-xl px-2.5 py-2 transition-all duration-200 ${
                 active
-                  ? "bg-primary/10 text-primary ring-1 ring-primary/15"
-                  : "text-foreground/70 hover:bg-muted hover:text-foreground"
+                  ? `${item.accent.activeBg} ${item.accent.activeText} ring-1 ${item.accent.activeBorder} shadow-sm`
+                  : "text-foreground/70 hover:bg-white hover:text-foreground hover:shadow-sm hover:-translate-y-[1px]"
               }`}
             >
-              <div className={`mt-0.5 shrink-0 ${active ? "text-primary" : "text-foreground/45 group-hover:text-foreground/70"}`}>
-                <Icon className="h-5 w-5" />
+              <span
+                className={`absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full transition-opacity ${
+                  active ? `${item.accent.rail} opacity-100` : "opacity-0 group-hover:opacity-100 bg-border"
+                }`}
+              />
+              <div
+                className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200 ${
+                  active
+                    ? `${item.accent.iconBg} ${item.accent.iconColor}`
+                    : `bg-muted/60 text-foreground/45 ${item.accent.hoverIconBg} ${item.accent.hoverIconColor} group-hover:scale-105`
+                }`}
+              >
+                <Icon className={`h-4 w-4 transition-transform duration-200 ${active ? "scale-105" : "group-hover:scale-110"}`} />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium">{item.label}</p>
-                <p className={`text-xs ${active ? "text-primary/70" : "text-foreground/45"}`}>
+                <p className="text-[13px] font-medium leading-4">{item.label}</p>
+                <p className={`text-[11px] leading-4 ${active ? item.accent.activeHint : "text-foreground/45"}`}>
                   {item.hint}
                 </p>
               </div>
@@ -179,12 +385,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <div className="min-w-0 flex items-center gap-3">
                 {activeItem ? (
                   <>
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl ${activeItem.accent.iconBg} ${activeItem.accent.iconColor}`}
+                    >
                       <activeItem.icon className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-foreground">{activeItem.label}</p>
-                      <p className="truncate text-xs text-foreground/55">{activeItem.hint}</p>
+                      <p className={`truncate text-xs ${activeItem.accent.activeHint}`}>{activeItem.hint}</p>
                     </div>
                   </>
                 ) : (
@@ -207,7 +415,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-violet-600 text-xs font-semibold text-white shadow-sm">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-200 text-xs font-semibold text-violet-700 shadow-sm">
                     {initials}
                   </div>
                 )}
