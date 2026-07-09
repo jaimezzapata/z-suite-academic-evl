@@ -1055,9 +1055,9 @@ export function DashboardView() {
                     <Tooltip
                       cursor={{ fill: "rgba(109, 94, 246, 0.08)" }}
                       contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
-                      formatter={(value: number, _name, item) => [
-                        `${formatCompactNumber(Number(value))} envios`,
-                        `${item.payload.avg} promedio`,
+                      formatter={(value, _name, item) => [
+                        `${formatChartValue(value)} envios`,
+                        `${((item?.payload as { avg?: string } | undefined)?.avg ?? "-")} promedio`,
                       ]}
                       labelFormatter={(_label, payload) => {
                         const row = payload?.[0]?.payload as
