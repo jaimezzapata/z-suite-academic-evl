@@ -48,6 +48,10 @@ function toPeriodParts(value: string) {
   };
 }
 
+function normalizeCesdeGroupType(value: unknown) {
+  return toString(value, "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
+}
+
 function makeWorkspaceId(parts: string[]) {
   return parts
     .map((p) => p.trim())
@@ -114,9 +118,11 @@ export async function POST(req: Request) {
     const period = toString(body?.period, "").trim();
     const campus = toString(body?.campus, "").trim();
     const jornada = toString(body?.jornada, "").trim();
+    const cesdeGroupType = normalizeCesdeGroupType(body?.cesdeGroupType);
     const dayOfWeek1 = toString(body?.dayOfWeek1, "").trim();
     const dayOfWeek2 = toString(body?.dayOfWeek2, "").trim();
     const startDateRaw = toString(body?.startDate, "").trim();
+    const endDateRaw = toString(body?.endDate, "").trim();
 
     if (debug) {
       console.log("[drive/bootstrap] start", {
@@ -129,9 +135,11 @@ export async function POST(req: Request) {
         period,
         campus,
         jornada,
+        cesdeGroupType,
         dayOfWeek1,
         dayOfWeek2,
         startDateRaw,
+        endDateRaw,
         uid,
       });
     }
@@ -146,6 +154,11 @@ export async function POST(req: Request) {
 
     const startDate = parseISODate(startDateRaw);
     if (!startDate) return NextResponse.json({ error: "Fecha de inicio inválida." }, { status: 400 });
+    const endDate = endDateRaw ? parseISODate(endDateRaw) : null;
+    if (endDateRaw && !endDate) return NextResponse.json({ error: "Fecha de fin inválida." }, { status: 400 });
+    if (endDate && endDate.getTime() < startDate.getTime()) {
+      return NextResponse.json({ error: "La fecha de fin no puede ser menor que la fecha de inicio." }, { status: 400 });
+    }
 
     const periodParts = toPeriodParts(period);
     if (!periodParts) {
@@ -154,7 +167,15 @@ export async function POST(req: Request) {
 
     const isCesde = institution.toUpperCase() === "CESDE";
     const isSena = institution.toUpperCase() === "SENA";
+    const isCesdeEmpresarial = isCesde && cesdeGroupType === "EMPRESARIAL";
     const weekCount = isCesde ? 18 : 11;
+
+    if (isCesdeEmpresarial && !endDateRaw) {
+      return NextResponse.json({ error: "Para CESDE empresarial debes indicar fecha de fin." }, { status: 400 });
+    }
+    if (isCesdeEmpresarial && dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
+      return NextResponse.json({ error: "El segundo día no puede ser igual al primero." }, { status: 400 });
+    }
 
     const subjectsSnap = await adminDb.collection("subjects").doc(subjectId).get();
     const subjectName = subjectsSnap.exists ? toString(subjectsSnap.data()?.name, subjectId) : subjectId;
@@ -179,11 +200,13 @@ export async function POST(req: Request) {
       periodCode: periodParts.periodCode,
       subjectName,
       cohortCode: groupName,
+      cesdeGroupType,
       dayOfWeek1,
       dayOfWeek2,
       jornada,
       sede: campus,
       startDate: startDateRaw,
+      endDate: endDateRaw,
     });
     const driveStructure = await getAppsScriptDriveStructure({
       publicFolderId: createdStructure.publicFolderId,
@@ -203,10 +226,12 @@ export async function POST(req: Request) {
         periodCode: periodParts.periodCode,
         campus,
         jornada,
+        cesdeGroupType: isCesde ? cesdeGroupType : "",
         dayOfWeek1,
         dayOfWeek2,
         weekCount: driveStructure.weeks.length || weekCount,
         startDate: startDateRaw,
+        endDate: endDateRaw,
         drive: {
           rootFolderId: driveRootId,
           groupFolderId: driveStructure.classFolder.folderId,
@@ -225,6 +250,7 @@ export async function POST(req: Request) {
         sourceType: sourceTeachingLoadId ? "teaching_load" : "manual",
         sourceTeachingLoadId: sourceTeachingLoadId || "",
         source: "apps_script",
+        scheduleMode: isCesdeEmpresarial ? "date_range" : "fixed_weeks",
         createdAt: now,
         updatedAt: now,
       },

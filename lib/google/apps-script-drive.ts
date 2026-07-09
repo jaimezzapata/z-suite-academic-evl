@@ -5,11 +5,13 @@ type AppsScriptCreatePayload = {
   periodCode: string;
   subjectName: string;
   cohortCode: string;
+  cesdeGroupType?: string;
   dayOfWeek1: string;
   dayOfWeek2?: string;
   jornada: string;
   sede: string;
   startDate: string;
+  endDate?: string;
 };
 
 type AppsScriptStructurePayload = {

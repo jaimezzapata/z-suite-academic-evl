@@ -1,31 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { ALL_WIPE_COLLECTIONS, type WipeCollectionName } from "@/lib/firebase/wipe-collections";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
-const ALLOWED_COLLECTIONS = [
-  "attempts",
-  "examTemplates",
-  "fichas",
-  "groups",
-  "moments",
-  "publishedExams",
-  "questions",
-  "shifts",
-  "sites",
-  "subjects",
-  "studyDocs",
-  "trimesters",
-  "teachingLoads",
-  "driveWorkspaces",
-] as const;
-
-type AllowedCollection = (typeof ALLOWED_COLLECTIONS)[number];
-
-function isAllowedCollection(value: string): value is AllowedCollection {
-  return (ALLOWED_COLLECTIONS as readonly string[]).includes(value);
+function isAllowedCollection(value: string): value is WipeCollectionName {
+  return (ALL_WIPE_COLLECTIONS as readonly string[]).includes(value);
 }
 
 export async function POST(req: Request) {

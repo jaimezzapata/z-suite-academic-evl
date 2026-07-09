@@ -10,6 +10,20 @@ import {
   query,
   where,
 } from "firebase/firestore";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { firestore } from "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
 
@@ -22,14 +36,11 @@ type DashboardData = {
     questionsPublished: number;
     questionsDraft: number;
     questionsArchived: number;
-      subjectsTotal: number;
-      groupsTotal: number;
-      fichasTotal: number;
-      sitesTotal: number;
-      shiftsTotal: number;
-      momentsTotal: number;
-      studyDocsActive: number;
-      driveWorkspacesTotal: number;
+    subjectsTotal: number;
+    sitesTotal: number;
+    shiftsTotal: number;
+    momentsTotal: number;
+    driveWorkspacesTotal: number;
     teachingLoadsTotal: number;
     teachingLoadsActive: number;
     teachingHoursTotal: number;
@@ -128,6 +139,11 @@ function formatHoursValue(value: number) {
   return Number.isInteger(value) ? `${value}` : value.toFixed(2);
 }
 
+function calculatePercentage(value: number, total: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return 0;
+  return Math.max(0, Math.min(100, (value / total) * 100));
+}
+
 function toDateFromTimestamp(value: unknown) {
   if (!value || typeof value !== "object") return null;
   try {
@@ -140,132 +156,16 @@ function toDateFromTimestamp(value: unknown) {
   return null;
 }
 
-function buildSparkPath(values: number[], w: number, h: number) {
-  if (!values.length) return "";
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const span = Math.max(max - min, 1);
-  const step = values.length === 1 ? 0 : w / (values.length - 1);
-  return values
-    .map((v, i) => {
-      const x = i * step;
-      const y = h - ((v - min) / span) * h;
-      return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
-
-function MiniSparkline({
-  values,
-  tone,
-}: {
-  values: number[];
-  tone: "zinc" | "emerald" | "indigo";
-}) {
-  const path = useMemo(() => buildSparkPath(values, 88, 22), [values]);
-  const stroke =
-    tone === "emerald" ? "stroke-emerald-600" : tone === "indigo" ? "stroke-indigo-600" : "stroke-zinc-700";
-  const fill =
-    tone === "emerald"
-      ? "fill-emerald-50"
-      : tone === "indigo"
-        ? "fill-indigo-50"
-        : "fill-zinc-100";
-  if (!values.length) {
-    return <div className="h-6 w-92px rounded-md bg-zinc-100" />;
-  }
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const span = Math.max(max - min, 1);
-  const points = values.map((v, i) => {
-    const x = values.length === 1 ? 0 : (i / (values.length - 1)) * 88;
-    const y = 22 - ((v - min) / span) * 22;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  });
-  const area = `M 0 22 L ${points.join(" ")} L 88 22 Z`.replaceAll(" ", " ");
-  return (
-    <svg viewBox="0 0 88 22" className="h-6 w-92px">
-      <path d={area} className={fill} />
-      <path d={path} className={`${stroke} fill-none`} strokeWidth={2} />
-    </svg>
-  );
-}
-
-function MiniBars({ values }: { values: number[] }) {
-  const max = Math.max(...values, 1);
-  return (
-    <div className="flex h-14 items-end gap-1">
-      {values.map((v, idx) => (
-        <div
-          key={idx}
-          className="w-2 rounded-sm bg-primary"
-          style={{ height: `${Math.round((v / max) * 100)}%` }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function Donut({
-  items,
-}: {
-  items: { label: string; value: number; tone: "zinc" | "emerald" | "amber" }[];
-}) {
-  const total = items.reduce((a, b) => a + b.value, 0) || 1;
-  const r = 16;
-  const c = 2 * Math.PI * r;
-  const toneToStroke = (tone: "zinc" | "emerald" | "amber") =>
-    tone === "emerald" ? "stroke-emerald-500" : tone === "amber" ? "stroke-amber-500" : "stroke-zinc-700";
-  const segments = items.reduce(
-    (acc, it) => {
-      const frac = it.value / total;
-      const dash = frac * c;
-      const dasharray = `${dash.toFixed(2)} ${(c - dash).toFixed(2)}`;
-      const next = {
-        label: it.label,
-        tone: it.tone,
-        dasharray,
-        dashoffset: (-acc.offset).toFixed(2),
-      };
-      return { offset: acc.offset + dash, segs: [...acc.segs, next] };
-    },
-    {
-      offset: 0,
-      segs: [] as { label: string; tone: "zinc" | "emerald" | "amber"; dasharray: string; dashoffset: string }[],
-    },
-  ).segs;
-  return (
-    <div className="flex items-center gap-4">
-      <svg viewBox="0 0 44 44" className="h-16 w-16 -rotate-90">
-        <circle cx="22" cy="22" r={r} className="stroke-zinc-100" strokeWidth="8" fill="none" />
-        {segments.map((seg) => (
-          <circle
-            key={seg.label}
-            cx="22"
-            cy="22"
-            r={r}
-            className={toneToStroke(seg.tone)}
-            strokeWidth="8"
-            fill="none"
-            strokeDasharray={seg.dasharray}
-            strokeDashoffset={seg.dashoffset}
-            strokeLinecap="butt"
-          />
-        ))}
-      </svg>
-      <div className="min-w-0 space-y-1 text-sm">
-        {items.map((it) => (
-          <div key={it.label} className="flex items-center justify-between gap-4">
-            <span className="truncate text-zinc-700">{it.label}</span>
-            <span className="shrink-0 font-semibold text-zinc-900">
-              {formatCompactNumber(it.value)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+const CHART_COLORS = {
+  primary: "var(--color-primary)",
+  success: "#7bc7ad",
+  amber: "#d9b38c",
+  indigo: "#9a8fe8",
+  cyan: "#88c7d8",
+  zinc: "#a8a29e",
+  slate: "#7c8aa0",
+  grid: "var(--color-border)",
+};
 
 export function DashboardView() {
   const { loading: authLoading, isAdmin, user } = useAuth();
@@ -281,12 +181,9 @@ export function DashboardView() {
       questionsDraft: 0,
       questionsArchived: 0,
       subjectsTotal: 0,
-      groupsTotal: 0,
-      fichasTotal: 0,
       sitesTotal: 0,
       shiftsTotal: 0,
       momentsTotal: 0,
-      studyDocsActive: 0,
       driveWorkspacesTotal: 0,
       teachingLoadsTotal: 0,
       teachingLoadsActive: 0,
@@ -381,15 +278,12 @@ export function DashboardView() {
           getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "archived"))),
         );
         add("subjectsTotal", () => getCountFromServer(collection(firestore, "subjects")));
-        add("groupsTotal", () => getCountFromServer(collection(firestore, "groups")));
-        add("fichasTotal", () => getCountFromServer(collection(firestore, "fichas")));
         add("sitesTotal", () => getCountFromServer(collection(firestore, "sites")));
         add("shiftsTotal", () => getCountFromServer(collection(firestore, "shifts")));
         add("momentsTotal", () => getCountFromServer(collection(firestore, "moments")));
-        add("studyDocsActive", () =>
-          getCountFromServer(query(collection(firestore, "studyDocs"), where("active", "==", true))),
+        add("driveWorkspaces", () =>
+          getDocs(query(collection(firestore, "driveWorkspaces"), orderBy("updatedAt", "desc"), limit(500))),
         );
-        add("driveWorkspacesTotal", () => getCountFromServer(collection(firestore, "driveWorkspaces")));
         add("teachingLoads", () => getDocs(collection(firestore, "teachingLoads")));
         add("attemptsTotal", () => getCountFromServer(collection(firestore, "attempts")));
         add("attemptsSubmitted", () =>
@@ -447,6 +341,7 @@ export function DashboardView() {
         const templateDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.templatesSample);
         const attemptDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.attemptsRecent);
         const teachingLoadDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.teachingLoads);
+        const driveWorkspaceDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.driveWorkspaces);
 
         const groups = groupDocs.map((d) => ({
           id: d.id,
@@ -624,13 +519,10 @@ export function DashboardView() {
           questionsDraft: questionsDraftSnap.data().count,
           questionsArchived: questionsArchivedSnap.data().count,
           subjectsTotal: countFromAggregateSnap(out.subjectsTotal),
-          groupsTotal: countFromAggregateSnap(out.groupsTotal),
-          fichasTotal: countFromAggregateSnap(out.fichasTotal),
           sitesTotal: countFromAggregateSnap(out.sitesTotal),
           shiftsTotal: countFromAggregateSnap(out.shiftsTotal),
           momentsTotal: countFromAggregateSnap(out.momentsTotal),
-          studyDocsActive: countFromAggregateSnap(out.studyDocsActive),
-          driveWorkspacesTotal: countFromAggregateSnap(out.driveWorkspacesTotal),
+          driveWorkspacesTotal: driveWorkspaceDocs.length,
           teachingLoadsTotal: teachingLoadSummary.total,
           teachingLoadsActive: teachingLoadSummary.active,
           teachingHoursTotal: teachingLoadSummary.hoursTotal,
@@ -679,8 +571,169 @@ export function DashboardView() {
     };
   }, [authLoading, isAdmin, user]);
 
+  const activityChartData = useMemo(
+    () =>
+      data.activity14.labels.map((label, idx) => ({
+        label,
+        value: data.activity14.values[idx] ?? 0,
+      })),
+    [data.activity14],
+  );
+  const attemptsStatusData = useMemo(
+    () => [
+      { label: "En progreso", value: data.counts.attemptsInProgress, fill: CHART_COLORS.indigo },
+      { label: "Enviados", value: data.counts.attemptsSubmitted, fill: CHART_COLORS.primary },
+      { label: "Fraude", value: data.counts.attemptsFraudSubmitted, fill: CHART_COLORS.amber },
+      { label: "Anulados", value: data.counts.attemptsAnnulled, fill: CHART_COLORS.zinc },
+    ],
+    [
+      data.counts.attemptsAnnulled,
+      data.counts.attemptsFraudSubmitted,
+      data.counts.attemptsInProgress,
+      data.counts.attemptsSubmitted,
+    ],
+  );
+  const activeModulesData = useMemo(
+    () =>
+      [
+        { label: "Materias", value: data.counts.subjectsTotal, fill: CHART_COLORS.primary },
+        { label: "Sedes", value: data.counts.sitesTotal, fill: CHART_COLORS.indigo },
+        { label: "Jornadas", value: data.counts.shiftsTotal, fill: CHART_COLORS.cyan },
+        { label: "Momentos", value: data.counts.momentsTotal, fill: CHART_COLORS.success },
+        { label: "Drive", value: data.counts.driveWorkspacesTotal, fill: CHART_COLORS.amber },
+        { label: "Carga activa", value: data.counts.teachingLoadsActive, fill: CHART_COLORS.zinc },
+        { label: "Examenes", value: data.counts.publishedActive, fill: CHART_COLORS.success },
+      ].filter((item) => loading || item.value > 0),
+    [
+      data.counts.driveWorkspacesTotal,
+      data.counts.momentsTotal,
+      data.counts.publishedActive,
+      data.counts.shiftsTotal,
+      data.counts.sitesTotal,
+      data.counts.subjectsTotal,
+      data.counts.teachingLoadsActive,
+      loading,
+    ],
+  );
+  const topExamsChartData = useMemo(
+    () =>
+      data.topExams7.map((row) => ({
+        label: row.exam.length > 24 ? `${row.exam.slice(0, 24)}...` : row.exam,
+        fullLabel: row.exam,
+        group: row.group,
+        submissions: row.submissions,
+        avg: row.avg,
+      })),
+    [data.topExams7],
+  );
+  const activeModulesChartData = useMemo(
+    () => [...activeModulesData].sort((a, b) => b.value - a.value),
+    [activeModulesData],
+  );
+  const gradeDistData = useMemo(() => {
+    const fills = ["#7c3aed", "#06b6d4", "#10b981", "#f59e0b", "#ec4899"];
+    return data.gradeDist
+      .filter((item) => loading || item.value > 0)
+      .map((item, idx) => ({ ...item, fill: fills[idx % fills.length] }));
+  }, [data.gradeDist, loading]);
+
   const avgGrade7 = data.summary7.avgGrade;
   const fraud7 = data.summary7.fraudAttempts;
+  const showCompact = (value: number) => (loading ? "-" : formatCompactNumber(value));
+  const showHours = (value: number) => (loading ? "-" : formatHoursValue(value));
+  const showFixed = (value: number | null, digits: number) =>
+    loading || value === null ? "-" : formatFixed(value, digits);
+  const questionsPublishedPct = calculatePercentage(
+    data.counts.questionsPublished,
+    data.counts.questionsTotal,
+  );
+  const templatesActivePct = calculatePercentage(data.counts.templatesActive, data.counts.templatesTotal);
+  const teachingLoadActivePct = calculatePercentage(
+    data.counts.teachingLoadsActive,
+    data.counts.teachingLoadsTotal,
+  );
+  const attemptSubmittedPct = calculatePercentage(
+    data.counts.attemptsSubmitted,
+    data.counts.attemptsTotal,
+  );
+  const activeModulesTotal = activeModulesChartData.length;
+  const activeModuleVolume = activeModulesChartData.reduce((sum, item) => sum + item.value, 0);
+  const heroMetrics = [
+    {
+      label: "Enviados",
+      value: showCompact(data.counts.attemptsSubmitted),
+      helper: `${showCompact(data.counts.attemptsInProgress)} en progreso`,
+      className: "bg-sky-200/55",
+    },
+    {
+      label: "Promedio 7 dias",
+      value: avgGrade7 === null || loading ? "-" : `${formatFixed(avgGrade7, 2)} / 5`,
+      helper: `${showCompact(data.summary7.submittedAttempts)} evaluaciones`,
+      className: "bg-emerald-200/55",
+    },
+    {
+      label: "Alertas recientes",
+      value: showCompact(fraud7),
+      helper: `${showCompact(data.counts.attemptsFraudSubmitted)} con fraude`,
+      className: "bg-amber-200/55",
+    },
+    {
+      label: "Modulos activos",
+      value: loading ? "-" : `${activeModulesTotal}`,
+      helper: `${showCompact(activeModuleVolume)} registros visibles`,
+      className: "bg-rose-200/50",
+    },
+  ];
+  const spotlightCards = [
+    {
+      title: "Banco de preguntas",
+      eyebrow: "Contenido academico",
+      value: showCompact(data.counts.questionsTotal),
+      detailA: { label: "Publicadas", value: showCompact(data.counts.questionsPublished) },
+      detailB: { label: "Borrador", value: showCompact(data.counts.questionsDraft) },
+      detailC: { label: "Archivadas", value: showCompact(data.counts.questionsArchived) },
+      progress: questionsPublishedPct,
+      progressLabel: `${questionsPublishedPct.toFixed(0)}% publicadas`,
+      accent: "bg-fuchsia-300",
+      tint: "bg-fuchsia-100/70",
+    },
+    {
+      title: "Examenes y plantillas",
+      eyebrow: "Publicacion",
+      value: showCompact(data.counts.publishedActive),
+      detailA: { label: "Plantillas activas", value: showCompact(data.counts.templatesActive) },
+      detailB: { label: "Plantillas totales", value: showCompact(data.counts.templatesTotal) },
+      detailC: { label: "Actividad 7 dias", value: showCompact(data.summary7.submittedAttempts) },
+      progress: templatesActivePct,
+      progressLabel: `${templatesActivePct.toFixed(0)}% del catalogo activo`,
+      accent: "bg-indigo-300",
+      tint: "bg-indigo-100/70",
+    },
+    {
+      title: "Carga academica",
+      eyebrow: "Operacion docente",
+      value: showCompact(data.counts.teachingLoadsActive),
+      detailA: { label: "Horas totales", value: showHours(data.counts.teachingHoursTotal) },
+      detailB: { label: "CESDE", value: showHours(data.counts.teachingHoursCesde) },
+      detailC: { label: "SENA", value: showHours(data.counts.teachingHoursSena) },
+      progress: teachingLoadActivePct,
+      progressLabel: `${teachingLoadActivePct.toFixed(0)}% de cargas activas`,
+      accent: "bg-emerald-300",
+      tint: "bg-emerald-100/70",
+    },
+    {
+      title: "Drive operativo",
+      eyebrow: "Cobertura",
+      value: showCompact(data.counts.driveWorkspacesTotal),
+      detailA: { label: "Sedes", value: showCompact(data.counts.sitesTotal) },
+      detailB: { label: "Jornadas", value: showCompact(data.counts.shiftsTotal) },
+      detailC: { label: "Momentos", value: showCompact(data.counts.momentsTotal) },
+      progress: attemptSubmittedPct,
+      progressLabel: `${attemptSubmittedPct.toFixed(0)}% de intentos enviados`,
+      accent: "bg-amber-300",
+      tint: "bg-amber-100/70",
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -690,271 +743,475 @@ export function DashboardView() {
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Banco de preguntas</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.questionsTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Publicadas</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.questionsPublished)}
-            </span>
+      <section className="zs-card overflow-hidden border border-[#E9E3DD] bg-[#FBFBF8] p-5 text-foreground">
+        <div className="grid items-stretch gap-4 xl:grid-cols-[0.92fr_1.08fr]">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {heroMetrics.map((metric) => (
+              <div
+                key={metric.label}
+                className={`flex min-h-[148px] flex-col justify-between rounded-2xl border border-white/70 ${metric.className} p-4`}
+              >
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/50">{metric.label}</p>
+                <div>
+                  <p className="text-3xl font-semibold tracking-tight text-foreground">{metric.value}</p>
+                  <p className="mt-1 text-xs text-foreground/60">{metric.helper}</p>
+                </div>
+              </div>
+            ))}
           </div>
-        </article>
 
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Grupos CESDE</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.groupsTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Materias</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.subjectsTotal)}
-            </span>
-          </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Fichas SENA</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.fichasTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Momentos</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.momentsTotal)}
-            </span>
-          </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Carga horaria</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Activas</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsActive)}
-            </span>
-          </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-foreground/55">Horas académicas</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatHoursValue(data.counts.teachingHoursTotal)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading
-                  ? "-"
-                  : `CESDE ${formatHoursValue(data.counts.teachingHoursCesde)} h | SENA ${formatHoursValue(data.counts.teachingHoursSena)} h`}
-              </p>
+          <div className="rounded-[28px] border border-[#E6E0DA] bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/50">Actividad reciente</p>
+                <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">Envios ultimos 14 dias</h2>
+              </div>
+              <div className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+                {showCompact(data.summary7.submittedAttempts)} en 7 dias
+              </div>
             </div>
-            <MiniSparkline
-              values={[
-                data.counts.teachingHoursCesde,
-                data.counts.teachingHoursSena,
-                data.counts.teachingHoursTotal,
-              ]}
-              tone="emerald"
-            />
+
+            <div className="mt-4 h-[332px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={activityChartData} margin={{ top: 12, right: 12, left: -16, bottom: 0 }}>
+                  <CartesianGrid stroke="rgba(148,163,184,0.18)" strokeDasharray="4 4" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "rgba(71,85,105,0.72)", fontSize: 12 }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "rgba(71,85,105,0.72)", fontSize: 12 }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: 18,
+                      borderColor: "rgba(226,232,240,1)",
+                      backgroundColor: "rgba(255,255,255,0.96)",
+                      color: "#0f172a",
+                    }}
+                    formatter={(value: number) => [formatCompactNumber(Number(value)), "Envios"]}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="#8fbcd4" strokeWidth={3} fill="#dceef4" fillOpacity={0.95} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+        {spotlightCards.map((card) => (
+          <article
+            key={card.title}
+            className={`zs-card relative overflow-hidden border border-border ${card.tint} p-5`}
+          >
+            <div className={`absolute inset-x-0 top-0 h-1 ${card.accent}`} />
+            <div className="relative">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-foreground/55">{card.eyebrow}</p>
+              <div className="mt-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">{card.title}</h2>
+                  <p className="mt-2 text-4xl font-semibold tracking-tight text-foreground">{card.value}</p>
+                </div>
+                <div className={`h-12 w-12 rounded-2xl ${card.accent} opacity-95`} />
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="h-2 overflow-hidden rounded-full bg-foreground/8">
+                  <div
+                    className={`h-full rounded-full ${card.accent}`}
+                    style={{ width: `${Math.max(card.progress, 8)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-foreground/60">{loading ? "-" : card.progressLabel}</p>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-border/60 bg-white/75 px-3 py-3">
+                  <p className="text-xs text-foreground/55">{card.detailA.label}</p>
+                  <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">{card.detailA.value}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-white/75 px-3 py-3">
+                  <p className="text-xs text-foreground/55">{card.detailB.label}</p>
+                  <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">{card.detailB.value}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-white/75 px-3 py-3">
+                  <p className="text-xs text-foreground/55">{card.detailC.label}</p>
+                  <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">{card.detailC.value}</p>
+                </div>
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <article className="zs-card overflow-hidden border-0 p-0 xl:col-span-2">
+          <div className="bg-violet-100 px-5 py-5 text-foreground">
+            <h2 className="text-xl font-semibold tracking-tight">Pulso de evaluaciones</h2>
+            <p className="mt-1 text-sm text-foreground/60">
+              Estado operativo de intentos, envios y señales de fraude del ecosistema.
+            </p>
+          </div>
+
+          <div className="grid gap-4 p-5 lg:grid-cols-[0.92fr_1.08fr]">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border/70 bg-violet-100 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">En progreso</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                  {showCompact(data.counts.attemptsInProgress)}
+                </p>
+                <p className="mt-1 text-xs text-foreground/60">Intentos aun abiertos.</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-sky-100 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Enviados</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                  {showCompact(data.counts.attemptsSubmitted)}
+                </p>
+                <p className="mt-1 text-xs text-foreground/60">{attemptSubmittedPct.toFixed(0)}% del total.</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-amber-100 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Fraude detectado</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                  {showCompact(data.counts.attemptsFraudSubmitted)}
+                </p>
+                <p className="mt-1 text-xs text-foreground/60">
+                  {fraud7 ? `${fraud7} recientes con eventos.` : "Sin alertas recientes."}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-stone-100 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Anulados</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                  {showCompact(data.counts.attemptsAnnulled)}
+                </p>
+                <p className="mt-1 text-xs text-foreground/60">Intentos cerrados manualmente.</p>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-border/70 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Estados actuales</p>
+                  <p className="mt-1 text-sm text-foreground/65">Comparativo por categoria.</p>
+                </div>
+                <div className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                  {showCompact(data.counts.attemptsTotal)} totales
+                </div>
+              </div>
+              <div className="mt-4 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={attemptsStatusData} margin={{ top: 12, right: 8, left: -12, bottom: 0 }}>
+                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: CHART_COLORS.slate, fontSize: 11 }}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: CHART_COLORS.slate, fontSize: 12 }}
+                      tickFormatter={(value: number) => formatCompactNumber(Number(value))}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(109, 94, 246, 0.08)" }}
+                      contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
+                      formatter={(value: number) => [formatCompactNumber(Number(value)), "Intentos"]}
+                    />
+                    <Bar dataKey="value" radius={[12, 12, 0, 0]}>
+                      {attemptsStatusData.map((entry) => (
+                        <Cell key={entry.label} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
         </article>
 
-        <article className="zs-card p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-foreground/55">Workspaces Drive</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.driveWorkspacesTotal)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading ? "-" : `${formatCompactNumber(data.counts.sitesTotal)} sedes | ${formatCompactNumber(data.counts.shiftsTotal)} jornadas`}
-              </p>
+        <article className="zs-card overflow-hidden border-0 p-0">
+          <div className="bg-emerald-100 px-5 py-5 text-foreground">
+            <h2 className="text-xl font-semibold tracking-tight">Operacion activa</h2>
+            <p className="mt-1 text-sm text-foreground/60">Solo modulos con actividad visible en el panel.</p>
+          </div>
+
+          <div className="p-5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border/70 bg-muted/60 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Modulos visibles</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                  {loading ? "-" : activeModulesTotal}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/60 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Volumen acumulado</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                  {showCompact(activeModuleVolume)}
+                </p>
+              </div>
             </div>
-            <MiniSparkline values={data.activity14.values.slice(-10)} tone="indigo" />
+
+            <div className="mt-4 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={activeModulesChartData}
+                  layout="vertical"
+                  margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
+                >
+                  <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    allowDecimals={false}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: CHART_COLORS.slate, fontSize: 12 }}
+                    tickFormatter={(value: number) => formatCompactNumber(Number(value))}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    width={96}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: CHART_COLORS.slate, fontSize: 12 }}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "rgba(16, 185, 129, 0.08)" }}
+                    contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
+                    formatter={(value: number) => [formatCompactNumber(Number(value)), "Activos"]}
+                  />
+                  <Bar dataKey="value" radius={[0, 12, 12, 0]}>
+                    {activeModulesChartData.map((entry) => (
+                      <Cell key={entry.label} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {activeModulesChartData.map((item) => (
+                <div
+                  key={item.label}
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground/75"
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: item.fill }}
+                  />
+                  <span>{item.label}</span>
+                  <span className="font-semibold text-foreground">{showCompact(item.value)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </article>
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <article className="zs-card p-5 xl:col-span-2">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Estado de intentos</h2>
-          <p className="text-sm text-foreground/55">Resumen por estados y fraude.</p>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">En progreso</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsInProgress)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Enviados (todos)</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsSubmitted)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Fraude (enviado)</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsFraudSubmitted)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {fraud7 ? `${fraud7} con eventos` : "Sin eventos en recientes"}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Anulados</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsAnnulled)}
-              </p>
-            </div>
-          </div>
-        </article>
-
-        <article className="zs-card p-5">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Operación académica</h2>
-          <p className="text-sm text-foreground/55">Catálogos, carga horaria, Drive y base documental real.</p>
-
-          <div className="mt-4">
-            <Donut
-              items={[
-                { label: "Publicadas", value: data.counts.questionsPublished, tone: "emerald" },
-                { label: "Borrador", value: data.counts.questionsDraft, tone: "amber" },
-                { label: "Archivadas", value: data.counts.questionsArchived, tone: "zinc" },
-              ]}
-            />
+        <article className="zs-card overflow-hidden border-0 p-0 xl:col-span-2">
+          <div className="bg-fuchsia-100 px-5 py-5 text-foreground">
+            <h2 className="text-xl font-semibold tracking-tight">Top examenes</h2>
+            <p className="mt-1 text-sm text-foreground/60">Mayor traccion en los ultimos 7 dias.</p>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Materias</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.subjectsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Grupos CESDE</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.groupsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Fichas SENA</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.fichasTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Momentos</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.momentsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Sedes</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.sitesTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Jornadas</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.shiftsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Documentos activos</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.studyDocsActive)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Workspaces Drive</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.driveWorkspacesTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Carga horaria</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsTotal)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading ? "-" : `${formatHoursValue(data.counts.teachingHoursTotal)} h acumuladas`}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Exámenes publicados</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.publishedActive)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading ? "-" : `${formatCompactNumber(data.counts.templatesTotal)} plantillas`}
-              </p>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <article className="zs-card p-5">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Top exámenes (7 días)</h2>
-          <p className="text-sm text-foreground/55">Por cantidad de envíos y promedio de nota.</p>
           {data.topExams7.length ? (
-            <div className="mt-4 space-y-3">
-              {data.topExams7.map((row) => (
-                <div key={`${row.exam}-${row.group}`} className="rounded-xl border border-border bg-surface p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-foreground">{row.exam}</p>
-                      <p className="mt-0.5 truncate text-xs text-foreground/65">{row.group}</p>
+            <div className="p-5">
+              <div className="h-80 rounded-[24px] border border-border/70 bg-[#FCFAFD] p-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={topExamsChartData}
+                    layout="vertical"
+                    margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
+                  >
+                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: CHART_COLORS.slate, fontSize: 12 }}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="label"
+                      width={140}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: CHART_COLORS.slate, fontSize: 12 }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(109, 94, 246, 0.08)" }}
+                      contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
+                      formatter={(value: number, _name, item) => [
+                        `${formatCompactNumber(Number(value))} envios`,
+                        `${item.payload.avg} promedio`,
+                      ]}
+                      labelFormatter={(_label, payload) => {
+                        const row = payload?.[0]?.payload as
+                          | { fullLabel?: string; group?: string }
+                          | undefined;
+                        if (!row) return "";
+                        return `${row.fullLabel ?? ""} · ${row.group ?? ""}`;
+                      }}
+                    />
+                    <Bar dataKey="submissions" radius={[0, 12, 12, 0]} fill="#c5b4f2" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {data.topExams7.slice(0, 3).map((row, idx) => (
+                  <div
+                    key={`${row.exam}-${row.group}`}
+                    className="rounded-2xl border border-border/70 bg-white px-4 py-4 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                        TOP {idx + 1}
+                      </span>
+                      <span className="text-xs text-foreground/55">{row.avg}</span>
                     </div>
-                    <div className="text-right text-xs text-foreground/65">
+                    <p className="mt-3 truncate text-base font-semibold tracking-tight text-foreground">
+                      {row.exam}
+                    </p>
+                    <p className="mt-1 truncate text-sm text-foreground/60">{row.group}</p>
+                    <div className="mt-4 flex items-end justify-between gap-3">
                       <div>
-                        <span className="font-semibold text-foreground">{row.submissions}</span> envíos
+                        <p className="text-xs text-foreground/55">Envios</p>
+                        <p className="text-2xl font-semibold tracking-tight text-foreground">
+                          {row.submissions}
+                        </p>
                       </div>
-                      <div className="mt-1">{row.avg}</div>
+                      <div className="h-2 w-20 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-fuchsia-300"
+                          style={{ width: `${Math.min(100, row.submissions * 10)}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           ) : (
-            <div className="mt-4 zs-card-muted px-3 py-6 text-center text-sm text-foreground/55">
-              {loading ? "Cargando..." : "Aún no hay datos para top exámenes."}
+            <div className="p-5">
+              <div className="zs-card-muted px-3 py-10 text-center text-sm text-foreground/55">
+                {loading ? "Cargando..." : "Aun no hay datos para top examenes."}
+              </div>
             </div>
           )}
         </article>
 
-        <article className="zs-card p-5">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Últimos resultados</h2>
-          <p className="text-sm text-foreground/55">Vista rápida de envíos recientes.</p>
+        <article className="zs-card overflow-hidden border-0 p-0">
+          <div className="bg-cyan-100 px-5 py-5 text-foreground">
+            <h2 className="text-xl font-semibold tracking-tight">Distribucion de notas</h2>
+            <p className="mt-1 text-sm text-foreground/60">Lectura rapida por rangos de desempeno.</p>
+          </div>
+
+          <div className="p-5">
+            {gradeDistData.length ? (
+              <>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Tooltip
+                        contentStyle={{ borderRadius: 16, borderColor: CHART_COLORS.grid }}
+                        formatter={(value: number) => [formatCompactNumber(Number(value)), "Resultados"]}
+                      />
+                      <Pie
+                        data={gradeDistData}
+                        dataKey="value"
+                        nameKey="label"
+                        innerRadius={60}
+                        outerRadius={92}
+                        paddingAngle={3}
+                      >
+                        {gradeDistData.map((entry) => (
+                          <Cell key={entry.label} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {gradeDistData.map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex items-center justify-between rounded-2xl border border-border/70 bg-muted/50 px-3 py-3"
+                    >
+                      <div className="flex items-center gap-2 text-sm text-foreground/70">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: item.fill }}
+                        />
+                        <span>Rango {item.label}</span>
+                      </div>
+                      <span className="text-sm font-semibold text-foreground">{showCompact(item.value)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-border/70 bg-muted/50 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Promedio 7 dias</p>
+                    <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                      {avgGrade7 === null || loading ? "-" : `${showFixed(avgGrade7, 2)} / 5`}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-muted/50 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-foreground/55">Resultados procesados</p>
+                    <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+                      {showCompact(data.summary7.submittedAttempts)}
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="zs-card-muted px-3 py-10 text-center text-sm text-foreground/55">
+                {loading ? "Cargando..." : "Aun no hay notas para graficar."}
+              </div>
+            )}
+          </div>
+        </article>
+      </section>
+
+      <section className="zs-card overflow-hidden border-0 p-0">
+        <div className="bg-stone-100 px-5 py-5 text-foreground">
+          <h2 className="text-xl font-semibold tracking-tight">Ultimos resultados</h2>
+          <p className="mt-1 text-sm text-foreground/60">Vista rapida de envios recientes y su nivel de riesgo.</p>
+        </div>
+
+        <div className="p-5">
           {data.latestAttempts.length ? (
             <>
-              <div className="mt-4 space-y-3 sm:hidden">
+              <div className="grid gap-3 sm:hidden">
                 {data.latestAttempts.map((row) => (
                   <div
                     key={`${row.when}-${row.exam}-${row.student}`}
-                    className="rounded-xl border border-border bg-surface p-3 text-sm text-foreground/70"
+                    className="rounded-2xl border border-border/70 bg-white p-4 text-sm text-foreground/70 shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-foreground">{row.exam}</p>
                         <p className="mt-1 text-xs text-foreground/55">{row.status}</p>
                       </div>
-                      <span className="shrink-0 text-xs text-foreground/55">{row.when}</span>
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs text-foreground/60">
+                        {row.when}
+                      </span>
                     </div>
                     <p className="mt-3 truncate text-sm">{row.student}</p>
-                    <div className="mt-3 flex items-center justify-between text-xs">
-                      <span className="font-medium text-foreground">{row.grade}</span>
+                    <div className="mt-4 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-foreground">{row.grade}</span>
                       <span className={row.fraud > 0 ? "font-semibold text-amber-700" : "text-foreground/55"}>
                         Fraude: {row.fraud}
                       </span>
@@ -963,31 +1220,40 @@ export function DashboardView() {
                 ))}
               </div>
 
-              <div className="mt-4 hidden overflow-hidden rounded-xl border border-border bg-surface sm:block">
+              <div className="hidden overflow-hidden rounded-[24px] border border-border/70 bg-white sm:block">
                 <table className="w-full table-fixed text-left">
-                  <thead className="bg-muted">
-                    <tr className="text-xs text-foreground/55">
-                      <th className="w-[14%] px-3 py-2 font-medium">Fecha</th>
-                      <th className="w-[34%] px-3 py-2 font-medium">Examen</th>
-                      <th className="w-[28%] px-3 py-2 font-medium">Estudiante</th>
-                      <th className="w-[14%] px-3 py-2 font-medium">Nota</th>
-                      <th className="w-[10%] px-3 py-2 font-medium">Fraude</th>
+                  <thead className="bg-slate-50 text-xs text-foreground/55">
+                    <tr>
+                      <th className="w-[14%] px-4 py-3 font-medium">Fecha</th>
+                      <th className="w-[32%] px-4 py-3 font-medium">Examen</th>
+                      <th className="w-[26%] px-4 py-3 font-medium">Estudiante</th>
+                      <th className="w-[14%] px-4 py-3 font-medium">Nota</th>
+                      <th className="w-[14%] px-4 py-3 font-medium">Fraude</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.latestAttempts.map((row) => (
-                      <tr key={`${row.when}-${row.exam}-${row.student}`} className="border-t border-border/60 text-sm text-foreground/70">
-                        <td className="px-3 py-2 text-xs text-foreground/65">{row.when}</td>
-                        <td className="px-3 py-2">
+                      <tr
+                        key={`${row.when}-${row.exam}-${row.student}`}
+                        className="border-t border-border/60 text-sm text-foreground/72"
+                      >
+                        <td className="px-4 py-3 text-xs text-foreground/60">{row.when}</td>
+                        <td className="px-4 py-3">
                           <div className="truncate font-medium text-foreground">{row.exam}</div>
                           <div className="truncate text-xs text-foreground/55">{row.status}</div>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3">
                           <div className="truncate">{row.student}</div>
                         </td>
-                        <td className="px-3 py-2 font-medium text-foreground">{row.grade}</td>
-                        <td className="px-3 py-2">
-                          <span className={row.fraud > 0 ? "font-semibold text-amber-700" : "text-foreground/55"}>
+                        <td className="px-4 py-3 font-semibold text-foreground">{row.grade}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={
+                              row.fraud > 0
+                                ? "inline-flex rounded-full bg-amber-500/12 px-2.5 py-1 text-xs font-semibold text-amber-700"
+                                : "inline-flex rounded-full bg-muted px-2.5 py-1 text-xs text-foreground/60"
+                            }
+                          >
                             {row.fraud}
                           </span>
                         </td>
@@ -998,11 +1264,11 @@ export function DashboardView() {
               </div>
             </>
           ) : (
-            <div className="mt-4 zs-card-muted px-3 py-6 text-center text-sm text-foreground/55">
-              {loading ? "Cargando..." : "Aún no hay envíos para mostrar."}
+            <div className="zs-card-muted px-3 py-10 text-center text-sm text-foreground/55">
+              {loading ? "Cargando..." : "Aun no hay envios para mostrar."}
             </div>
           )}
-        </article>
+        </div>
       </section>
     </div>
   );

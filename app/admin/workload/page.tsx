@@ -41,6 +41,7 @@ type CatalogItem = { id: string; name: string };
 type TeachingLoadRow = {
   id: string;
   institution: "CESDE" | "SENA" | string;
+  cesdeGroupType: "REGULAR" | "EMPRESARIAL" | string;
   period: string;
   subjectId: string;
   subjectName: string;
@@ -69,6 +70,7 @@ type TeachingLoadRow = {
 
 type TeachingLoadForm = {
   institution: "CESDE" | "SENA";
+  cesdeGroupType: "REGULAR" | "EMPRESARIAL";
   period: string;
   subjectId: string;
   audienceId: string;
@@ -76,6 +78,8 @@ type TeachingLoadForm = {
   shiftId: string;
   startDate: string;
   endDate: string;
+  dayOfWeek1: string;
+  dayOfWeek2: string;
   startTime: string;
   endTime: string;
   classroom: string;
@@ -93,6 +97,7 @@ type WorkloadFilters = {
 
 const EMPTY_FORM: TeachingLoadForm = {
   institution: "CESDE",
+  cesdeGroupType: "REGULAR",
   period: periodFromDate(isoDate(new Date())),
   subjectId: "",
   audienceId: "",
@@ -100,6 +105,8 @@ const EMPTY_FORM: TeachingLoadForm = {
   shiftId: "",
   startDate: "",
   endDate: "",
+  dayOfWeek1: "",
+  dayOfWeek2: "",
   startTime: "",
   endTime: "",
   classroom: "",
@@ -124,9 +131,15 @@ function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+function normalizeCesdeGroupType(value: unknown) {
+  return toString(value, "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
+}
+
 function sortByName(items: CatalogItem[]) {
   return [...items].sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
+
+const WEEK_DAY_OPTIONS = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"] as const;
 
 function formatDateRange(startDate: string, endDate: string) {
   if (!startDate && !endDate) return "Sin fechas";
@@ -388,6 +401,7 @@ export default function AdminWorkloadPage() {
           return {
             id: d.id,
             institution,
+            cesdeGroupType: normalizeCesdeGroupType(row.cesdeGroupType),
             period: toString(row.period, periodFromDate(startDate)),
             subjectId: toString(row.subjectId, ""),
             subjectName: toString(row.subjectName, ""),
@@ -608,6 +622,7 @@ export default function AdminWorkloadPage() {
     setEditingId(row.id);
     setForm({
       institution: (row.institution?.toUpperCase() === "SENA" ? "SENA" : "CESDE") as "CESDE" | "SENA",
+      cesdeGroupType: normalizeCesdeGroupType(row.cesdeGroupType),
       period: row.period || periodFromDate(row.startDate),
       subjectId: row.subjectId,
       audienceId: row.audienceId,
@@ -615,6 +630,8 @@ export default function AdminWorkloadPage() {
       shiftId: row.shiftId,
       startDate: row.startDate,
       endDate: row.endDate,
+      dayOfWeek1: row.dayOfWeek1 || dayNameFromIsoDate(row.startDate) || "",
+      dayOfWeek2: row.dayOfWeek2 || "",
       startTime: row.startTime,
       endTime: row.endTime,
       classroom: row.classroom,
@@ -632,7 +649,16 @@ export default function AdminWorkloadPage() {
   function updateField<K extends keyof TeachingLoadForm>(key: K, value: TeachingLoadForm[K]) {
     setForm((prev) => {
       const next = { ...prev, [key]: value };
-      if (key === "institution") next.audienceId = "";
+      if (key === "institution") {
+        next.audienceId = "";
+        if (value === "SENA") {
+          next.cesdeGroupType = "REGULAR";
+          next.dayOfWeek2 = "";
+        }
+      }
+      if (key === "cesdeGroupType" && value === "REGULAR") {
+        next.dayOfWeek2 = "";
+      }
       if (key === "startDate" && !prev.period.trim()) next.period = periodFromDate(String(value));
       return next;
     });
@@ -641,13 +667,16 @@ export default function AdminWorkloadPage() {
   async function createOrLinkDriveForRow(args: {
     loadId: string;
     institution: "CESDE" | "SENA";
+    cesdeGroupType: "REGULAR" | "EMPRESARIAL";
     period: string;
     subjectId: string;
     audienceId: string;
     siteName: string;
     shiftName: string;
     startDate: string;
+    endDate: string;
     dayOfWeek1: string;
+    dayOfWeek2: string;
   }) {
     const user = firebaseAuth.currentUser;
     if (!user) {
@@ -663,14 +692,16 @@ export default function AdminWorkloadPage() {
         workspaceId,
         sourceTeachingLoadId: args.loadId,
         institution: args.institution,
+        cesdeGroupType: args.cesdeGroupType,
         subjectId: args.subjectId,
         groupId: args.audienceId,
         period: args.period,
         campus: args.siteName,
         jornada: args.shiftName,
         dayOfWeek1: args.dayOfWeek1,
-        dayOfWeek2: "",
+        dayOfWeek2: args.dayOfWeek2,
         startDate: args.startDate,
+        endDate: args.endDate,
       }),
     });
 
@@ -748,10 +779,20 @@ export default function AdminWorkloadPage() {
       setError("Debes ingresar el salón.");
       return;
     }
+    const cesdeGroupType = form.institution === "CESDE" ? form.cesdeGroupType : "REGULAR";
     const academicHours = roundHours(durationMinutes / (form.institution === "CESDE" ? 45 : 60));
-    const dayOfWeek1 = dayNameFromIsoDate(form.startDate);
+    const dayOfWeek1 =
+      form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL"
+        ? form.dayOfWeek1.trim()
+        : dayNameFromIsoDate(form.startDate) || "";
     if (!dayOfWeek1) {
       setError("No fue posible resolver el día principal de la carga.");
+      return;
+    }
+    const dayOfWeek2 =
+      form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" ? form.dayOfWeek2.trim() : "";
+    if (form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
+      setError("El segundo día no puede ser igual al primero.");
       return;
     }
 
@@ -761,6 +802,7 @@ export default function AdminWorkloadPage() {
     try {
       const payload = {
         institution: form.institution,
+        cesdeGroupType: form.institution === "CESDE" ? cesdeGroupType : "",
         period,
         subjectId: subject.id,
         subjectName: subject.name,
@@ -779,7 +821,7 @@ export default function AdminWorkloadPage() {
         durationMinutes,
         academicHours,
         dayOfWeek1,
-        dayOfWeek2: "",
+        dayOfWeek2,
         active: true,
         updatedAt: serverTimestamp(),
       };
@@ -818,13 +860,16 @@ export default function AdminWorkloadPage() {
           const driveResult = await createOrLinkDriveForRow({
             loadId: savedId,
             institution: form.institution,
+            cesdeGroupType,
             period,
             subjectId: subject.id,
             audienceId: audience.id,
             siteName: site.name,
             shiftName: shift.name,
             startDate: form.startDate,
+            endDate: form.endDate,
             dayOfWeek1,
+            dayOfWeek2,
           });
           await updateDoc(doc(firestore, "teachingLoads", savedId), {
             driveWorkspaceId: driveResult.workspaceId,
@@ -1026,6 +1071,11 @@ export default function AdminWorkloadPage() {
                       <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/75">
                         {row.audienceType === "ficha" ? `Ficha ${row.audienceName}` : row.audienceName}
                       </span>
+                      {row.institution === "CESDE" ? (
+                        <span className="inline-flex rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-700">
+                          {row.cesdeGroupType === "EMPRESARIAL" ? "CESDE empresarial" : "CESDE regular"}
+                        </span>
+                      ) : null}
                       <span className="inline-flex rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-medium text-foreground/70">
                         {row.period || "SIN PERIODO"}
                       </span>
@@ -1056,7 +1106,7 @@ export default function AdminWorkloadPage() {
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <CalendarDays className="h-3.5 w-3.5" />
-                        {row.dayOfWeek1 || "Sin día"}
+                        {row.dayOfWeek2 ? `${row.dayOfWeek1} y ${row.dayOfWeek2}` : row.dayOfWeek1 || "Sin día"}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <DoorOpen className="h-3.5 w-3.5" />
@@ -1375,6 +1425,20 @@ export default function AdminWorkloadPage() {
               </select>
             </label>
 
+            {form.institution === "CESDE" ? (
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-foreground">Tipo de grupo CESDE</span>
+                <select
+                  value={form.cesdeGroupType}
+                  onChange={(e) => updateField("cesdeGroupType", e.target.value as "REGULAR" | "EMPRESARIAL")}
+                  className="zs-input"
+                >
+                  <option value="REGULAR">Regular</option>
+                  <option value="EMPRESARIAL">Empresarial</option>
+                </select>
+              </label>
+            ) : null}
+
             <label className="space-y-2">
               <span className="text-sm font-medium text-foreground">Fecha de inicio</span>
               <input type="date" value={form.startDate} onChange={(e) => updateField("startDate", e.target.value)} className="zs-input" />
@@ -1405,6 +1469,42 @@ export default function AdminWorkloadPage() {
                 className="zs-input"
               />
             </label>
+
+            {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL" ? (
+              <>
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-foreground">Día 1</span>
+                  <select value={form.dayOfWeek1} onChange={(e) => updateField("dayOfWeek1", e.target.value)} className="zs-input">
+                    <option value="">Selecciona día</option>
+                    {WEEK_DAY_OPTIONS.map((day) => (
+                      <option key={day} value={day}>
+                        {day}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-foreground">Día 2 (opcional)</span>
+                  <select value={form.dayOfWeek2} onChange={(e) => updateField("dayOfWeek2", e.target.value)} className="zs-input">
+                    <option value="">Sin segundo día</option>
+                    {WEEK_DAY_OPTIONS.map((day) => (
+                      <option key={day} value={day}>
+                        {day}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-border bg-surface px-4 py-3 text-xs text-foreground/65">
+            {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL"
+              ? "CESDE empresarial: define fecha de inicio, fecha de fin y hasta 2 días por semana. Drive generará sesiones por fechas reales dentro de ese rango."
+              : form.institution === "CESDE"
+                ? "CESDE regular: se conserva la lógica estándar del encarpetado por semanas."
+                : "SENA: se conserva la lógica estándar actual del módulo y del encarpetado."}
           </div>
 
           <div className="mt-5 grid gap-3 rounded-2xl border border-border bg-surface px-4 py-4 md:grid-cols-4">
@@ -1440,7 +1540,13 @@ export default function AdminWorkloadPage() {
             </div>
             <div className="flex items-center gap-2 text-sm text-foreground/70">
               <CalendarDays className="h-4 w-4" />
-              <span>{dayNameFromIsoDate(form.startDate) || "Día principal"}</span>
+              <span>
+                {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL"
+                  ? form.dayOfWeek2
+                    ? `${form.dayOfWeek1 || "Día 1"} y ${form.dayOfWeek2}`
+                    : form.dayOfWeek1 || "Día principal"
+                  : dayNameFromIsoDate(form.startDate) || "Día principal"}
+              </span>
             </div>
             <div className="flex items-center gap-2 text-sm text-foreground/70 md:col-span-2">
               <Clock3 className="h-4 w-4" />
@@ -1451,6 +1557,12 @@ export default function AdminWorkloadPage() {
                   : ""}
               </span>
             </div>
+            {form.institution === "CESDE" ? (
+              <div className="flex items-center gap-2 text-sm text-foreground/70">
+                <Group className="h-4 w-4" />
+                <span>{form.cesdeGroupType === "EMPRESARIAL" ? "CESDE empresarial" : "CESDE regular"}</span>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">

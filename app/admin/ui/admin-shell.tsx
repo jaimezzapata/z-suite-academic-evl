@@ -9,7 +9,6 @@ import {
   Activity,
   BarChart3,
   Bot,
-  BookOpen,
   CalendarDays,
   Folder,
   LayoutDashboard,
@@ -37,8 +36,6 @@ const navItems: NavEntry[] = [
   { type: "link", label: "Examenes", href: "/admin/templates", hint: "Creacion y control", icon: ClipboardList },
   { type: "link", label: "Carga horaria", href: "/admin/workload", hint: "Horarios por institución", icon: CalendarDays },
   { type: "link", label: "Drive", href: "/admin/drive", hint: "Archivos y estructura", icon: Folder },
-  { type: "link", label: "Documentación", href: "/admin/documentation", hint: "Publicaciones por materia", icon: BookOpen },
-  { type: "link", label: "Grupos", href: "/admin/groups", hint: "Cuadernillos y grupos", icon: FileText },
   { type: "link", label: "Activos", href: "/admin/live", hint: "Codigos y monitoreo", icon: Activity },
   { type: "link", label: "Resultados", href: "/admin/results", hint: "Notas y exportaciones", icon: BarChart3 },
   { type: "section", label: "Ajustes" },
@@ -139,11 +136,9 @@ function Sidebar({
 export function AdminShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
-  console.log("[AdminShell] pathname:", pathname);
   const router = useRouter();
   const { user, logout } = useAuth();
   const activeItem = useMemo(() => getActiveNavItem(pathname), [pathname]);
-  console.log("[AdminShell] activeItem:", activeItem);
 
   const userName = user?.displayName || "Administrador";
   const userEmail = user?.email || "sin-correo";
@@ -182,33 +177,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </button>
 
               <div className="min-w-0 flex items-center gap-3">
-                {(() => {
-                  console.log("[AdminShell Render] activeItem:", activeItem);
-                  if (activeItem) {
-                    const Icon = activeItem.icon;
-                    console.log("[AdminShell Render] Icon:", Icon);
-                    return (
-                      <>
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-foreground">{activeItem.label}</p>
-                          <p className="truncate text-xs text-foreground/55">{activeItem.hint}</p>
-                        </div>
-                      </>
-                    );
-                  } else {
-                    return (
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">Control de examenes</p>
-                        <p className="truncate text-xs text-foreground/55">
-                          Monitorea actividad, resultados y estado general de la plataforma
-                        </p>
-                      </div>
-                    );
-                  }
-                })()}
+                {activeItem ? (
+                  <>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <activeItem.icon className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{activeItem.label}</p>
+                      <p className="truncate text-xs text-foreground/55">{activeItem.hint}</p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">Control de examenes</p>
+                    <p className="truncate text-xs text-foreground/55">
+                      Monitorea actividad, resultados y estado general de la plataforma
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-3">

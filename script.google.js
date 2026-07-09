@@ -1,7 +1,3 @@
-/**
- * Z-SUITE - Lógica del Servidor (Reglas Institucionales Estrictas)
- */
-
 function doGet() {
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
@@ -46,7 +42,7 @@ function obtenerEstructuraDrive(data) {
     while (weekFolders.hasNext()) {
       const folder = weekFolders.next();
       const name = folder.getName();
-      const match = name.match(/^Semana\s+(\d{2})/i);
+      const match = name.match(/^(?:Semana|Sesion|Clase)\s+(\d{2})/i);
       const weekNumber = match ? parseInt(match[1], 10) : null;
       weeks.push({ weekNumber, folderName: name, folderId: folder.getId(), folderUrl: folder.getUrl() });
     }
@@ -83,16 +79,18 @@ function crearEstructuraDrive(data) {
     const periodCode = data.periodCode.toUpperCase();
     const subjectName = data.subjectName.trim();
     const cohortCode = data.cohortCode.trim();
+    const cesdeGroupType = normalizarTipoGrupoCesde(data.cesdeGroupType);
     const day1 = data.dayOfWeek1.trim();
-    const day2 = data.dayOfWeek2.trim(); // Puede venir vacío si es solo 1 día
+    const day2 = data.dayOfWeek2.trim(); 
     const jornada = data.jornada.trim();
     const sede = data.sede.trim();
     const startDateStr = data.startDate;
+    const endDateStr = String(data.endDate ?? "").trim();
 
     const totalWeeks = (institution === "CESDE") ? 18 : 11;
     const daysText = day2 ? `${day1} y ${day2}` : day1;
+    const isCesdeEmpresarial = institution === "CESDE" && cesdeGroupType === "EMPRESARIAL";
 
-    // 1. Acceder a la Carpeta Raíz
     let rootFolder;
     try {
       rootFolder = DriveApp.getFolderById(rootFolderId);
@@ -100,27 +98,26 @@ function crearEstructuraDrive(data) {
       throw new Error("No se pudo acceder a la carpeta raíz. Verifica el ID.");
     }
 
-    // 2. Jerarquía Principal
     const instFolder = getOrCreateSubFolder(rootFolder, institution);
     const yearFolder = getOrCreateSubFolder(instFolder, year.toString());
     const periodFolder = getOrCreateSubFolder(yearFolder, periodCode);
+    const modeFolder =
+      institution === "CESDE"
+        ? getOrCreateSubFolder(periodFolder, isCesdeEmpresarial ? "Empresarial" : "Regular")
+        : periodFolder;
 
-    // 3. Crear Clase
     const className = (institution === "SENA")
       ? `${cohortCode} - ${subjectName} (${daysText} - ${jornada} - ${sede})`
       : `${subjectName} - ${cohortCode} (${daysText} - ${jornada} - ${sede})`;
     
-    const classFolder = periodFolder.createFolder(className);
+    const classFolder = modeFolder.createFolder(className);
 
-    // 4. Privada y Pública (Ahora con el nombre de la materia)
     const privateFolder = classFolder.createFolder("01. Privada");
     const publicFolder = classFolder.createFolder(subjectName);
     publicFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-    // 5. Motor de Fechas y Semanas (Standard +7 días)
     let currentDate = new Date(startDateStr + "T00:00:00");
     
-    // Calcular Lunes Santo y Domingo de Resurrección para el año actual
     const easterSunday = calcularDomingoPascua(year);
     const holyMonday = new Date(easterSunday.getTime());
     holyMonday.setDate(easterSunday.getDate() - 6);
@@ -128,40 +125,52 @@ function crearEstructuraDrive(data) {
     const isFirstPeriod = (periodCode === "01" || periodCode === "T1");
     const weeksLog = [];
 
-    for (let i = 1; i <= totalWeeks; i++) {
-      
-      // REGLA: Si es el primer periodo y la fecha cae en Semana Santa, saltamos esa semana
-      if (isFirstPeriod && currentDate >= holyMonday && currentDate <= easterSunday) {
-        currentDate.setDate(currentDate.getDate() + 7); // Añadimos 7 días de salto temporal
+    if (isCesdeEmpresarial) {
+      const sessionDates = obtenerFechasEmpresariales(startDateStr, endDateStr, day1, day2);
+      if (!sessionDates.length) {
+        throw new Error("No hay fechas válidas dentro del rango para los días seleccionados.");
       }
 
-      let dateFormatted = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
-      
-      let milestoneText = "";
-      if (institution === "CESDE") {
-        if (i === 6) milestoneText = " - Evidencia de Desempeño";
-        else if (i === 12) milestoneText = " - Evidencia de Producto";
-        else if (i === 17) milestoneText = " - Evidencia Final";
-      } else if (institution === "SENA") {
-        if (i === 3) milestoneText = " - Entregable 1";
-        else if (i === 6) milestoneText = " - Entregable 2";
-        else if (i === 9) milestoneText = " - Entregable 3";
+      for (let i = 0; i < sessionDates.length; i++) {
+        const sessionDate = sessionDates[i];
+        const sessionNumber = i + 1;
+        const dateFormatted = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
+        const sessionFolderName = `Sesion ${sessionNumber < 10 ? '0' + sessionNumber : sessionNumber} (${dateFormatted})`;
+        publicFolder.createFolder(sessionFolderName);
+        weeksLog.push({ weekNumber: sessionNumber, folderName: sessionFolderName });
       }
+    } else {
+      for (let i = 1; i <= totalWeeks; i++) {
+        
+        if (isFirstPeriod && currentDate >= holyMonday && currentDate <= easterSunday) {
+          currentDate.setDate(currentDate.getDate() + 7); 
+        }
 
-      let weekFolderName = `Semana ${i < 10 ? '0' + i : i}${milestoneText} (${dateFormatted})`;
-      publicFolder.createFolder(weekFolderName);
-      
-      weeksLog.push({ weekNumber: i, folderName: weekFolderName });
+        let dateFormatted = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
+        
+        let milestoneText = "";
+        if (institution === "CESDE") {
+          if (i === 6 || i === 12 || i === 17) milestoneText = " - Recolección de evidencias";
+        } else if (institution === "SENA") {
+          if (i === 3) milestoneText = " - Entregable 1";
+          else if (i === 6) milestoneText = " - Entregable 2";
+          else if (i === 9) milestoneText = " - Entregable 3";
+        }
 
-      // Avanzar siempre 7 días constantes para la próxima semana
-      currentDate.setDate(currentDate.getDate() + 7);
+        let weekFolderName = `Semana ${i < 10 ? '0' + i : i}${milestoneText} (${dateFormatted})`;
+        publicFolder.createFolder(weekFolderName);
+        
+        weeksLog.push({ weekNumber: i, folderName: weekFolderName });
+
+        currentDate.setDate(currentDate.getDate() + 7);
+      }
     }
 
 return {
   status: "success",
   publicFolderId: publicFolder.getId(),
   publicFolderUrl: publicFolder.getUrl(),
-  message: "¡Estructura académica de 18/11 semanas creada con éxito!"
+  message: "¡Estructura académica creada con éxito!"
 };
 
   } catch (error) {
@@ -171,7 +180,7 @@ return {
   }
 }
 
-// Helper: Buscar o crear carpeta
+
 function getOrCreateSubFolder(parentFolder, folderName) {
   const subFolders = parentFolder.getFolders();
   while (subFolders.hasNext()) {
@@ -181,14 +190,82 @@ function getOrCreateSubFolder(parentFolder, folderName) {
   return parentFolder.createFolder(folderName);
 }
 
-// Helper: Algoritmo "Computus" para calcular el Domingo de Pascua (Semana Santa)
+function normalizarTipoGrupoCesde(value) {
+  return String(value || "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
+}
+
+function parseIsoDate(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10) - 1;
+  const day = parseInt(match[3], 10);
+  return new Date(year, month, day);
+}
+
+function normalizarDiaSemana(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function diaSemanaToNumero(value) {
+  const normalized = normalizarDiaSemana(value);
+  const mapping = {
+    domingo: 0,
+    lunes: 1,
+    martes: 2,
+    miercoles: 3,
+    jueves: 4,
+    viernes: 5,
+    sabado: 6,
+  };
+  return Object.prototype.hasOwnProperty.call(mapping, normalized) ? mapping[normalized] : null;
+}
+
+function obtenerFechasEmpresariales(startDateStr, endDateStr, day1, day2) {
+  const startDate = parseIsoDate(startDateStr);
+  const endDate = parseIsoDate(endDateStr);
+  if (!startDate || !endDate) throw new Error("Las fechas de inicio y fin son obligatorias para CESDE empresarial.");
+  if (endDate.getTime() < startDate.getTime()) throw new Error("La fecha de fin no puede ser menor que la fecha de inicio.");
+
+  const allowedDays = {};
+  const day1Number = diaSemanaToNumero(day1);
+  if (day1Number === null) throw new Error("El primer día de clase no es válido.");
+  allowedDays[day1Number] = true;
+
+  if (day2) {
+    const day2Number = diaSemanaToNumero(day2);
+    if (day2Number === null) throw new Error("El segundo día de clase no es válido.");
+    allowedDays[day2Number] = true;
+  }
+
+  const sessions = [];
+  const current = new Date(startDate.getTime());
+  current.setHours(0, 0, 0, 0);
+  endDate.setHours(0, 0, 0, 0);
+
+  while (current.getTime() <= endDate.getTime()) {
+    if (allowedDays[current.getDay()]) {
+      sessions.push(new Date(current.getTime()));
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return sessions;
+}
+
+
 function calcularDomingoPascua(year) {
   const a = year % 19, b = Math.floor(year / 100), c = year % 100;
   const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
   const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
   const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
   const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1; // 0 indexado para JS
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
   const day = ((h + l - 7 * m + 114) % 31) + 1;
   return new Date(year, month, day);
 }

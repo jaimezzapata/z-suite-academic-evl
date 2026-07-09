@@ -11,6 +11,7 @@ type CatalogItem = { id: string; name: string };
 type DriveWorkspaceRow = {
   id: string;
   institution: string;
+  cesdeGroupType: "REGULAR" | "EMPRESARIAL" | string;
   subjectId: string;
   subjectName: string;
   groupId: string;
@@ -22,6 +23,7 @@ type DriveWorkspaceRow = {
   dayOfWeek2: string;
   weekCount: number;
   startDate: string;
+  endDate: string;
   year: number;
   periodCode: string;
   health?: { broken?: boolean; issues?: unknown[]; lastCheckedAt?: unknown };
@@ -51,12 +53,19 @@ function toNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function normalizeCesdeGroupType(value: unknown) {
+  return toString(value, "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
+}
+
+const WEEK_DAY_OPTIONS = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"] as const;
+
 function toWorkspaceRow(id: string, data: Record<string, unknown>): DriveWorkspaceRow {
   const drive = (data.drive as Record<string, unknown> | undefined) ?? {};
   const health = (data.health as Record<string, unknown> | undefined) ?? undefined;
   return {
     id,
     institution: toString(data.institution, ""),
+    cesdeGroupType: normalizeCesdeGroupType(data.cesdeGroupType),
     subjectId: toString(data.subjectId, ""),
     subjectName: toString(data.subjectName, toString(data.subjectId, id)),
     groupId: toString(data.groupId, ""),
@@ -68,6 +77,7 @@ function toWorkspaceRow(id: string, data: Record<string, unknown>): DriveWorkspa
     dayOfWeek2: toString(data.dayOfWeek2, ""),
     weekCount: toNumber(data.weekCount, 0),
     startDate: toString(data.startDate, ""),
+    endDate: toString(data.endDate, ""),
     year: toNumber(data.year, 0),
     periodCode: toString(data.periodCode, ""),
     health: health
@@ -98,6 +108,11 @@ function formatDays(day1: string, day2: string) {
   return day1 || "-";
 }
 
+function formatDateRange(startDate: string, endDate: string) {
+  if (startDate && endDate) return `${startDate} -> ${endDate}`;
+  return startDate || endDate || "-";
+}
+
 export function DriveDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +126,7 @@ export function DriveDashboard() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [institution, setInstitution] = useState<"CESDE" | "SENA">("CESDE");
+  const [cesdeGroupType, setCesdeGroupType] = useState<"REGULAR" | "EMPRESARIAL">("REGULAR");
   const [subjectId, setSubjectId] = useState("");
   const [groupId, setGroupId] = useState("");
   const [period, setPeriod] = useState("2026-01");
@@ -119,6 +135,7 @@ export function DriveDashboard() {
   const [dayOfWeek1, setDayOfWeek1] = useState("Lunes");
   const [dayOfWeek2, setDayOfWeek2] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -217,14 +234,33 @@ export function DriveDashboard() {
   }, [selectedWorkspaceId, refreshTick]);
 
   const canCreate = useMemo(() => {
-    return Boolean(subjectId && groupId && period.trim() && campus.trim() && jornada.trim() && dayOfWeek1.trim() && startDate.trim());
-  }, [campus, dayOfWeek1, groupId, jornada, period, startDate, subjectId]);
+    if (!subjectId || !groupId || !period.trim() || !campus.trim() || !jornada.trim() || !dayOfWeek1.trim() || !startDate.trim()) {
+      return false;
+    }
+    if (institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && !endDate.trim()) return false;
+    return true;
+  }, [campus, cesdeGroupType, dayOfWeek1, endDate, groupId, institution, jornada, period, startDate, subjectId]);
 
   async function createStructure() {
     const user = firebaseAuth.currentUser;
     if (!user) {
       setCreateError("Debes iniciar sesion como admin.");
       return;
+    }
+
+    if (institution === "CESDE" && cesdeGroupType === "EMPRESARIAL") {
+      if (!endDate.trim()) {
+        setCreateError("Para CESDE empresarial debes indicar la fecha de fin.");
+        return;
+      }
+      if (endDate < startDate) {
+        setCreateError("La fecha de fin no puede ser menor que la fecha de inicio.");
+        return;
+      }
+      if (dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
+        setCreateError("El segundo día no puede ser igual al primero.");
+        return;
+      }
     }
 
     setCreating(true);
@@ -236,6 +272,7 @@ export function DriveDashboard() {
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
         body: JSON.stringify({
           institution,
+          cesdeGroupType,
           subjectId,
           groupId,
           period,
@@ -244,6 +281,7 @@ export function DriveDashboard() {
           dayOfWeek1,
           dayOfWeek2,
           startDate,
+          endDate,
         }),
       });
       const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
@@ -368,6 +406,11 @@ export function DriveDashboard() {
             type="button"
             onClick={() => {
               setCreateError(null);
+              setCesdeGroupType("REGULAR");
+              setDayOfWeek1("Lunes");
+              setDayOfWeek2("");
+              setStartDate("");
+              setEndDate("");
               setCreateOpen(true);
             }}
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
@@ -468,10 +511,19 @@ export function DriveDashboard() {
                     <p className="mt-1 text-xs text-zinc-500">
                       {workspace.institution} · {workspace.period} · {workspace.campus}
                     </p>
+                    {workspace.institution === "CESDE" ? (
+                      <p className="mt-1">
+                        <span className="inline-flex rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-700">
+                          {workspace.cesdeGroupType === "EMPRESARIAL" ? "CESDE empresarial" : "CESDE regular"}
+                        </span>
+                      </p>
+                    ) : null}
                     <p className="mt-1 text-xs text-zinc-500">
                       {formatDays(workspace.dayOfWeek1, workspace.dayOfWeek2)} · {workspace.jornada}
                     </p>
-                    <p className="mt-1 text-xs text-zinc-500">{workspace.weekCount} semanas</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {workspace.weekCount} {workspace.institution === "CESDE" && workspace.cesdeGroupType === "EMPRESARIAL" ? "sesiones" : "semanas"}
+                    </p>
                     {workspace.health?.broken ? (
                       <p className="mt-2 inline-flex rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
                         Requiere sincronizacion
@@ -578,7 +630,12 @@ export function DriveDashboard() {
                 {selectedWorkspace.institution} · {selectedWorkspace.period} · {selectedWorkspace.campus} ·{" "}
                 {formatDays(selectedWorkspace.dayOfWeek1, selectedWorkspace.dayOfWeek2)} · {selectedWorkspace.jornada}
               </p>
-              <p className="mt-1 text-sm text-zinc-600">Inicio: {selectedWorkspace.startDate || "-"}</p>
+              {selectedWorkspace.institution === "CESDE" ? (
+                <p className="mt-1 text-sm text-zinc-600">
+                  Tipo: {selectedWorkspace.cesdeGroupType === "EMPRESARIAL" ? "Empresarial" : "Regular"}
+                </p>
+              ) : null}
+              <p className="mt-1 text-sm text-zinc-600">Fechas: {formatDateRange(selectedWorkspace.startDate, selectedWorkspace.endDate)}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {selectedWorkspace.drive.groupFolderUrl ? (
                   <a
@@ -707,6 +764,11 @@ export function DriveDashboard() {
                         const next = event.target.value === "SENA" ? "SENA" : "CESDE";
                         setInstitution(next);
                         setGroupId("");
+                        if (next === "SENA") {
+                          setCesdeGroupType("REGULAR");
+                          setDayOfWeek2("");
+                          setEndDate("");
+                        }
                       }}
                       className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                     >
@@ -730,6 +792,27 @@ export function DriveDashboard() {
                       ))}
                     </select>
                   </label>
+
+                  {institution === "CESDE" ? (
+                    <label className="grid gap-1">
+                      <span className="text-xs font-semibold text-zinc-700">Tipo de grupo CESDE</span>
+                      <select
+                        value={cesdeGroupType}
+                        onChange={(event) => {
+                          const next = event.target.value === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
+                          setCesdeGroupType(next);
+                          if (next === "REGULAR") {
+                            setDayOfWeek2("");
+                            setEndDate("");
+                          }
+                        }}
+                        className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                      >
+                        <option value="REGULAR">Regular</option>
+                        <option value="EMPRESARIAL">Empresarial</option>
+                      </select>
+                    </label>
+                  ) : null}
 
                   <label className="grid gap-1">
                     <span className="text-xs font-semibold text-zinc-700">{institution === "SENA" ? "Ficha" : "Grupo"}</span>
@@ -792,12 +875,11 @@ export function DriveDashboard() {
                       onChange={(event) => setDayOfWeek1(event.target.value)}
                       className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                     >
-                      <option value="Lunes">Lunes</option>
-                      <option value="Martes">Martes</option>
-                      <option value="Miercoles">Miercoles</option>
-                      <option value="Jueves">Jueves</option>
-                      <option value="Viernes">Viernes</option>
-                      <option value="Sabado">Sabado</option>
+                      {WEEK_DAY_OPTIONS.map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      ))}
                     </select>
                   </label>
 
@@ -807,18 +889,18 @@ export function DriveDashboard() {
                       value={dayOfWeek2}
                       onChange={(event) => setDayOfWeek2(event.target.value)}
                       className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                      disabled={institution !== "CESDE" || cesdeGroupType !== "EMPRESARIAL"}
                     >
                       <option value="">Sin segundo dia</option>
-                      <option value="Lunes">Lunes</option>
-                      <option value="Martes">Martes</option>
-                      <option value="Miercoles">Miercoles</option>
-                      <option value="Jueves">Jueves</option>
-                      <option value="Viernes">Viernes</option>
-                      <option value="Sabado">Sabado</option>
+                      {WEEK_DAY_OPTIONS.map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      ))}
                     </select>
                   </label>
 
-                  <label className="grid gap-1 sm:col-span-2">
+                  <label className={`grid gap-1 ${institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" ? "" : "sm:col-span-2"}`}>
                     <span className="text-xs font-semibold text-zinc-700">Fecha inicio</span>
                     <input
                       type="date"
@@ -827,6 +909,24 @@ export function DriveDashboard() {
                       className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
                     />
                   </label>
+
+                  {institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" ? (
+                    <label className="grid gap-1">
+                      <span className="text-xs font-semibold text-zinc-700">Fecha fin</span>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(event) => setEndDate(event.target.value)}
+                        className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-600">
+                  {institution === "CESDE" && cesdeGroupType === "EMPRESARIAL"
+                    ? "CESDE empresarial: se crearán sesiones por fechas reales dentro del rango seleccionado, según 1 o 2 días a la semana."
+                    : "CESDE regular y SENA: se conserva la lógica estándar de semanas del Apps Script."}
                 </div>
               </div>
 

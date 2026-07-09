@@ -3,28 +3,7 @@
 import { useMemo, useState } from "react";
 import { Trash2, CheckCircle2 } from "lucide-react";
 import { firebaseAuth } from "@/lib/firebase/client";
-
-type CollectionItem = {
-  name: string;
-  label: string;
-  description: string;
-  tone: "neutral" | "danger";
-};
-
-const COLLECTIONS: CollectionItem[] = [
-  { name: "attempts", label: "Intentos", description: "Resultados e intentos de exámenes", tone: "danger" },
-  { name: "publishedExams", label: "Exámenes publicados", description: "Publicaciones/códigos de examen", tone: "danger" },
-  { name: "examTemplates", label: "Plantillas de examen", description: "Estructura y configuración de exámenes", tone: "danger" },
-  { name: "questions", label: "Banco de preguntas", description: "Preguntas y sus metadatos", tone: "danger" },
-  { name: "studyDocs", label: "Documentación", description: "Cuadernillos y capítulos (entries/revisions)", tone: "danger" },
-  { name: "subjects", label: "Materias", description: "Catálogo de materias", tone: "neutral" },
-  { name: "groups", label: "Grupos (CESDE)", description: "Catálogo de grupos", tone: "neutral" },
-  { name: "fichas", label: "Fichas (SENA)", description: "Catálogo de fichas (7–9 dígitos)", tone: "neutral" },
-  { name: "sites", label: "Sedes", description: "Catálogo de sedes", tone: "neutral" },
-  { name: "shifts", label: "Jornadas", description: "Catálogo de jornadas", tone: "neutral" },
-  { name: "moments", label: "Momentos", description: "Catálogo de momentos", tone: "neutral" },
-  { name: "trimesters", label: "Trimestres (SENA)", description: "Catálogo de trimestres", tone: "neutral" },
-];
+import { WIPE_COLLECTION_ITEMS } from "@/lib/firebase/wipe-collections";
 
 export function CleanCollections() {
   const [open, setOpen] = useState(false);
@@ -34,7 +13,7 @@ export function CleanCollections() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const selectedItem = useMemo(() => COLLECTIONS.find((c) => c.name === selected) ?? null, [selected]);
+  const selectedItem = useMemo(() => WIPE_COLLECTION_ITEMS.find((c) => c.name === selected) ?? null, [selected]);
   const canConfirm = useMemo(() => confirm.trim().toUpperCase() === "ELIMINAR" && !!selected, [confirm, selected]);
 
   async function wipeOne() {
@@ -80,41 +59,41 @@ export function CleanCollections() {
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+    <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold tracking-tight text-zinc-950">Limpiar por colección</h2>
-          <p className="mt-1 text-sm text-zinc-600">Borra una colección completa (incluyendo subcolecciones) sin tocar el resto.</p>
+          <h2 className="text-sm font-semibold tracking-tight text-zinc-950">Limpiar por colección</h2>
+          <p className="mt-0.5 text-xs text-zinc-600">Borra una colección completa sin tocar el resto.</p>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {COLLECTIONS.map((c) => (
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {WIPE_COLLECTION_ITEMS.map((c) => (
           <button
             key={c.name}
             type="button"
             onClick={() => openFor(c.name)}
-            className={`group rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+            className={`group rounded-xl border bg-white px-3 py-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
               c.tone === "danger" ? "border-rose-200 hover:border-rose-300" : "border-zinc-200 hover:border-zinc-300"
             }`}
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-zinc-950">{c.label}</p>
-                <p className="mt-1 line-clamp-2 text-xs text-zinc-600">{c.description}</p>
+                <p className="text-[13px] font-semibold leading-snug text-zinc-950">{c.label}</p>
+                <p className="mt-0.5 line-clamp-1 text-[11px] leading-snug text-zinc-600">{c.description}</p>
               </div>
               <div
-                className={`grid h-10 w-10 place-items-center rounded-2xl ring-1 transition ${
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ring-1 transition ${
                   c.tone === "danger"
                     ? "bg-rose-50 text-rose-700 ring-rose-100 group-hover:bg-rose-100"
                     : "bg-zinc-50 text-zinc-700 ring-zinc-100 group-hover:bg-zinc-100"
                 }`}
                 aria-hidden="true"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
               </div>
             </div>
-            <div className="mt-3 font-mono text-[11px] text-zinc-400">{c.name}</div>
+            <div className="mt-1.5 truncate font-mono text-[10px] text-zinc-400">{c.name}</div>
           </button>
         ))}
       </div>

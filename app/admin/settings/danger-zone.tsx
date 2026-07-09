@@ -53,8 +53,9 @@ export function DangerZone() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold tracking-tight text-zinc-950">Danger Zone</h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Elimina datos operativos de Firestore (preguntas, plantillas, publicados, intentos, catálogos,
-            documentación/cuadernillos, carga horaria y workspaces de Drive) y conserva <strong>admins</strong>.
+            Elimina todos los datos operativos de Firestore, incluyendo preguntas, plantillas, publicados,
+            intentos, bloqueos de intentos, catálogos, documentación/cuadernillos, carga horaria y metadatos
+            de Drive. Conserva <strong>admins</strong>.
           </p>
         </div>
         <button

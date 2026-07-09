@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { ALL_WIPE_COLLECTIONS } from "@/lib/firebase/wipe-collections";
 
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization") ?? "";
@@ -34,22 +35,7 @@ export async function POST(req: Request) {
   const adminSnap = await adminDb.collection("admins").doc(uid).get();
   if (!adminSnap.exists) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const collections = [
-    "attempts",
-    "examTemplates",
-    "fichas",
-    "groups",
-    "moments",
-    "publishedExams",
-    "questions",
-    "shifts",
-    "sites",
-    "subjects",
-    "studyDocs",
-    "trimesters",
-    "teachingLoads",
-    "driveWorkspaces",
-  ];
+  const collections = [...ALL_WIPE_COLLECTIONS];
 
   for (const name of collections) {
     try {
