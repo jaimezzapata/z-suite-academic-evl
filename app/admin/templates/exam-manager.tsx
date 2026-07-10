@@ -33,6 +33,8 @@ import {
   KeyRound,
 } from "lucide-react";
 import { IconButton } from "@/app/admin/ui/icon-button";
+import { useFeedback } from "@/app/feedback-provider";
+import { reportFormError, reportFormSuccess } from "@/lib/form-feedback";
 
 type CatalogItem = {
   id: string;
@@ -133,6 +135,7 @@ function Toggle({
 }
 
 export function ExamManager() {
+  const feedback = useFeedback();
   const [subjects, setSubjects] = useState<CatalogItem[]>([]);
   const [groups, setGroups] = useState<CatalogItem[]>([]);
   const [fichas, setFichas] = useState<CatalogItem[]>([]);
@@ -222,6 +225,10 @@ export function ExamManager() {
       }),
     [subjectName, momentName, groupName, siteName, shiftName],
   );
+
+  function showError(message: string) {
+    return reportFormError({ message, feedback, setMessage: setError });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -316,29 +323,37 @@ export function ExamManager() {
     setError(null);
     try {
       if (file.size > 1024 * 1024) {
-        setError("El archivo es muy grande. Maximo recomendado: 1MB.");
+        showError("El archivo es muy grande. Maximo recomendado: 1MB.");
         return;
       }
       const text = await readFileAsText(file);
       setDocumentationMarkdown(text);
       setDocFileName(file.name);
     } catch {
-      setError("No fue posible cargar el archivo de documentacion.");
+      showError("No fue posible cargar el archivo de documentacion.");
     }
   }
 
   async function createExamTemplate() {
+    if (!shiftId || !siteId || !momentId || !groupId || !subjectId) {
+      showError(`Completa Materia, ${institution === "SENA" ? "Ficha" : "Grupo"}, Momento, Sede y Jornada.`);
+      return;
+    }
+    if (!Number.isFinite(questionCount) || questionCount < 1 || questionCount > 200) {
+      showError("La cantidad de preguntas debe estar entre 1 y 200.");
+      return;
+    }
+    if (!Number.isFinite(timeLimitMinutes) || timeLimitMinutes < 1 || timeLimitMinutes > 240) {
+      showError("Tiempo inválido. Rango recomendado: 1 a 240 minutos.");
+      return;
+    }
+
     setCreating(true);
     setError(null);
     try {
-      if (!shiftId || !siteId || !momentId || !groupId || !subjectId) {
-        setError(`Completa Materia, ${institution === "SENA" ? "Ficha" : "Grupo"}, Momento, Sede y Jornada.`);
-        return;
-      }
-
       const nameRes = normalizeSentenceText(autoName);
       if (!nameRes.ok) {
-        setError(nameRes.error);
+        showError(nameRes.error);
         return;
       }
       await addDoc(collection(firestore, "examTemplates"), {
@@ -377,8 +392,9 @@ export function ExamManager() {
       setDocumentationMarkdown("");
       setDocFileName(null);
       setCreateOpen(false);
+      feedback.success("Examen creado correctamente.");
     } catch {
-      setError("No fue posible crear el examen. Revisa permisos o conexion.");
+      showError("No fue posible crear el examen. Revisa permisos o conexion.");
     } finally {
       setCreating(false);
     }
@@ -387,7 +403,10 @@ export function ExamManager() {
   async function saveQuestionCount(id: string) {
     const raw = pendingCounts[id];
     const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0 || value > 200) return;
+    if (!Number.isFinite(value) || value <= 0 || value > 200) {
+      showError("La cantidad de preguntas debe estar entre 1 y 200.");
+      return;
+    }
     setSavingId(id);
     try {
       await updateDoc(doc(firestore, "examTemplates", id), {
@@ -412,6 +431,9 @@ export function ExamManager() {
             });
           }),
       );
+      feedback.success("Cantidad de preguntas actualizada.");
+    } catch {
+      showError("No fue posible actualizar la cantidad de preguntas.");
     } finally {
       setSavingId(null);
     }
@@ -421,6 +443,9 @@ export function ExamManager() {
     setSavingId(id);
     try {
       await updateDoc(doc(firestore, "examTemplates", id), { active: next, updatedAt: serverTimestamp() });
+      feedback.success(next ? "Examen activado." : "Examen inactivado.");
+    } catch {
+      showError("No fue posible actualizar el estado del examen.");
     } finally {
       setSavingId(null);
     }
@@ -477,7 +502,7 @@ export function ExamManager() {
 
       const candidates = questionSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
       if (candidates.length === 0) {
-        setError(
+        showError(
           `No se encontraron preguntas publicadas para la materia seleccionada (${publishSubjectName}). ID esperado: ${publishTarget.subjectId}. Verifica que las preguntas importadas usen exactamente ese subjectId y que el catálogo de materias sea la fuente de verdad.`,
         );
         return;
@@ -509,7 +534,7 @@ export function ExamManager() {
       });
 
       if (eligible.length < publishTarget.questionCount) {
-        setError(
+        showError(
           `No hay suficientes preguntas para publicar para este examen. En materia: ${candidates.length}, en momento (regla Mx): ${eligible.length}. Requeridas: ${publishTarget.questionCount}.`,
         );
         return;
@@ -552,10 +577,11 @@ export function ExamManager() {
       await batch.commit();
 
       setPublishMessage(`Examen publicado. Codigo de acceso: ${accessCode}`);
+      feedback.success(`Examen publicado con código ${accessCode}.`);
       setPublishOpen(false);
       setPublishTarget(null);
     } catch {
-      setError("No fue posible publicar el examen.");
+      showError("No fue posible publicar el examen.");
     } finally {
       setPublishing(false);
     }
@@ -631,8 +657,9 @@ export function ExamManager() {
       setDeleteOpen(false);
       setDeleteTarget(null);
       setDeleteConfirm("");
+      feedback.success("Examen eliminado correctamente.");
     } catch {
-      setError("No fue posible eliminar el examen. Revisa permisos.");
+      showError("No fue posible eliminar el examen. Revisa permisos.");
     } finally {
       setDeleting(false);
     }
@@ -640,20 +667,25 @@ export function ExamManager() {
 
   async function saveEdit() {
     if (!editId) return;
+    if (!subjectId || !siteId || !shiftId || !momentId || !groupId) {
+      showError(`Completa Materia, ${institution === "SENA" ? "Ficha" : "Grupo"}, Momento, Sede y Jornada.`);
+      return;
+    }
+    if (!Number.isFinite(questionCount) || questionCount < 1 || questionCount > 200) {
+      showError("La cantidad de preguntas debe estar entre 1 y 200.");
+      return;
+    }
+    if (!Number.isFinite(timeLimitMinutes) || timeLimitMinutes < 1 || timeLimitMinutes > 240) {
+      showError("Tiempo inválido. Rango recomendado: 1 a 240 minutos.");
+      return;
+    }
+
     setEditing(true);
     setError(null);
     try {
-      if (!shiftId || !momentId || !groupId) {
-        setError(`Completa Jornada, ${institution === "SENA" ? "Ficha" : "Grupo"} y Momento.`);
-        return;
-      }
-      if (!Number.isFinite(timeLimitMinutes) || timeLimitMinutes < 1 || timeLimitMinutes > 240) {
-        setError("Tiempo inválido. Rango recomendado: 1 a 240 minutos.");
-        return;
-      }
       const nameRes = normalizeSentenceText(autoName);
       if (!nameRes.ok) {
-        setError(nameRes.error);
+        showError(nameRes.error);
         return;
       }
       await updateDoc(doc(firestore, "examTemplates", editId), {
@@ -696,8 +728,9 @@ export function ExamManager() {
       );
       setEditOpen(false);
       setEditId(null);
+      reportFormSuccess({ message: "Examen actualizado correctamente.", feedback });
     } catch {
-      setError("No fue posible guardar cambios del examen.");
+      showError("No fue posible guardar cambios del examen.");
     } finally {
       setEditing(false);
     }

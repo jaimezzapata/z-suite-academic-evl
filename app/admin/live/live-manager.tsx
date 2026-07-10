@@ -16,6 +16,8 @@ import {
 import { Ban, MessageSquareText, Search, KeyRound, Send, X, LayoutGrid, Rows3, UserRound, AlertTriangle, Clock4 } from "lucide-react";
 import { firebaseAuth, firestore } from "@/lib/firebase/client";
 import { IconButton } from "@/app/admin/ui/icon-button";
+import { useFeedback } from "@/app/feedback-provider";
+import { reportFormError } from "@/lib/form-feedback";
 
 type PublishedExamRow = {
   id: string;
@@ -45,6 +47,7 @@ function toNumber(value: unknown, fallback: number) {
 }
 
 export function LiveManager() {
+  const feedback = useFeedback();
   const [rows, setRows] = useState<PublishedExamRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +74,22 @@ export function LiveManager() {
   const [timeDraft, setTimeDraft] = useState("");
   const [timeSaving, setTimeSaving] = useState(false);
   const [timeError, setTimeError] = useState<string | null>(null);
+
+  function showError(message: string) {
+    return reportFormError({ message, feedback, setMessage: setError });
+  }
+
+  function showQuickCodeError(message: string) {
+    setQuickCodeError(message);
+    feedback.error(message, "Validacion");
+    return message;
+  }
+
+  function showTimeError(message: string) {
+    setTimeError(message);
+    feedback.error(message, "Validacion");
+    return message;
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -132,7 +151,7 @@ export function LiveManager() {
   async function openByQuickCode() {
     const code = normalizeOtp(quickCode);
     if (!/^\d{6}$/.test(code)) {
-      setQuickCodeError("El codigo debe tener 6 digitos.");
+      showQuickCodeError("El codigo debe tener 6 digitos.");
       return;
     }
 
@@ -151,14 +170,14 @@ export function LiveManager() {
         query(collection(firestore, "publishedExams"), where("accessCode", "==", code), limit(1)),
       );
       if (snap.empty) {
-        setQuickCodeError("Código no encontrado o no está publicado.");
+        showQuickCodeError("Código no encontrado o no está publicado.");
         return;
       }
       const docSnap = snap.docs[0];
       const row = docSnap.data() as Record<string, unknown>;
       const status = toString(row.status, "published");
       if (status !== "published") {
-        setQuickCodeError("El código existe, pero el examen ya no está publicado.");
+        showQuickCodeError("El código existe, pero el examen ya no está publicado.");
         return;
       }
       openAttempts({
@@ -171,7 +190,7 @@ export function LiveManager() {
       });
       setQuickCode("");
     } catch {
-      setQuickCodeError("No fue posible buscar el código.");
+      showQuickCodeError("No fue posible buscar el código.");
     } finally {
       setQuickCodeLoading(false);
     }
@@ -183,7 +202,7 @@ export function LiveManager() {
     try {
       const token = await firebaseAuth.currentUser?.getIdToken();
       if (!token) {
-        setError("Sesión inválida. Vuelve a iniciar sesión como admin.");
+        showError("Sesión inválida. Vuelve a iniciar sesión como admin.");
         return;
       }
       const res = await fetch("/api/admin/published-exams/close", {
@@ -193,11 +212,12 @@ export function LiveManager() {
       });
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (!res.ok) {
-        setError(typeof data?.error === "string" ? data.error : "No fue posible cerrar el examen.");
+        showError(typeof data?.error === "string" ? data.error : "No fue posible cerrar el examen.");
         return;
       }
+      feedback.success("Examen cerrado correctamente.");
     } catch {
-      setError("No fue posible cerrar el examen.");
+      showError("No fue posible cerrar el examen.");
     } finally {
       setClosingId(null);
     }
@@ -221,7 +241,7 @@ export function LiveManager() {
     if (!timeTarget) return;
     const minutes = Number(timeDraft);
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 240) {
-      setTimeError("Minutos inválidos. Rango recomendado: 1 a 240.");
+      showTimeError("Minutos inválidos. Rango recomendado: 1 a 240.");
       return;
     }
     setTimeSaving(true);
@@ -236,8 +256,9 @@ export function LiveManager() {
       setTimeOpen(false);
       setTimeTarget(null);
       setTimeDraft("");
+      feedback.success("Tiempo actualizado correctamente.");
     } catch {
-      setTimeError("No fue posible actualizar el tiempo.");
+      showTimeError("No fue posible actualizar el tiempo.");
     } finally {
       setTimeSaving(false);
     }
@@ -307,7 +328,10 @@ export function LiveManager() {
 
   async function sendMessage(attemptId: string) {
     const msg = (messageDrafts[attemptId] ?? "").trim();
-    if (!msg) return;
+    if (!msg) {
+      showError("Debes escribir un mensaje antes de enviarlo.");
+      return;
+    }
     setSavingAttemptId(attemptId);
     setError(null);
     try {
@@ -317,8 +341,9 @@ export function LiveManager() {
         updatedAt: serverTimestamp(),
       });
       setMessageDrafts((p) => ({ ...p, [attemptId]: "" }));
+      feedback.success("Mensaje enviado al estudiante.");
     } catch {
-      setError("No fue posible enviar el mensaje.");
+      showError("No fue posible enviar el mensaje.");
     } finally {
       setSavingAttemptId(null);
     }
@@ -333,7 +358,10 @@ export function LiveManager() {
   async function confirmAnnul() {
     if (!annulTarget) return;
     const reason = annulDraft.trim();
-    if (!reason) return;
+    if (!reason) {
+      showError("Debes indicar el motivo de anulación.");
+      return;
+    }
     setSavingAttemptId(annulTarget.id);
     setError(null);
     try {
@@ -349,8 +377,9 @@ export function LiveManager() {
       setAnnulOpen(false);
       setAnnulTarget(null);
       setAnnulDraft("");
+      feedback.success("Intento anulado correctamente.");
     } catch {
-      setError("No fue posible anular el intento.");
+      showError("No fue posible anular el intento.");
     } finally {
       setSavingAttemptId(null);
     }
@@ -461,7 +490,7 @@ export function LiveManager() {
                   <button
                     type="button"
                     onClick={() => void openByQuickCode()}
-                    disabled={quickCodeLoading || !/^\d{6}$/.test(quickCode)}
+                    disabled={quickCodeLoading}
                     className="rounded-xl bg-zinc-950 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Abrir
@@ -806,7 +835,7 @@ export function LiveManager() {
                         <IconButton
                           variant="primary"
                           onClick={() => void sendMessage(selectedAttempt.id)}
-                          disabled={savingAttemptId === selectedAttempt.id || !(messageDrafts[selectedAttempt.id] ?? "").trim()}
+                          disabled={savingAttemptId === selectedAttempt.id}
                           className="h-10 w-10"
                           aria-label="Enviar mensaje"
                           title="Enviar mensaje"
@@ -906,7 +935,7 @@ export function LiveManager() {
               <button
                 type="button"
                 onClick={() => void confirmAnnul()}
-                disabled={!annulDraft.trim() || savingAttemptId === annulTarget.id}
+                disabled={savingAttemptId === annulTarget.id}
                 className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Confirmar anulación

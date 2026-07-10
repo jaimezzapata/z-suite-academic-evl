@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { firebaseAuth } from "@/lib/firebase/client";
 import { IconButton } from "@/app/admin/ui/icon-button";
+import { useFeedback } from "@/app/feedback-provider";
+import { reportFormError } from "@/lib/form-feedback";
 import { Copy, FileUp, RefreshCcw } from "lucide-react";
 
 function toNumber(value: unknown, fallback = 0) {
@@ -10,6 +12,7 @@ function toNumber(value: unknown, fallback = 0) {
 }
 
 export function JsonImporter() {
+  const feedback = useFeedback();
   const [fileName, setFileName] = useState<string | null>(null);
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
   const [rawJson, setRawJson] = useState("");
@@ -18,6 +21,10 @@ export function JsonImporter() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [copied, setCopied] = useState(false);
+
+  function showError(message: string) {
+    return reportFormError({ message, feedback, setMessage: setError });
+  }
 
   function clearAll() {
     setError(null);
@@ -39,33 +46,34 @@ export function JsonImporter() {
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>;
       if (!parsed || typeof parsed !== "object") {
-        setError("El contenido no contiene un JSON válido.");
+        showError("El contenido no contiene un JSON válido.");
         return;
       }
       if (typeof parsed.schemaVersion !== "string") {
-        setError("Falta schemaVersion en el JSON.");
+        showError("Falta schemaVersion en el JSON.");
         return;
       }
       if (!parsed.batch || typeof parsed.batch !== "object") {
-        setError("Falta batch en el JSON.");
+        showError("Falta batch en el JSON.");
         return;
       }
       if (!parsed.catalog || typeof parsed.catalog !== "object") {
-        setError("Falta catalog en el JSON.");
+        showError("Falta catalog en el JSON.");
         return;
       }
       if (!Array.isArray(parsed.questions)) {
-        setError("Falta questions (array) en el JSON.");
+        showError("Falta questions (array) en el JSON.");
         return;
       }
       if (!Array.isArray(parsed.examTemplates)) {
-        setError("Falta examTemplates (array) en el JSON.");
+        showError("Falta examTemplates (array) en el JSON.");
         return;
       }
       setPayload(parsed);
       setSourceJson(JSON.stringify(parsed, null, 2));
+      feedback.success("JSON validado correctamente.");
     } catch {
-      setError("No fue posible parsear el JSON.");
+      showError("No fue posible parsear el JSON.");
     }
   }
 
@@ -78,7 +86,7 @@ export function JsonImporter() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      setError("No fue posible copiar el JSON.");
+      showError("No fue posible copiar el JSON.");
     }
   }
 
@@ -116,15 +124,18 @@ export function JsonImporter() {
       setRawJson("");
       parseAndSetPayload(text, file.name);
     } catch {
-      setError("No fue posible leer o parsear el archivo JSON.");
+      showError("No fue posible leer o parsear el archivo JSON.");
     }
   }
 
   async function importBatch() {
-    if (!payload) return;
+    if (!payload) {
+      showError("Primero debes cargar y validar un JSON.");
+      return;
+    }
     const user = firebaseAuth.currentUser;
     if (!user) {
-      setError("Debes iniciar sesión como admin.");
+      showError("Debes iniciar sesión como admin.");
       return;
     }
     setLoading(true);
@@ -143,12 +154,13 @@ export function JsonImporter() {
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (!res.ok) {
         const msg = typeof data?.error === "string" ? data.error : "No fue posible importar.";
-        setError(msg);
+        showError(msg);
         return;
       }
       setResult(data);
+      feedback.success("Importación ejecutada correctamente.");
     } catch {
-      setError("No fue posible importar.");
+      showError("No fue posible importar.");
     } finally {
       setLoading(false);
     }
@@ -223,7 +235,6 @@ export function JsonImporter() {
           <button
             type="button"
             onClick={() => parseAndSetPayload(rawJson, "pegado.json")}
-            disabled={!rawJson.trim()}
             className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cargar JSON pegado
@@ -279,7 +290,7 @@ export function JsonImporter() {
         <button
           type="button"
           onClick={() => void importBatch()}
-          disabled={!payload || loading}
+          disabled={loading}
           className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? "Importando..." : "Importar a Firestore"}

@@ -1,11 +1,14 @@
 "use client";
 
+import type { ComponentType, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   collection,
   deleteDoc,
   doc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -16,9 +19,13 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
+  BadgeDollarSign,
   Building2,
+  Calculator,
   CalendarDays,
+  CalendarRange,
   Clock3,
+  Eye,
   Edit3,
   DoorOpen,
   Group,
@@ -29,12 +36,18 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Sparkles,
   SlidersHorizontal,
   Trash2,
+  Wallet,
   X,
+  Layers3,
 } from "lucide-react";
 import { firebaseAuth, firestore } from "@/lib/firebase/client";
 import { useFeedback } from "@/app/feedback-provider";
+import { reportFormError, reportFormSuccess } from "@/lib/form-feedback";
+import { getSubjectTechnologyMeta } from "@/lib/subject-tech-branding";
+import { getColombiaHolidayName } from "@/lib/colombia-holidays";
 
 type CatalogItem = { id: string; name: string };
 
@@ -59,6 +72,7 @@ type TeachingLoadRow = {
   classroom: string;
   durationMinutes: number;
   academicHours: number;
+  weeklyAcademicHours: number;
   dayOfWeek1: string;
   dayOfWeek2: string;
   driveWorkspaceId: string;
@@ -95,6 +109,43 @@ type WorkloadFilters = {
   dateTo: string;
 };
 
+type PayrollStatementItem = {
+  loadId: string;
+  subjectId: string;
+  subjectName: string;
+  audienceId: string;
+  audienceName: string;
+  audienceType: string;
+  siteId: string;
+  siteName: string;
+  shiftId: string;
+  shiftName: string;
+  period: string;
+  classroom: string;
+  date: string;
+  dayName: string;
+  startTime: string;
+  endTime: string;
+  academicHours: number;
+  hourlyRate: number;
+  estimatedValue: number;
+  cesdeGroupType: string;
+};
+
+type PayrollStatementRow = {
+  id: string;
+  rangeStart: string;
+  rangeEnd: string;
+  hourlyRate: number;
+  totalHours: number;
+  totalValue: number;
+  itemCount: number;
+  items: PayrollStatementItem[];
+  createdByEmail: string;
+  createdByName: string;
+  createdAtLabel: string;
+};
+
 const EMPTY_FORM: TeachingLoadForm = {
   institution: "CESDE",
   cesdeGroupType: "REGULAR",
@@ -122,6 +173,23 @@ const EMPTY_FILTERS: WorkloadFilters = {
   dateTo: "",
 };
 
+const WEEKDAY_INDEX_BY_NAME: Record<string, number> = {
+  DOMINGO: 0,
+  DOM: 0,
+  LUNES: 1,
+  LUN: 1,
+  MARTES: 2,
+  MAR: 2,
+  MIERCOLES: 3,
+  MIE: 3,
+  JUEVES: 4,
+  JUE: 4,
+  VIERNES: 5,
+  VIE: 5,
+  SABADO: 6,
+  SAB: 6,
+};
+
 function toCatalogItem(id: string, data: Record<string, unknown>): CatalogItem {
   const name = typeof data.name === "string" && data.name.trim() ? data.name : id;
   return { id, name };
@@ -131,8 +199,58 @@ function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+function normalizeWeekdayLabel(value: string) {
+  return value
+    .trim()
+    .toUpperCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function weekdayIndexFromName(value: string) {
+  const normalized = normalizeWeekdayLabel(value);
+  if (!normalized) return null;
+  return WEEKDAY_INDEX_BY_NAME[normalized] ?? null;
+}
+
+function getRowWeekdayIndexes(row: Pick<TeachingLoadRow, "dayOfWeek1" | "dayOfWeek2" | "startDate">) {
+  const selected = new Set<number>();
+  [row.dayOfWeek1, row.dayOfWeek2].forEach((value) => {
+    const index = weekdayIndexFromName(value);
+    if (index !== null) selected.add(index);
+  });
+  if (!selected.size) {
+    const fallbackIndex = weekdayIndexFromName(dayNameFromIsoDate(row.startDate));
+    if (fallbackIndex !== null) selected.add(fallbackIndex);
+  }
+  return selected;
+}
+
 function normalizeCesdeGroupType(value: unknown) {
   return toString(value, "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
+}
+
+function getWeeklySessionCount(values: {
+  institution: string;
+  cesdeGroupType: string;
+  dayOfWeek2: string;
+}) {
+  const institution = (values.institution || "CESDE").toUpperCase();
+  const cesdeGroupType = normalizeCesdeGroupType(values.cesdeGroupType);
+  return institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && values.dayOfWeek2 ? 2 : 1;
+}
+
+function getWeeklyAcademicHours(values: {
+  institution: string;
+  cesdeGroupType: string;
+  dayOfWeek2: string;
+  academicHours: number;
+  weeklyAcademicHours?: number;
+}) {
+  if (typeof values.weeklyAcademicHours === "number" && Number.isFinite(values.weeklyAcademicHours)) {
+    return values.weeklyAcademicHours;
+  }
+  return roundHours(values.academicHours * getWeeklySessionCount(values));
 }
 
 function sortByName(items: CatalogItem[]) {
@@ -153,12 +271,45 @@ function formatTimeRange(startTime: string, endTime: string) {
   return startTime || endTime;
 }
 
+function WorkloadFormSection({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-border bg-surface px-3 py-3">
+      <div className="flex items-start gap-2.5">
+        <div className="grid h-8.5 w-8.5 shrink-0 place-items-center rounded-xl bg-white text-foreground shadow-sm ring-1 ring-border">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <p className="mt-0.5 text-xs text-foreground/55">{description}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2.5 md:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
 function diffMinutes(startTime: string, endTime: string) {
   if (!startTime || !endTime) return 0;
   const [startHour, startMinute] = startTime.split(":").map(Number);
   const [endHour, endMinute] = endTime.split(":").map(Number);
   if ([startHour, startMinute, endHour, endMinute].some((n) => !Number.isFinite(n))) return 0;
   return endHour * 60 + endMinute - (startHour * 60 + startMinute);
+}
+
+function calculateAcademicHours(durationMinutes: number, institution: string) {
+  const minutesPerHour = institution === "CESDE" ? 45 : 60;
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return 0;
+  return Math.max(0, Math.floor(durationMinutes / minutesPerHour));
 }
 
 function roundHours(value: number) {
@@ -168,6 +319,25 @@ function roundHours(value: number) {
 function formatHours(value: number) {
   if (!Number.isFinite(value)) return "-";
   return Number.isInteger(value) ? `${value}` : value.toFixed(2);
+}
+
+function formatCurrency(value: number) {
+  if (!Number.isFinite(value)) return "$0";
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatLongDate(value: string) {
+  const date = parseLocalDate(value);
+  if (!date) return value || "-";
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }
 
 function parseLocalDate(value: string) {
@@ -204,6 +374,33 @@ function isSameOrBeforeDay(target: Date, reference: Date) {
 
 function isoDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function currentFortnightRange() {
+  const now = new Date();
+  return fortnightRangeFromDate(now);
+}
+
+function fortnightRangeFromDate(date: Date) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+  if (day <= 15) {
+    return {
+      start: isoDate(new Date(year, month, 1)),
+      end: isoDate(new Date(year, month, 15)),
+    };
+  }
+  return {
+    start: isoDate(new Date(year, month, 16)),
+    end: isoDate(new Date(year, month + 1, 0)),
+  };
+}
+
+
+function shiftFortnightRange(rangeStart: string, direction: -1 | 1) {
+  const baseDate = parseLocalDate(rangeStart) ?? new Date();
+  return fortnightRangeFromDate(addDays(baseDate, direction * 16));
 }
 
 function dayNameFromIsoDate(value: string) {
@@ -265,6 +462,100 @@ function formatCompactDateRange(startDate: string, endDate: string) {
   return normalize(startDate || endDate);
 }
 
+function safeNumberFromInput(value: string) {
+  const normalized = value.replace(/[^\d.,-]/g, "").replace(/\./g, "").replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getTimestampLabel(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  try {
+    if ("toDate" in value && typeof (value as { toDate?: unknown }).toDate === "function") {
+      const date = (value as { toDate: () => Date }).toDate();
+      return new Intl.DateTimeFormat("es-CO", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+    }
+  } catch {}
+  return "";
+}
+
+function buildPayrollOccurrences(row: TeachingLoadRow, rangeStart: string, rangeEnd: string, hourlyRate: number) {
+  const start = parseLocalDate(rangeStart);
+  const end = parseLocalDate(rangeEnd);
+  const rowStart = parseLocalDate(row.startDate);
+  const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
+  if (!start || !end || !rowStart || !rowEnd) return [] as PayrollStatementItem[];
+  if (end < start) return [] as PayrollStatementItem[];
+  const effectiveStart = isSameOrAfterDay(rowStart, start) ? rowStart : start;
+  const effectiveEnd = isSameOrBeforeDay(rowEnd, end) ? rowEnd : end;
+  if (effectiveEnd < effectiveStart) return [] as PayrollStatementItem[];
+  const weekdayIndexes = getRowWeekdayIndexes(row);
+  if (!weekdayIndexes.size) return [] as PayrollStatementItem[];
+
+  const items: PayrollStatementItem[] = [];
+  for (
+    let cursor = new Date(effectiveStart.getFullYear(), effectiveStart.getMonth(), effectiveStart.getDate());
+    isSameOrBeforeDay(cursor, effectiveEnd);
+    cursor = addDays(cursor, 1)
+  ) {
+    if (!weekdayIndexes.has(cursor.getDay())) continue;
+    const date = isoDate(cursor);
+    items.push({
+      loadId: row.id,
+      subjectId: row.subjectId,
+      subjectName: row.subjectName,
+      audienceId: row.audienceId,
+      audienceName: row.audienceName,
+      audienceType: row.audienceType,
+      siteId: row.siteId,
+      siteName: row.siteName,
+      shiftId: row.shiftId,
+      shiftName: row.shiftName,
+      period: row.period,
+      classroom: row.classroom,
+      date,
+      dayName: dayNameFromIsoDate(date),
+      startTime: row.startTime,
+      endTime: row.endTime,
+      academicHours: row.academicHours,
+      hourlyRate,
+      estimatedValue: roundHours(row.academicHours * hourlyRate),
+      cesdeGroupType: row.cesdeGroupType,
+    });
+  }
+  return items;
+}
+
+function countOccurrencesInRange(row: TeachingLoadRow, rangeStart: string, rangeEnd: string) {
+  const start = parseLocalDate(rangeStart);
+  const end = parseLocalDate(rangeEnd);
+  const rowStart = parseLocalDate(row.startDate);
+  const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
+  if (!start || !end || !rowStart || !rowEnd) return 0;
+  if (end < start) return 0;
+  const effectiveStart = isSameOrAfterDay(rowStart, start) ? rowStart : start;
+  const effectiveEnd = isSameOrBeforeDay(rowEnd, end) ? rowEnd : end;
+  if (effectiveEnd < effectiveStart) return 0;
+  const weekdayIndexes = getRowWeekdayIndexes(row);
+  if (!weekdayIndexes.size) return 0;
+
+  let total = 0;
+  for (
+    let cursor = new Date(effectiveStart.getFullYear(), effectiveStart.getMonth(), effectiveStart.getDate());
+    isSameOrBeforeDay(cursor, effectiveEnd);
+    cursor = addDays(cursor, 1)
+  ) {
+    if (weekdayIndexes.has(cursor.getDay())) total += 1;
+  }
+  return total;
+}
+
 const CALENDAR_START_MINUTES = 6 * 60;
 const CALENDAR_END_MINUTES = 22 * 60;
 const CALENDAR_SLOT_MINUTES = 30;
@@ -289,6 +580,10 @@ function eventTone(institution: string) {
     : "border-fuchsia-300 bg-fuchsia-100 text-fuchsia-950";
 }
 
+function getEventTone(institution: string, subjectName: string) {
+  return getSubjectTechnologyMeta(subjectName)?.calendarCardClassName ?? eventTone(institution);
+}
+
 function minutesToTimeString(totalMinutes: number) {
   const safe = Math.max(0, totalMinutes);
   const hour = Math.floor(safe / 60);
@@ -310,7 +605,7 @@ function ModalShell({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       <button type="button" className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-label="Cerrar" />
-      <div className="relative w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-white shadow-2xl">
+      <div className="relative w-[min(96vw,1500px)] max-w-none overflow-hidden rounded-2xl border border-border bg-white shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-4">
           <div className="min-w-0">
             <p className="truncate text-base font-semibold text-foreground">{title}</p>
@@ -320,15 +615,19 @@ function ModalShell({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="max-h-[78vh] overflow-y-auto p-5">{children}</div>
+        <div className="p-4">{children}</div>
       </div>
     </div>
   );
 }
 
+const DEFAULT_PAYROLL_VALUES = {
+  cesdeHourlyRate: "0",
+  senaMonthlySalary: "0",
+};
+
 export default function AdminWorkloadPage() {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -340,15 +639,31 @@ export default function AdminWorkloadPage() {
   const [sites, setSites] = useState<CatalogItem[]>([]);
   const [shifts, setShifts] = useState<CatalogItem[]>([]);
   const [rows, setRows] = useState<TeachingLoadRow[]>([]);
+  const [payrollStatements, setPayrollStatements] = useState<PayrollStatementRow[]>([]);
 
   const [tab, setTab] = useState<"CESDE" | "SENA" | "ALL">("CESDE");
-  const [viewMode, setViewMode] = useState<"list" | "calendar">("calendar");
+  const [viewMode, setViewMode] = useState<"list" | "calendar" | "payroll">("calendar");
   const [modalOpen, setModalOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TeachingLoadForm>(EMPTY_FORM);
   const [filters, setFilters] = useState<WorkloadFilters>(EMPTY_FILTERS);
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => startOfWeek(new Date()));
+  const [payrollRangeStart, setPayrollRangeStart] = useState(() => currentFortnightRange().start);
+  const [payrollRangeEnd, setPayrollRangeEnd] = useState(() => currentFortnightRange().end);
+  const [cesdeHourlyRate, setCesdeHourlyRate] = useState(DEFAULT_PAYROLL_VALUES.cesdeHourlyRate);
+  const [senaMonthlySalary, setSenaMonthlySalary] = useState(DEFAULT_PAYROLL_VALUES.senaMonthlySalary);
+  const [selectedPayrollStatement, setSelectedPayrollStatement] = useState<PayrollStatementRow | null>(null);
+
+  function showValidationError(message: string) {
+    return reportFormError({ message, feedback, setMessage: setError });
+  }
+
+  function movePayrollFortnight(direction: -1 | 1) {
+    const nextRange = shiftFortnightRange(payrollRangeStart || payrollRangeEnd, direction);
+    setPayrollRangeStart(nextRange.start);
+    setPayrollRangeEnd(nextRange.end);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -393,15 +708,21 @@ export default function AdminWorkloadPage() {
         const next = snap.docs.map((d) => {
           const row = d.data() as Record<string, unknown>;
           const institution = toString(row.institution, "CESDE");
+          const cesdeGroupType = normalizeCesdeGroupType(row.cesdeGroupType);
           const startTime = toString(row.startTime, "");
           const endTime = toString(row.endTime, "");
           const startDate = toString(row.startDate, "");
+          const dayOfWeek2 = toString(row.dayOfWeek2, "");
           const fallbackMinutes = Math.max(0, diffMinutes(startTime, endTime));
-          const fallbackAcademicHours = roundHours(fallbackMinutes / (institution === "CESDE" ? 45 : 60));
+          const fallbackAcademicHours = calculateAcademicHours(fallbackMinutes, institution);
+          const academicHours =
+            typeof row.academicHours === "number" && Number.isFinite(row.academicHours)
+              ? row.academicHours
+              : fallbackAcademicHours;
           return {
             id: d.id,
             institution,
-            cesdeGroupType: normalizeCesdeGroupType(row.cesdeGroupType),
+            cesdeGroupType,
             period: toString(row.period, periodFromDate(startDate)),
             subjectId: toString(row.subjectId, ""),
             subjectName: toString(row.subjectName, ""),
@@ -421,12 +742,13 @@ export default function AdminWorkloadPage() {
               typeof row.durationMinutes === "number" && Number.isFinite(row.durationMinutes)
                 ? row.durationMinutes
                 : fallbackMinutes,
-            academicHours:
-              typeof row.academicHours === "number" && Number.isFinite(row.academicHours)
-                ? row.academicHours
-                : fallbackAcademicHours,
+            academicHours,
+            weeklyAcademicHours:
+              typeof row.weeklyAcademicHours === "number" && Number.isFinite(row.weeklyAcademicHours)
+                ? row.weeklyAcademicHours
+                : roundHours(academicHours * (institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && dayOfWeek2 ? 2 : 1)),
             dayOfWeek1: toString(row.dayOfWeek1, dayNameFromIsoDate(startDate)),
-            dayOfWeek2: toString(row.dayOfWeek2, ""),
+            dayOfWeek2,
             driveWorkspaceId: toString(row.driveWorkspaceId, ""),
             driveStatus: toString(row.driveStatus, "pending"),
             driveErrorMessage: toString(row.driveErrorMessage, ""),
@@ -450,6 +772,64 @@ export default function AdminWorkloadPage() {
   }, []);
 
   useEffect(() => {
+    const q = query(collection(firestore, "payrollStatements"), orderBy("createdAt", "desc"), limit(40));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const next = snap.docs.map((d) => {
+          const row = d.data() as Record<string, unknown>;
+          return {
+            id: d.id,
+            rangeStart: toString(row.rangeStart, ""),
+            rangeEnd: toString(row.rangeEnd, ""),
+            hourlyRate: typeof row.hourlyRate === "number" && Number.isFinite(row.hourlyRate) ? row.hourlyRate : 0,
+            totalHours: typeof row.totalHours === "number" && Number.isFinite(row.totalHours) ? row.totalHours : 0,
+            totalValue: typeof row.totalValue === "number" && Number.isFinite(row.totalValue) ? row.totalValue : 0,
+            itemCount: typeof row.itemCount === "number" && Number.isFinite(row.itemCount) ? row.itemCount : 0,
+            createdByEmail: toString(row.createdByEmail, ""),
+            createdByName: toString(row.createdByName, ""),
+            createdAtLabel: getTimestampLabel(row.createdAt),
+            items: Array.isArray(row.items)
+              ? row.items.map((item) => {
+                  const value = item as Record<string, unknown>;
+                  return {
+                    loadId: toString(value.loadId, ""),
+                    subjectId: toString(value.subjectId, ""),
+                    subjectName: toString(value.subjectName, ""),
+                    audienceId: toString(value.audienceId, ""),
+                    audienceName: toString(value.audienceName, ""),
+                    audienceType: toString(value.audienceType, ""),
+                    siteId: toString(value.siteId, ""),
+                    siteName: toString(value.siteName, ""),
+                    shiftId: toString(value.shiftId, ""),
+                    shiftName: toString(value.shiftName, ""),
+                    period: toString(value.period, ""),
+                    classroom: toString(value.classroom, ""),
+                    date: toString(value.date, ""),
+                    dayName: toString(value.dayName, ""),
+                    startTime: toString(value.startTime, ""),
+                    endTime: toString(value.endTime, ""),
+                    academicHours:
+                      typeof value.academicHours === "number" && Number.isFinite(value.academicHours) ? value.academicHours : 0,
+                    hourlyRate: typeof value.hourlyRate === "number" && Number.isFinite(value.hourlyRate) ? value.hourlyRate : 0,
+                    estimatedValue:
+                      typeof value.estimatedValue === "number" && Number.isFinite(value.estimatedValue) ? value.estimatedValue : 0,
+                    cesdeGroupType: toString(value.cesdeGroupType, ""),
+                  } satisfies PayrollStatementItem;
+                })
+              : [],
+          } satisfies PayrollStatementRow;
+        });
+        setPayrollStatements(next);
+      },
+      () => {
+        feedback.warning("No fue posible leer el historial de colillas guardadas.");
+      },
+    );
+    return () => unsub();
+  }, [feedback]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(max-width: 767px)");
     const syncViewport = () => setIsMobile(media.matches);
@@ -461,6 +841,39 @@ export default function AdminWorkloadPage() {
     media.addListener(syncViewport);
     return () => media.removeListener(syncViewport);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("workload-payroll-sim");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<{
+        cesdeHourlyRate: string;
+        senaMonthlySalary: string;
+        payrollRangeStart: string;
+        payrollRangeEnd: string;
+      }>;
+      if (typeof parsed.cesdeHourlyRate === "string") setCesdeHourlyRate(parsed.cesdeHourlyRate);
+      if (typeof parsed.senaMonthlySalary === "string") setSenaMonthlySalary(parsed.senaMonthlySalary);
+      if (typeof parsed.payrollRangeStart === "string") setPayrollRangeStart(parsed.payrollRangeStart);
+      if (typeof parsed.payrollRangeEnd === "string") setPayrollRangeEnd(parsed.payrollRangeEnd);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        "workload-payroll-sim",
+        JSON.stringify({
+          cesdeHourlyRate,
+          senaMonthlySalary,
+          payrollRangeStart,
+          payrollRangeEnd,
+        }),
+      );
+    } catch {}
+  }, [cesdeHourlyRate, payrollRangeEnd, payrollRangeStart, senaMonthlySalary]);
 
   const rowsByInstitution = useMemo(() => {
     if (tab === "ALL") return rows;
@@ -516,12 +929,12 @@ export default function AdminWorkloadPage() {
       CESDE: roundHours(
         rows
           .filter((row) => (row.institution || "CESDE").toUpperCase() === "CESDE")
-          .reduce((sum, row) => sum + row.academicHours, 0),
+          .reduce((sum, row) => sum + getWeeklyAcademicHours(row), 0),
       ),
       SENA: roundHours(
         rows
           .filter((row) => (row.institution || "CESDE").toUpperCase() === "SENA")
-          .reduce((sum, row) => sum + row.academicHours, 0),
+          .reduce((sum, row) => sum + getWeeklyAcademicHours(row), 0),
       ),
     }),
     [rows],
@@ -539,53 +952,217 @@ export default function AdminWorkloadPage() {
 
   const currentAcademicHours = useMemo(() => {
     if (!currentDurationMinutes) return 0;
-    return roundHours(currentDurationMinutes / (form.institution === "CESDE" ? 45 : 60));
+    return calculateAcademicHours(currentDurationMinutes, form.institution);
   }, [currentDurationMinutes, form.institution]);
-  const effectiveViewMode = isMobile ? "list" : viewMode;
+  const currentWeeklySessionCount = useMemo(
+    () =>
+      getWeeklySessionCount({
+        institution: form.institution,
+        cesdeGroupType: form.cesdeGroupType,
+        dayOfWeek2: form.dayOfWeek2.trim(),
+      }),
+    [form.cesdeGroupType, form.dayOfWeek2, form.institution],
+  );
+  const currentWeeklyAcademicHours = useMemo(
+    () =>
+      getWeeklyAcademicHours({
+        institution: form.institution,
+        cesdeGroupType: form.cesdeGroupType,
+        dayOfWeek2: form.dayOfWeek2.trim(),
+        academicHours: currentAcademicHours,
+      }),
+    [currentAcademicHours, form.cesdeGroupType, form.dayOfWeek2, form.institution],
+  );
+  const effectiveViewMode = isMobile && viewMode === "calendar" ? "list" : viewMode;
+  const payrollHourlyRateValue = useMemo(() => safeNumberFromInput(cesdeHourlyRate), [cesdeHourlyRate]);
+  const senaMonthlySalaryValue = useMemo(() => safeNumberFromInput(senaMonthlySalary), [senaMonthlySalary]);
 
   const calendarDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(calendarWeekStart, index)),
     [calendarWeekStart],
   );
+  const calendarHolidayMap = useMemo(
+    () =>
+      new Map<string, string>(
+        calendarDays.flatMap((day) => {
+          const holidayName = getColombiaHolidayName(day);
+          return holidayName ? [[isoDate(day), holidayName] as [string, string]] : [];
+        }),
+      ),
+    [calendarDays],
+  );
 
   const calendarEvents = useMemo(() => {
     return filteredRows
-      .map((row) => {
+      .flatMap((row) => {
         const rangeStart = parseLocalDate(row.startDate);
         const rangeEnd = parseLocalDate(row.endDate) ?? rangeStart;
         const startMinutes = minutesFromTime(row.startTime);
         const endMinutes = minutesFromTime(row.endTime);
-        if (!rangeStart || !rangeEnd || startMinutes === null || endMinutes === null) return null;
-        if (endMinutes <= startMinutes) return null;
-        const dayIndex = calendarDays.findIndex((day) => {
-          if (day.getDay() !== rangeStart.getDay()) return false;
-          return isSameOrAfterDay(day, rangeStart) && isSameOrBeforeDay(day, rangeEnd);
-        });
-        if (dayIndex === -1) return null;
+        if (!rangeStart || !rangeEnd || startMinutes === null || endMinutes === null) return [];
+        if (endMinutes <= startMinutes) return [];
+        const weekdayIndexes = getRowWeekdayIndexes(row);
+        if (!weekdayIndexes.size) return [];
         const topMinutes = Math.max(0, startMinutes - CALENDAR_START_MINUTES);
         const clampedEnd = Math.min(endMinutes, CALENDAR_END_MINUTES);
         const clampedStart = Math.max(startMinutes, CALENDAR_START_MINUTES);
         const blockMinutes = Math.max(30, clampedEnd - clampedStart);
         const top = `${(topMinutes / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * 100}%`;
         const height = `${(blockMinutes / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * 100}%`;
-        return {
-          id: row.id,
-          row,
-          dayIndex,
-          top,
-          height,
-          tone: eventTone(row.institution),
-          subjectName: row.subjectName,
-          audienceName: row.audienceType === "ficha" ? `Ficha ${row.audienceName}` : row.audienceName,
-          classroom: row.classroom,
-          timeRange: formatTimeRange(row.startTime, row.endTime),
-          hoursLabel: `${formatHours(row.academicHours)} h`,
-          dateRange: formatDateRange(row.startDate, row.endDate),
-          shortDateRange: formatCompactDateRange(row.startDate, row.endDate),
-        };
+        return calendarDays.flatMap((day, dayIndex) => {
+          const dayKey = isoDate(day);
+          if (calendarHolidayMap.has(dayKey)) return [];
+          if (!weekdayIndexes.has(day.getDay())) return [];
+          if (!isSameOrAfterDay(day, rangeStart) || !isSameOrBeforeDay(day, rangeEnd)) return [];
+          return [
+            {
+              id: `${row.id}-${dayKey}`,
+              row,
+              dayIndex,
+              top,
+              height,
+              tone: getEventTone(row.institution, row.subjectName),
+              subjectName: row.subjectName,
+              audienceName: row.audienceType === "ficha" ? `Ficha ${row.audienceName}` : row.audienceName,
+              classroom: row.classroom,
+              timeRange: formatTimeRange(row.startTime, row.endTime),
+              hoursLabel: `${formatHours(row.academicHours)} h`,
+              dateRange: formatDateRange(row.startDate, row.endDate),
+              shortDateRange: formatCompactDateRange(row.startDate, row.endDate),
+            },
+          ];
+        });
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
-  }, [calendarDays, filteredRows]);
+  }, [calendarDays, calendarHolidayMap, filteredRows]);
+
+  const calendarSummary = useMemo(() => {
+    const cesdeLoadIds = new Set<string>();
+    const senaLoadIds = new Set<string>();
+    let cesdeHours = 0;
+    let senaHours = 0;
+
+    calendarEvents.forEach((event) => {
+      const institution = (event.row.institution || "CESDE").toUpperCase();
+      if (institution === "SENA") {
+        senaLoadIds.add(event.row.id);
+        senaHours += event.row.academicHours;
+        return;
+      }
+      cesdeLoadIds.add(event.row.id);
+      cesdeHours += event.row.academicHours;
+    });
+
+    return {
+      totalLoads: cesdeLoadIds.size + senaLoadIds.size,
+      cesdeLoads: cesdeLoadIds.size,
+      senaLoads: senaLoadIds.size,
+      totalEvents: calendarEvents.length,
+      cesdeHours: roundHours(cesdeHours),
+      senaHours: roundHours(senaHours),
+    };
+  }, [calendarEvents]);
+
+  const payrollSummary = useMemo(() => {
+    const cesdeRows = filteredRows.filter((row) => (row.institution || "CESDE").toUpperCase() === "CESDE");
+    const senaRows = filteredRows.filter((row) => (row.institution || "CESDE").toUpperCase() === "SENA");
+
+    const cesdeBreakdown = cesdeRows
+      .map((row) => {
+        const occurrences = countOccurrencesInRange(row, payrollRangeStart, payrollRangeEnd);
+        const programmedHours = roundHours(occurrences * row.academicHours);
+        const estimatedValue = roundHours(programmedHours * payrollHourlyRateValue);
+        return {
+          row,
+          occurrences,
+          programmedHours,
+          estimatedValue,
+        };
+      })
+      .filter((item) => item.occurrences > 0)
+      .sort((a, b) => b.estimatedValue - a.estimatedValue || b.programmedHours - a.programmedHours);
+
+    const cesdeHours = roundHours(cesdeBreakdown.reduce((sum, item) => sum + item.programmedHours, 0));
+    const cesdeEstimated = roundHours(cesdeBreakdown.reduce((sum, item) => sum + item.estimatedValue, 0));
+    const senaMonthlyReference = senaRows.length ? senaMonthlySalaryValue : 0;
+    const senaQuincenaReference = roundHours(senaMonthlyReference / 2);
+
+    return {
+      cesdeBreakdown,
+      cesdeLoads: cesdeBreakdown.length,
+      cesdeHours,
+      cesdeEstimated,
+      senaLoads: senaRows.length,
+      senaMonthlyReference,
+      senaQuincenaReference,
+      totalMixedReference: roundHours(cesdeEstimated + senaQuincenaReference),
+    };
+  }, [filteredRows, payrollHourlyRateValue, payrollRangeEnd, payrollRangeStart, senaMonthlySalaryValue]);
+
+  const currentPayrollStatementItems = useMemo(
+    () =>
+      filteredRows
+        .filter((row) => (row.institution || "CESDE").toUpperCase() === "CESDE")
+        .flatMap((row) => buildPayrollOccurrences(row, payrollRangeStart, payrollRangeEnd, payrollHourlyRateValue))
+        .sort((a, b) => `${a.date}|${a.startTime}|${a.subjectName}`.localeCompare(`${b.date}|${b.startTime}|${b.subjectName}`, "es")),
+    [filteredRows, payrollHourlyRateValue, payrollRangeEnd, payrollRangeStart],
+  );
+
+  const summaryCards = useMemo(() => {
+    if (effectiveViewMode === "payroll") {
+      return {
+        totalLabel: "Rango de nómina",
+        totalValue: `${payrollRangeStart || "--"} -> ${payrollRangeEnd || "--"}`,
+        totalHint: "Corte editable para la simulación",
+        cesdeCount: `${formatHours(payrollSummary.cesdeHours)} h`,
+        cesdeHours: payrollHourlyRateValue
+          ? `${formatCurrency(payrollSummary.cesdeEstimated)} estimado`
+          : "Define valor hora CESDE",
+        senaCount: `${payrollSummary.senaLoads}`,
+        senaHours: senaMonthlySalaryValue
+          ? `${formatCurrency(payrollSummary.senaMonthlyReference)} mensual fijo`
+          : "Define salario mensual SENA",
+      };
+    }
+    if (effectiveViewMode === "calendar") {
+      return {
+        totalLabel: "Cargas visibles",
+        totalValue: loading ? "-" : `${calendarSummary.totalLoads}`,
+        totalHint: loading ? "-" : `${calendarSummary.totalEvents} bloque(s) en la semana`,
+        cesdeCount: loading ? "-" : `${calendarSummary.cesdeLoads}`,
+        cesdeHours: loading ? "-" : `${formatHours(calendarSummary.cesdeHours)} h académicas`,
+        senaCount: loading ? "-" : `${calendarSummary.senaLoads}`,
+        senaHours: loading ? "-" : `${formatHours(calendarSummary.senaHours)} h registradas`,
+      };
+    }
+
+    return {
+      totalLabel: "Cargas registradas",
+      totalValue: loading ? "-" : `${rows.length}`,
+      totalHint: "Vista completa del módulo",
+      cesdeCount: loading ? "-" : `${counts.CESDE}`,
+      cesdeHours: loading ? "-" : `${formatHours(hourTotals.CESDE)} h académicas/semana`,
+      senaCount: loading ? "-" : `${counts.SENA}`,
+      senaHours: loading ? "-" : `${formatHours(hourTotals.SENA)} h registradas/semana`,
+    };
+  }, [
+    calendarSummary,
+    counts.CESDE,
+    counts.SENA,
+    effectiveViewMode,
+    hourTotals.CESDE,
+    hourTotals.SENA,
+    loading,
+    payrollHourlyRateValue,
+    payrollRangeEnd,
+    payrollRangeStart,
+    payrollSummary.cesdeEstimated,
+    payrollSummary.cesdeHours,
+    payrollSummary.senaLoads,
+    payrollSummary.senaMonthlyReference,
+    rows.length,
+    senaMonthlySalaryValue,
+  ]);
 
   function updateFilter<K extends keyof WorkloadFilters>(key: K, value: WorkloadFilters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -683,7 +1260,7 @@ export default function AdminWorkloadPage() {
       throw new Error("La carga se guardó, pero no hay sesión activa para crear la estructura de Drive.");
     }
 
-    const token = await user.getIdToken(true);
+    const token = await user.getIdToken();
     const workspaceId = makeTeachingLoadWorkspaceId(args.loadId);
     const response = await fetch("/api/admin/drive/bootstrap", {
       method: "POST",
@@ -734,178 +1311,200 @@ export default function AdminWorkloadPage() {
     const shift = shifts.find((item) => item.id === form.shiftId);
 
     if (!subject) {
-      setError("Debes seleccionar una materia.");
+      showValidationError("Debes seleccionar una materia.");
       return;
     }
     if (!site) {
-      setError("Debes seleccionar una sede.");
+      showValidationError("Debes seleccionar una sede.");
       return;
     }
     if (!audience) {
-      setError(form.institution === "SENA" ? "Debes seleccionar una ficha." : "Debes seleccionar un grupo.");
+      showValidationError(form.institution === "SENA" ? "Debes seleccionar una ficha." : "Debes seleccionar un grupo.");
       return;
     }
     if (!shift) {
-      setError("Debes seleccionar una jornada.");
+      showValidationError("Debes seleccionar una jornada.");
       return;
     }
     if (!form.startDate || !form.endDate) {
-      setError("Debes ingresar fecha de inicio y fecha de fin.");
+      showValidationError("Debes ingresar fecha de inicio y fecha de fin.");
       return;
     }
     if (form.endDate < form.startDate) {
-      setError("La fecha de fin no puede ser menor que la fecha de inicio.");
+      showValidationError("La fecha de fin no puede ser menor que la fecha de inicio.");
       return;
     }
     if (!form.startTime || !form.endTime) {
-      setError("Debes ingresar hora de inicio y hora de fin.");
+      showValidationError("Debes ingresar hora de inicio y hora de fin.");
       return;
     }
     if (form.endTime <= form.startTime) {
-      setError("La hora de fin debe ser posterior a la hora de inicio.");
+      showValidationError("La hora de fin debe ser posterior a la hora de inicio.");
       return;
     }
     const durationMinutes = diffMinutes(form.startTime, form.endTime);
     if (durationMinutes <= 0) {
-      setError("La franja horaria no es válida.");
+      showValidationError("La franja horaria no es válida.");
       return;
     }
     const period = form.period.trim().toUpperCase();
     if (!/^\d{4}-\d{2}$/.test(period)) {
-      setError("El periodo debe tener formato YYYY-PP, por ejemplo 2026-01.");
+      showValidationError("El periodo debe tener formato YYYY-PP, por ejemplo 2026-01.");
       return;
     }
     if (!form.classroom.trim()) {
-      setError("Debes ingresar el salón.");
+      showValidationError("Debes ingresar el salón.");
       return;
     }
     const cesdeGroupType = form.institution === "CESDE" ? form.cesdeGroupType : "REGULAR";
-    const academicHours = roundHours(durationMinutes / (form.institution === "CESDE" ? 45 : 60));
+    const academicHours = calculateAcademicHours(durationMinutes, form.institution);
     const dayOfWeek1 =
       form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL"
         ? form.dayOfWeek1.trim()
         : dayNameFromIsoDate(form.startDate) || "";
     if (!dayOfWeek1) {
-      setError("No fue posible resolver el día principal de la carga.");
+      showValidationError("No fue posible resolver el día principal de la carga.");
       return;
     }
     const dayOfWeek2 =
       form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" ? form.dayOfWeek2.trim() : "";
     if (form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
-      setError("El segundo día no puede ser igual al primero.");
+      showValidationError("El segundo día no puede ser igual al primero.");
       return;
     }
+    const weeklyAcademicHours = getWeeklyAcademicHours({
+      institution: form.institution,
+      cesdeGroupType,
+      dayOfWeek2,
+      academicHours,
+    });
 
-    setSaving(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const payload = {
-        institution: form.institution,
-        cesdeGroupType: form.institution === "CESDE" ? cesdeGroupType : "",
-        period,
-        subjectId: subject.id,
-        subjectName: subject.name,
-        audienceId: audience.id,
-        audienceName: audience.name,
-        audienceType: form.institution === "SENA" ? "ficha" : "group",
-        siteId: site.id,
-        siteName: site.name,
-        shiftId: shift.id,
-        shiftName: shift.name,
-        startDate: form.startDate,
-        endDate: form.endDate,
-        startTime: form.startTime,
-        endTime: form.endTime,
-        classroom: form.classroom.trim().toUpperCase(),
-        durationMinutes,
-        academicHours,
-        dayOfWeek1,
-        dayOfWeek2,
-        active: true,
-        updatedAt: serverTimestamp(),
-      };
+    const isEditing = Boolean(editingId);
+    const savedId = editingId ?? doc(collection(firestore, "teachingLoads")).id;
+    const classroom = form.classroom.trim().toUpperCase();
+    const payload = {
+      institution: form.institution,
+      cesdeGroupType: form.institution === "CESDE" ? cesdeGroupType : "",
+      period,
+      subjectId: subject.id,
+      subjectName: subject.name,
+      audienceId: audience.id,
+      audienceName: audience.name,
+      audienceType: form.institution === "SENA" ? "ficha" : "group",
+      siteId: site.id,
+      siteName: site.name,
+      shiftId: shift.id,
+      shiftName: shift.name,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      classroom,
+      durationMinutes,
+      academicHours,
+      weeklyAcademicHours,
+      dayOfWeek1,
+      dayOfWeek2,
+      active: true,
+      updatedAt: serverTimestamp(),
+    };
+    const hasLinkedDrive = Boolean(currentRow?.driveWorkspaceId?.trim());
 
-      let savedId = editingId;
-      if (editingId) {
-        await updateDoc(doc(firestore, "teachingLoads", editingId), payload);
-      } else {
-        const newRef = doc(collection(firestore, "teachingLoads"));
-        savedId = newRef.id;
-        await setDoc(newRef, {
-          id: newRef.id,
-          ...payload,
-          driveWorkspaceId: "",
-          driveStatus: "pending",
-          driveErrorMessage: "",
-          drivePublicFolderUrl: "",
-          createdAt: serverTimestamp(),
-        });
-      }
-
-      if (!savedId) {
-        throw new Error("No fue posible resolver el identificador de la carga.");
-      }
-
-      const hasLinkedDrive = Boolean(currentRow?.driveWorkspaceId?.trim());
-      if (hasLinkedDrive) {
-        setSuccess("Carga horaria actualizada correctamente. La estructura de Drive existente se conserva.");
-      } else {
-        await updateDoc(doc(firestore, "teachingLoads", savedId), {
-          driveStatus: "pending",
-          driveErrorMessage: "",
-          updatedAt: serverTimestamp(),
-        });
-        try {
-          const driveResult = await createOrLinkDriveForRow({
-            loadId: savedId,
-            institution: form.institution,
-            cesdeGroupType,
-            period,
-            subjectId: subject.id,
-            audienceId: audience.id,
-            siteName: site.name,
-            shiftName: shift.name,
-            startDate: form.startDate,
-            endDate: form.endDate,
-            dayOfWeek1,
-            dayOfWeek2,
-          });
-          await updateDoc(doc(firestore, "teachingLoads", savedId), {
-            driveWorkspaceId: driveResult.workspaceId,
-            driveStatus: "linked",
-            driveErrorMessage: "",
-            drivePublicFolderUrl: driveResult.publicFolderUrl,
-            updatedAt: serverTimestamp(),
-          });
-          setSuccess(editingId ? "Carga horaria actualizada y estructura de Drive vinculada." : "Carga horaria registrada y estructura de Drive creada.");
-        } catch (driveError) {
-          const driveMessage =
-            driveError instanceof Error ? driveError.message : "No fue posible crear la estructura de Drive.";
-          await updateDoc(doc(firestore, "teachingLoads", savedId), {
-            driveWorkspaceId: "",
-            driveStatus: "error",
-            driveErrorMessage: driveMessage,
-            updatedAt: serverTimestamp(),
-          });
-          setError(`La carga se guardó, pero Drive falló: ${driveMessage}`);
-          setSuccess(
-            `${editingId ? "Carga horaria actualizada" : "Carga horaria registrada"}, pero la estructura de Drive no pudo crearse automáticamente.`,
-          );
-        }
-      }
+    flushSync(() => {
+      setError(null);
+      setSuccess(null);
       closeModal();
-    } catch {
-      setError("No fue posible guardar la carga horaria.");
-    } finally {
-      setSaving(false);
-    }
+    });
+
+    window.setTimeout(() => {
+      void (async () => {
+        try {
+          if (isEditing) {
+            await updateDoc(doc(firestore, "teachingLoads", savedId), payload);
+          } else {
+            await setDoc(doc(firestore, "teachingLoads", savedId), {
+              id: savedId,
+              ...payload,
+              driveWorkspaceId: "",
+              driveStatus: "pending",
+              driveErrorMessage: "",
+              drivePublicFolderUrl: "",
+              createdAt: serverTimestamp(),
+            });
+          }
+
+          if (hasLinkedDrive) {
+            setSuccess("Carga horaria actualizada correctamente. La estructura de Drive existente se conserva.");
+            feedback.success("Carga horaria actualizada correctamente.");
+            return;
+          }
+
+          await updateDoc(doc(firestore, "teachingLoads", savedId), {
+            driveStatus: "pending",
+            driveErrorMessage: "",
+            updatedAt: serverTimestamp(),
+          });
+          try {
+            const driveResult = await createOrLinkDriveForRow({
+              loadId: savedId,
+              institution: form.institution,
+              cesdeGroupType,
+              period,
+              subjectId: subject.id,
+              audienceId: audience.id,
+              siteName: site.name,
+              shiftName: shift.name,
+              startDate: form.startDate,
+              endDate: form.endDate,
+              dayOfWeek1,
+              dayOfWeek2,
+            });
+            await updateDoc(doc(firestore, "teachingLoads", savedId), {
+              driveWorkspaceId: driveResult.workspaceId,
+              driveStatus: "linked",
+              driveErrorMessage: "",
+              drivePublicFolderUrl: driveResult.publicFolderUrl,
+              updatedAt: serverTimestamp(),
+            });
+            setSuccess(isEditing ? "Carga horaria actualizada y estructura de Drive vinculada." : "Carga horaria registrada y estructura de Drive creada.");
+            feedback.success(isEditing ? "Carga horaria actualizada y Drive vinculado." : "Carga horaria registrada y Drive creado.");
+          } catch (driveError) {
+            const driveMessage =
+              driveError instanceof Error ? driveError.message : "No fue posible crear la estructura de Drive.";
+            await updateDoc(doc(firestore, "teachingLoads", savedId), {
+              driveWorkspaceId: "",
+              driveStatus: "error",
+              driveErrorMessage: driveMessage,
+              updatedAt: serverTimestamp(),
+            });
+            reportFormError({
+              message: `La carga se guardó, pero Drive falló: ${driveMessage}`,
+              feedback,
+              setMessage: setError,
+            });
+            reportFormSuccess({
+              message: `${isEditing ? "Carga horaria actualizada" : "Carga horaria registrada"}, pero la estructura de Drive no pudo crearse automáticamente.`,
+              feedback,
+              setMessage: setSuccess,
+            });
+          }
+        } catch {
+          reportFormError({
+            message: "No fue posible guardar la carga horaria.",
+            feedback,
+            setMessage: setError,
+          });
+        }
+      })();
+    }, 0);
   }
 
   async function removeRow(row: TeachingLoadRow) {
     const confirmed = await feedback.confirm({
       title: "Eliminar carga horaria",
-      description: `Se eliminará ${row.subjectName} en ${row.siteName} para ${row.audienceName}.`,
+      description: row.driveWorkspaceId
+        ? `Se eliminará ${row.subjectName} en ${row.siteName} para ${row.audienceName} y también se quitará su vínculo del panel de Drive.`
+        : `Se eliminará ${row.subjectName} en ${row.siteName} para ${row.audienceName}.`,
       confirmLabel: "Eliminar carga",
       cancelLabel: "Cancelar",
       tone: "danger",
@@ -914,11 +1513,173 @@ export default function AdminWorkloadPage() {
     setError(null);
     setSuccess(null);
     try {
-      await deleteDoc(doc(firestore, "teachingLoads", row.id));
-      feedback.success("Carga horaria eliminada.");
+      const user = firebaseAuth.currentUser;
+      if (!user) {
+        reportFormError({
+          message: "Debes iniciar sesión como admin para eliminar la carga horaria.",
+          feedback,
+          setMessage: setError,
+        });
+        return;
+      }
+
+      const token = await user.getIdToken(true);
+      const response = await fetch("/api/admin/workload/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ teachingLoadId: row.id }),
+      });
+      const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!response.ok) {
+        reportFormError({
+          message: typeof data?.error === "string" ? data.error : "No fue posible eliminar la carga horaria.",
+          feedback,
+          setMessage: setError,
+        });
+        return;
+      }
+
+      const deletedWorkspace = data?.deletedWorkspace === true;
+      const successMessage = deletedWorkspace
+        ? "Carga horaria eliminada y estructura de Drive retirada del panel."
+        : "Carga horaria eliminada.";
+      setSuccess(successMessage);
+      feedback.success(successMessage);
     } catch {
-      setError("No fue posible eliminar la carga horaria.");
-      feedback.error("No fue posible eliminar la carga horaria.");
+      reportFormError({
+        message: "No fue posible eliminar la carga horaria.",
+        feedback,
+        setMessage: setError,
+      });
+    }
+  }
+
+  async function downloadPayrollStatementPdf(statement: PayrollStatementRow) {
+    try {
+      const [{ jsPDF }, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+      const autoTable = autoTableModule.default;
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const marginX = 36;
+      let cursorY = 42;
+
+      doc.setFontSize(18);
+      doc.text("Colilla de pago CESDE", marginX, cursorY);
+      cursorY += 18;
+      doc.setFontSize(10);
+      doc.setTextColor(90, 90, 90);
+      doc.text(`Corte: ${formatLongDate(statement.rangeStart)} - ${formatLongDate(statement.rangeEnd)}`, marginX, cursorY);
+      cursorY += 14;
+      doc.text(`Generada: ${statement.createdAtLabel || "-"}`, marginX, cursorY);
+      cursorY += 14;
+      doc.text(`Generó: ${statement.createdByName || statement.createdByEmail || "-"}`, marginX, cursorY);
+      cursorY += 24;
+
+      autoTable(doc, {
+        startY: cursorY,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 4, lineColor: [230, 230, 230], lineWidth: 0.5 },
+        headStyles: { fillColor: [248, 245, 255], textColor: [77, 53, 140] },
+        head: [["Fecha", "Materia", "Grupo", "Sede", "Jornada", "Hora", "Salón", "Horas", "Vlr hora", "Valor"]],
+        body: statement.items.map((item) => [
+          `${item.date} (${item.dayName})`,
+          item.subjectName,
+          item.audienceType === "ficha" ? `Ficha ${item.audienceName}` : item.audienceName,
+          item.siteName,
+          item.shiftName,
+          `${item.startTime} - ${item.endTime}`,
+          item.classroom || "-",
+          formatHours(item.academicHours),
+          formatCurrency(item.hourlyRate),
+          formatCurrency(item.estimatedValue),
+        ]),
+        foot: [["", "", "", "", "", "", "Total", formatHours(statement.totalHours), "", formatCurrency(statement.totalValue)]],
+      });
+
+      doc.save(`colilla-cesde-${statement.rangeStart}-${statement.rangeEnd}.pdf`);
+    } catch {
+      feedback.error("No fue posible generar el PDF de la colilla.");
+    }
+  }
+
+  async function savePayrollStatement() {
+    if (!payrollRangeStart || !payrollRangeEnd) {
+      showValidationError("Debes definir el rango quincenal para guardar la colilla.");
+      return;
+    }
+    const payrollStartDate = parseLocalDate(payrollRangeStart);
+    const payrollEndDate = parseLocalDate(payrollRangeEnd);
+    if (!payrollStartDate || !payrollEndDate) {
+      showValidationError("Las fechas de la quincena no tienen un formato válido.");
+      return;
+    }
+    if (payrollEndDate.getTime() < payrollStartDate.getTime()) {
+      showValidationError("La fecha final de la quincena no puede ser menor a la fecha inicial.");
+      return;
+    }
+    if (!payrollHourlyRateValue) {
+      showValidationError("Debes indicar el valor hora CESDE para guardar la colilla.");
+      return;
+    }
+    if (!currentPayrollStatementItems.length) {
+      showValidationError("No hay jornadas CESDE en el rango seleccionado para generar la colilla.");
+      return;
+    }
+
+    try {
+      const actor = firebaseAuth.currentUser;
+      const statementRef = doc(collection(firestore, "payrollStatements"));
+      const createdByName = actor?.displayName || actor?.email || "Administrador";
+      const createdByEmail = actor?.email || "";
+      const totalHours = roundHours(currentPayrollStatementItems.reduce((sum, item) => sum + item.academicHours, 0));
+      const totalValue = roundHours(currentPayrollStatementItems.reduce((sum, item) => sum + item.estimatedValue, 0));
+
+      await setDoc(statementRef, {
+        id: statementRef.id,
+        source: "workload-payroll",
+        institution: "CESDE",
+        rangeStart: payrollRangeStart,
+        rangeEnd: payrollRangeEnd,
+        hourlyRate: payrollHourlyRateValue,
+        totalHours,
+        totalValue,
+        itemCount: currentPayrollStatementItems.length,
+        items: currentPayrollStatementItems,
+        createdByName,
+        createdByEmail,
+        createdAt: serverTimestamp(),
+      });
+
+      feedback.success("Colilla quincenal guardada en el historial.");
+      setSuccess("Colilla quincenal guardada correctamente.");
+    } catch {
+      reportFormError({
+        message: "No fue posible guardar la colilla quincenal.",
+        feedback,
+        setMessage: setError,
+      });
+    }
+  }
+
+  async function removePayrollStatement(statement: PayrollStatementRow) {
+    const confirmed = await feedback.confirm({
+      title: "Eliminar colilla",
+      description: `Se eliminará la colilla del periodo ${statement.rangeStart} - ${statement.rangeEnd}. Esta acción no se puede deshacer.`,
+      confirmLabel: "Eliminar colilla",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(firestore, "payrollStatements", statement.id));
+      feedback.success("Colilla eliminada del historial.");
+      setSuccess("Colilla eliminada correctamente.");
+    } catch {
+      reportFormError({
+        message: "No fue posible eliminar la colilla.",
+        feedback,
+        setMessage: setError,
+      });
     }
   }
 
@@ -945,7 +1706,9 @@ export default function AdminWorkloadPage() {
             <p className="mt-1 text-sm text-foreground/55">
               {viewMode === "calendar"
                 ? "Agenda semanal por institución con creación rápida desde la cuadrícula."
-                : "Registra franjas horarias por institución, sede, jornada, salón y materia."}
+                : viewMode === "payroll"
+                  ? "Simula la nómina con horas programadas de CESDE y salario fijo mensual de SENA."
+                  : "Registra franjas horarias por institución, sede, jornada, salón y materia."}
             </p>
           </div>
 
@@ -972,24 +1735,30 @@ export default function AdminWorkloadPage() {
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <article className="zs-card-muted px-3 py-3">
-            <p className="text-xs text-foreground/55">Cargas registradas</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{loading ? "-" : rows.length}</p>
-            <p className="mt-1 text-xs text-foreground/55">Vista completa del módulo</p>
+            <p className="text-xs text-foreground/55">{summaryCards.totalLabel}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{summaryCards.totalValue}</p>
+            <p className="mt-1 text-xs text-foreground/55">{summaryCards.totalHint}</p>
           </article>
           <article className="zs-card-muted px-3 py-3">
             <p className="text-xs text-foreground/55">CESDE</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight text-fuchsia-700">{loading ? "-" : counts.CESDE}</p>
-            <p className="mt-1 text-xs text-foreground/55">{loading ? "-" : `${formatHours(hourTotals.CESDE)} h académicas`}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-fuchsia-700">{summaryCards.cesdeCount}</p>
+            <p className="mt-1 text-xs text-foreground/55">{summaryCards.cesdeHours}</p>
           </article>
           <article className="zs-card-muted px-3 py-3">
             <p className="text-xs text-foreground/55">SENA</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight text-emerald-700">{loading ? "-" : counts.SENA}</p>
-            <p className="mt-1 text-xs text-foreground/55">{loading ? "-" : `${formatHours(hourTotals.SENA)} h registradas`}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-emerald-700">{summaryCards.senaCount}</p>
+            <p className="mt-1 text-xs text-foreground/55">{summaryCards.senaHours}</p>
           </article>
           <article className="zs-card-muted px-3 py-3">
-            <p className="text-xs text-foreground/55">Materias activas</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{loading ? "-" : subjects.length}</p>
-            <p className="mt-1 text-xs text-foreground/55">Disponibles para asignación</p>
+            <p className="text-xs text-foreground/55">
+              {effectiveViewMode === "payroll" ? "Mixto estimado" : "Materias activas"}
+            </p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+              {effectiveViewMode === "payroll" ? formatCurrency(payrollSummary.totalMixedReference) : loading ? "-" : subjects.length}
+            </p>
+            <p className="mt-1 text-xs text-foreground/55">
+              {effectiveViewMode === "payroll" ? "CESDE quincena + referencia SENA / 2" : "Disponibles para asignación"}
+            </p>
           </article>
         </div>
 
@@ -1029,14 +1798,32 @@ export default function AdminWorkloadPage() {
               {filteredRows.length} registro(s)
             </span>
             {isMobile ? (
-              <span className="inline-flex rounded-full border border-border bg-surface px-3 py-1 text-[11px] font-medium text-foreground/70">
-                En móvil se muestra solo el listado
-              </span>
+              <div className="inline-flex rounded-2xl border border-border bg-surface p-1">
+                {([
+                  { id: "list", label: "Registros" },
+                  { id: "payroll", label: "Nómina" },
+                ] as const).map((item) => {
+                  const active = effectiveViewMode === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setViewMode(item.id)}
+                      className={`inline-flex h-7 items-center rounded-xl px-3 text-xs font-semibold transition ${
+                        active ? "bg-zinc-950 text-white shadow-sm" : "text-foreground/65 hover:text-foreground"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
               <div className="inline-flex rounded-2xl border border-border bg-surface p-1">
                 {([
                   { id: "calendar", label: "Calendario" },
                   { id: "list", label: "Registros" },
+                  { id: "payroll", label: "Nómina" },
                 ] as const).map((item) => {
                   const active = viewMode === item.id;
                   return (
@@ -1060,13 +1847,41 @@ export default function AdminWorkloadPage() {
         {effectiveViewMode === "list" ? (
           <div className="mt-4 space-y-3">
             {filteredRows.map((row) => (
-              <div key={row.id} className="rounded-2xl border border-border bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+              <div
+                key={row.id}
+                className={`relative overflow-hidden rounded-2xl border bg-white p-4 shadow-sm ${
+                  getSubjectTechnologyMeta(row.subjectName)?.listCardClassName ?? "border-border"
+                }`}
+              >
+                {(() => {
+                  const techMeta = getSubjectTechnologyMeta(row.subjectName);
+                  const PrimaryIcon = techMeta?.primaryIcon;
+                  const SecondaryIcon = techMeta?.secondaryIcon;
+                  return (
+                <>
+                  {techMeta && PrimaryIcon ? (
+                    <div className={`pointer-events-none absolute -bottom-6 -right-4 ${techMeta.watermarkClassName}`}>
+                      <PrimaryIcon className="h-24 w-24" />
+                    </div>
+                  ) : null}
+                <div className="relative z-10 flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="inline-flex rounded-full bg-zinc-950 px-2.5 py-1 text-[11px] font-semibold text-white">
                         {row.institution}
                       </span>
+                      {techMeta && PrimaryIcon ? (
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 ${techMeta.badgeClassName}`}
+                          aria-label={techMeta.label}
+                          title={techMeta.label}
+                        >
+                          <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 ${techMeta.iconWrapClassName}`}>
+                            <PrimaryIcon className={techMeta.iconClassName} />
+                            {SecondaryIcon ? <SecondaryIcon className={techMeta.iconClassName} /> : null}
+                          </span>
+                        </span>
+                      ) : null}
                       <span className="text-sm font-semibold text-foreground">{row.subjectName}</span>
                       <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/75">
                         {row.audienceType === "ficha" ? `Ficha ${row.audienceName}` : row.audienceName}
@@ -1128,6 +1943,11 @@ export default function AdminWorkloadPage() {
                         <GraduationCap className="h-3.5 w-3.5" />
                         {formatHours(row.academicHours)} h {row.institution === "CESDE" ? "académicas" : "registradas"}
                       </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        {formatHours(getWeeklyAcademicHours(row))} h/semana
+                        {getWeeklySessionCount(row) > 1 ? ` (${getWeeklySessionCount(row)} jornadas)` : ""}
+                      </span>
                       {row.drivePublicFolderUrl ? (
                         <a
                           href={row.drivePublicFolderUrl}
@@ -1155,6 +1975,9 @@ export default function AdminWorkloadPage() {
                     </button>
                   </div>
                 </div>
+                </>
+                  );
+                })()}
               </div>
             ))}
 
@@ -1163,6 +1986,259 @@ export default function AdminWorkloadPage() {
                 {loading ? "Cargando carga horaria..." : `No hay registros para ${tab} con los filtros actuales.`}
               </div>
             ) : null}
+          </div>
+        ) : effectiveViewMode === "payroll" ? (
+          <div className="mt-4 space-y-4">
+            <div className="zs-card p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold tracking-tight text-foreground">Vista nómina</p>
+                  <p className="mt-1 text-sm text-foreground/55">
+                    Simulación operativa: CESDE se calcula por horas programadas en la quincena y SENA se trata como salario fijo mensual.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-foreground/70">
+                    Corte: {payrollRangeStart}
+                    {" -> "}
+                    {payrollRangeEnd}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => movePayrollFortnight(-1)}
+                    className="zs-btn-secondary h-9 px-3 text-xs"
+                    aria-label="Retroceder una quincena"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => movePayrollFortnight(1)}
+                    className="zs-btn-secondary h-9 px-3 text-xs"
+                    aria-label="Avanzar una quincena"
+                  >
+                    Siguiente
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <button type="button" onClick={() => void savePayrollStatement()} className="zs-btn-primary h-9 px-3 text-xs">
+                    <Save className="h-4 w-4" />
+                    Guardar colilla
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 xl:grid-cols-[1.25fr_1fr]">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-foreground/45">
+                      <CalendarRange className="h-3.5 w-3.5" />
+                      Inicio quincena
+                    </span>
+                    <input
+                      type="date"
+                      value={payrollRangeStart}
+                      onChange={(e) => setPayrollRangeStart(e.target.value)}
+                      className="zs-input"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-foreground/45">
+                      <CalendarRange className="h-3.5 w-3.5" />
+                      Fin quincena
+                    </span>
+                    <input
+                      type="date"
+                      value={payrollRangeEnd}
+                      onChange={(e) => setPayrollRangeEnd(e.target.value)}
+                      className="zs-input"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fuchsia-700">
+                      <BadgeDollarSign className="h-3.5 w-3.5" />
+                      Valor hora CESDE
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={cesdeHourlyRate}
+                      onChange={(e) => setCesdeHourlyRate(e.target.value)}
+                      placeholder="Ej. 25000"
+                      className="zs-input"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                      <Wallet className="h-3.5 w-3.5" />
+                      Salario mensual SENA
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={senaMonthlySalary}
+                      onChange={(e) => setSenaMonthlySalary(e.target.value)}
+                      placeholder="Ej. 3200000"
+                      className="zs-input"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <article className="zs-card-muted px-3 py-3">
+                    <p className="text-xs text-foreground/55">Horas CESDE en quincena</p>
+                    <p className="mt-1 text-2xl font-semibold tracking-tight text-fuchsia-700">
+                      {formatHours(payrollSummary.cesdeHours)} h
+                    </p>
+                    <p className="mt-1 text-xs text-foreground/55">{payrollSummary.cesdeLoads} carga(s) con programación</p>
+                  </article>
+                  <article className="zs-card-muted px-3 py-3">
+                    <p className="text-xs text-foreground/55">CESDE estimado quincena</p>
+                    <p className="mt-1 text-2xl font-semibold tracking-tight text-fuchsia-700">
+                      {formatCurrency(payrollSummary.cesdeEstimated)}
+                    </p>
+                    <p className="mt-1 text-xs text-foreground/55">Bruto simulado con valor hora editable</p>
+                  </article>
+                  <article className="zs-card-muted px-3 py-3">
+                    <p className="text-xs text-foreground/55">SENA mensual fijo</p>
+                    <p className="mt-1 text-2xl font-semibold tracking-tight text-emerald-700">
+                      {formatCurrency(payrollSummary.senaMonthlyReference)}
+                    </p>
+                    <p className="mt-1 text-xs text-foreground/55">{payrollSummary.senaLoads} carga(s) SENA visibles</p>
+                  </article>
+                  <article className="zs-card-muted px-3 py-3">
+                    <p className="text-xs text-foreground/55">Referencia mixta</p>
+                    <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                      {formatCurrency(payrollSummary.totalMixedReference)}
+                    </p>
+                    <p className="mt-1 text-xs text-foreground/55">CESDE quincena + SENA / 2</p>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <section className="zs-card p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-base font-semibold tracking-tight text-foreground">Detalle CESDE por carga</p>
+                    <p className="mt-1 text-sm text-foreground/55">
+                      Se cuentan solo las clases o sesiones que realmente caen dentro del rango seleccionado.
+                    </p>
+                  </div>
+                  <span className="inline-flex rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground/70">
+                    {payrollSummary.cesdeBreakdown.length} fila(s)
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-2.5 xl:grid-cols-3 2xl:grid-cols-4">
+                  {payrollSummary.cesdeBreakdown.length ? (
+                    payrollSummary.cesdeBreakdown.map((item) => (
+                      <article key={item.row.id} className="rounded-xl border border-border bg-white px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-semibold leading-4 text-foreground">{item.row.subjectName}</p>
+                            <p className="mt-0.5 truncate text-[11px] text-foreground/55">
+                              {item.row.audienceType === "ficha" ? `Ficha ${item.row.audienceName}` : item.row.audienceName} · {item.row.siteName} · {item.row.shiftName}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-[13px] font-semibold leading-4 text-fuchsia-700">{formatCurrency(item.estimatedValue)}</p>
+                            <p className="mt-0.5 text-[10px] text-foreground/55">{formatHours(item.programmedHours)} h</p>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-foreground/60">
+                          <span className="inline-flex rounded-full border border-border bg-surface px-1.5 py-0.5">
+                            {item.occurrences} {item.occurrences === 1 ? "clase" : "sesiones"}
+                          </span>
+                          <span className="inline-flex rounded-full border border-border bg-surface px-1.5 py-0.5">
+                            {item.row.dayOfWeek2 ? `${item.row.dayOfWeek1} y ${item.row.dayOfWeek2}` : item.row.dayOfWeek1}
+                          </span>
+                          <span className="inline-flex rounded-full border border-border bg-surface px-1.5 py-0.5">
+                            {formatTimeRange(item.row.startTime, item.row.endTime)}
+                          </span>
+                          <span className="inline-flex rounded-full border border-border bg-surface px-1.5 py-0.5">
+                            {item.row.classroom || "Sin salón"}
+                          </span>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border bg-surface px-4 py-10 text-center text-sm text-foreground/55">
+                      {loading ? "Calculando nómina..." : "No hay horas CESDE programadas en el rango seleccionado."}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <section className="zs-card p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold tracking-tight text-foreground">Historial de colillas</p>
+                  <p className="mt-1 text-sm text-foreground/55">
+                    Cada corte guardado conserva su detalle para consulta futura y descarga en PDF.
+                  </p>
+                </div>
+                <span className="inline-flex rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground/70">
+                  {payrollStatements.length} registro(s)
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {payrollStatements.length ? (
+                  payrollStatements.map((statement) => (
+                    <article key={statement.id} className="rounded-2xl border border-border bg-white px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground">
+                            Colilla {statement.createdAtLabel ? `· ${statement.createdAtLabel}` : ""}
+                          </p>
+                          <p className="mt-1 text-xs text-foreground/55">
+                            {statement.rangeStart} - {statement.rangeEnd}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[168px_110px_132px_148px]">
+                          <div className="flex h-12 flex-col justify-center rounded-xl border border-fuchsia-200 bg-fuchsia-50 px-3">
+                            <p className="text-[10px] leading-none text-fuchsia-700/75">Total</p>
+                            <p className="mt-1 text-sm font-semibold leading-none text-fuchsia-700">{formatCurrency(statement.totalValue)}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPayrollStatement(statement)}
+                            className="zs-btn-secondary h-12 justify-center px-3 text-xs"
+                          >
+                            <Eye className="h-4 w-4" />
+                            Ver
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void downloadPayrollStatementPdf(statement)}
+                            className="zs-btn-secondary h-12 justify-center px-3 text-xs"
+                          >
+                            <Save className="h-4 w-4" />
+                            PDF
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void removePayrollStatement(statement)}
+                            className="zs-btn-danger-soft h-12 justify-center px-3 text-xs"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border bg-surface px-4 py-10 text-center text-sm text-foreground/55">
+                    Todavía no has guardado colillas quincenales.
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
         ) : (
           <div className="mt-4">
@@ -1243,12 +2319,26 @@ export default function AdminWorkloadPage() {
                     <div className="border-r border-border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
                       Hora
                     </div>
-                    {calendarDays.map((day) => (
-                      <div key={isoDate(day)} className="border-r border-border px-2 py-2 last:border-r-0">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">{formatWeekday(day)}</p>
-                        <p className="mt-0.5 text-xs font-semibold text-foreground">{formatDayMonth(day)}</p>
-                      </div>
-                    ))}
+                    {calendarDays.map((day) => {
+                      const holidayName = calendarHolidayMap.get(isoDate(day));
+                      return (
+                        <div
+                          key={isoDate(day)}
+                          className={`border-r border-border px-2 py-2 last:border-r-0 ${holidayName ? "bg-amber-50/80" : ""}`}
+                        >
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">{formatWeekday(day)}</p>
+                          <p className="mt-0.5 text-xs font-semibold text-foreground">{formatDayMonth(day)}</p>
+                          {holidayName ? (
+                            <span
+                              className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                              title={holidayName}
+                            >
+                              Festivo
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div className="grid h-[960px] md:h-[1020px] xl:h-[1120px] grid-cols-[78px_repeat(7,minmax(0,1fr))]">
@@ -1265,9 +2355,13 @@ export default function AdminWorkloadPage() {
                     </div>
 
                     {calendarDays.map((day, dayIndex) => {
+                      const holidayName = calendarHolidayMap.get(isoDate(day));
                       const items = calendarEvents.filter((event) => event.dayIndex === dayIndex);
                       return (
-                        <div key={isoDate(day)} className="relative h-full border-r border-border last:border-r-0">
+                        <div
+                          key={isoDate(day)}
+                          className={`relative h-full border-r border-border last:border-r-0 ${holidayName ? "bg-amber-50/35" : ""}`}
+                        >
                           {Array.from({ length: CALENDAR_SLOTS }).map((_, index) => (
                             <button
                               key={index}
@@ -1280,59 +2374,96 @@ export default function AdminWorkloadPage() {
                               aria-label={`Registrar carga el ${formatDayMonth(day)} a las ${CALENDAR_LABELS[index]}`}
                             />
                           ))}
+                          {holidayName ? (
+                            <div className="pointer-events-none absolute inset-x-2 top-3 z-10 rounded-xl border border-amber-200 bg-amber-100/95 px-2 py-2 text-center shadow-sm">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">Festivo</p>
+                              <p className="mt-1 text-[10px] text-amber-900/80">{holidayName}</p>
+                            </div>
+                          ) : null}
 
                           {items.map((event) => (
-                            <div
-                              key={event.id}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => openEdit(event.row)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  openEdit(event.row);
-                                }
-                              }}
-                              className={`absolute left-1.5 right-1.5 z-10 rounded-xl border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-primary/20 ${event.tone}`}
-                              style={{ top: event.top, height: event.height, minHeight: "92px" }}
-                            >
-                              <div className="flex items-start justify-between gap-1.5">
-                                <p className="pr-1 text-[10px] font-semibold leading-3.5">{event.subjectName}</p>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
+                            (() => {
+                              const techMeta = getSubjectTechnologyMeta(event.subjectName);
+                              const PrimaryIcon = techMeta?.primaryIcon;
+                              const SecondaryIcon = techMeta?.secondaryIcon;
+                              return (
+                                <div
+                                  key={event.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => openEdit(event.row)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
                                       openEdit(event.row);
-                                    }}
-                                    className="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
-                                    aria-label="Editar carga"
-                                  >
-                                    <Edit3 className="h-2.5 w-2.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      void removeRow(event.row);
-                                    }}
-                                    className="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
-                                    aria-label="Eliminar carga"
-                                  >
-                                    <Trash2 className="h-2.5 w-2.5" />
-                                  </button>
+                                    }
+                                  }}
+                              className={`absolute left-1.5 right-1.5 z-10 overflow-hidden rounded-xl border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-primary/20 ${event.tone}`}
+                                  style={{ top: event.top, height: event.height, minHeight: "92px" }}
+                                >
+                                  {techMeta && PrimaryIcon ? (
+                                    <div className={`pointer-events-none absolute -bottom-3 -right-2 ${techMeta.watermarkClassName}`}>
+                                      <PrimaryIcon className="h-14 w-14" />
+                                    </div>
+                                  ) : null}
+                                  <div className="relative z-10 flex items-start justify-between gap-1.5">
+                                    <div className="min-w-0 pr-1">
+                                      {techMeta && PrimaryIcon ? (
+                                        <div className="mb-1 flex items-center gap-1.5">
+                                          <span
+                                            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 ${techMeta.iconWrapClassName}`}
+                                            aria-label={techMeta.label}
+                                            title={techMeta.label}
+                                          >
+                                            <PrimaryIcon className="h-3 w-3" />
+                                            {SecondaryIcon ? <SecondaryIcon className="h-3 w-3" /> : null}
+                                          </span>
+                                        </div>
+                                      ) : null}
+                                      <p className="text-[10px] font-semibold leading-3.5">{event.subjectName}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openEdit(event.row);
+                                        }}
+                                        className="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
+                                        aria-label="Editar carga"
+                                      >
+                                        <Edit3 className="h-2.5 w-2.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void removeRow(event.row);
+                                        }}
+                                        className="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-white/70 text-current transition hover:bg-white"
+                                        aria-label="Eliminar carga"
+                                      >
+                                        <Trash2 className="h-2.5 w-2.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="relative z-10 mt-1.5 space-y-1 text-[9px] leading-3.5">
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      <span className="inline-flex rounded-full border border-white/70 bg-white/70 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide opacity-90">
+                                        {event.row.siteName || "Sin sede"}
+                                      </span>
+                                    </div>
+                                    <p className="whitespace-normal opacity-85">
+                                      {event.audienceName} | {event.classroom || "N/A"}
+                                    </p>
+                                    <p className="whitespace-normal font-medium">
+                                      {event.timeRange} | {event.hoursLabel}
+                                    </p>
+                                    <p className="whitespace-normal opacity-75">{event.shortDateRange}</p>
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="mt-1.5 space-y-1 text-[9px] leading-3.5">
-                                <p className="whitespace-normal opacity-85">
-                                  {event.audienceName} | {event.classroom || "N/A"}
-                                </p>
-                                <p className="whitespace-normal font-medium">
-                                  {event.timeRange} | {event.hoursLabel}
-                                </p>
-                                <p className="whitespace-normal opacity-75">{event.shortDateRange}</p>
-                              </div>
-                            </div>
+                              );
+                            })()
                           ))}
                         </div>
                       );
@@ -1353,170 +2484,240 @@ export default function AdminWorkloadPage() {
 
       {modalOpen ? (
         <ModalShell title={editingId ? "Editar carga horaria" : "Nueva carga horaria"} onClose={closeModal}>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Institución</span>
-              <select
-                value={form.institution}
-                onChange={(e) => updateField("institution", e.target.value as "CESDE" | "SENA")}
-                className="zs-input"
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-2xl border border-border bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(246,244,255,0.92),rgba(251,251,248,1))] px-4 py-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] font-semibold text-foreground/75 shadow-sm">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Configuración guiada de carga
+                  </div>
+                  <h3 className="mt-3 text-lg font-semibold tracking-tight text-foreground">
+                    {subjects.find((item) => item.id === form.subjectId)?.name ?? "Selecciona la materia"}
+                  </h3>
+                  <p className="mt-1 text-sm text-foreground/60">
+                    {form.institution} ·{" "}
+                    {form.institution === "SENA"
+                      ? audienceOptions.find((item) => item.id === form.audienceId)?.name
+                        ? `Ficha ${audienceOptions.find((item) => item.id === form.audienceId)?.name}`
+                        : "Ficha pendiente"
+                      : audienceOptions.find((item) => item.id === form.audienceId)?.name ?? "Grupo pendiente"}{" "}
+                    · {form.period.trim() || "Periodo"}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 md:w-[620px]">
+                  <div className="rounded-2xl border border-border bg-white px-3 py-2 shadow-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">Sede</p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">
+                      {sites.find((item) => item.id === form.siteId)?.name ?? "Pendiente"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-white px-3 py-2 shadow-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">Jornada</p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">
+                      {shifts.find((item) => item.id === form.shiftId)?.name ?? "Pendiente"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-white px-3 py-2 shadow-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">Horario</p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">{formatTimeRange(form.startTime, form.endTime)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-white px-3 py-2 shadow-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">Sesiones</p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">
+                      {currentWeeklySessionCount} jornada{currentWeeklySessionCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-3">
+              <WorkloadFormSection
+                icon={Layers3}
+                title="Base académica"
+                description="Relaciona institución, materia y grupo para construir la carga desde el origen."
               >
-                <option value="CESDE">CESDE</option>
-                <option value="SENA">SENA</option>
-              </select>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Materia</span>
-              <select value={form.subjectId} onChange={(e) => updateField("subjectId", e.target.value)} className="zs-input">
-                <option value="">Selecciona una materia</option>
-                {subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Periodo</span>
-              <input
-                type="text"
-                value={form.period}
-                onChange={(e) => updateField("period", e.target.value.toUpperCase())}
-                placeholder="2026-01"
-                className="zs-input"
-              />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">{form.institution === "SENA" ? "Ficha" : "Grupo"}</span>
-              <select value={form.audienceId} onChange={(e) => updateField("audienceId", e.target.value)} className="zs-input">
-                <option value="">{form.institution === "SENA" ? "Selecciona una ficha" : "Selecciona un grupo"}</option>
-                {audienceOptions.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {form.institution === "SENA" ? `Ficha ${item.name}` : item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Sede</span>
-              <select value={form.siteId} onChange={(e) => updateField("siteId", e.target.value)} className="zs-input">
-                <option value="">Selecciona una sede</option>
-                {sites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Jornada</span>
-              <select value={form.shiftId} onChange={(e) => updateField("shiftId", e.target.value)} className="zs-input">
-                <option value="">Selecciona una jornada</option>
-                {shifts.map((shift) => (
-                  <option key={shift.id} value={shift.id}>
-                    {shift.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {form.institution === "CESDE" ? (
               <label className="space-y-2">
-                <span className="text-sm font-medium text-foreground">Tipo de grupo CESDE</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Institución</span>
                 <select
-                  value={form.cesdeGroupType}
-                  onChange={(e) => updateField("cesdeGroupType", e.target.value as "REGULAR" | "EMPRESARIAL")}
+                  value={form.institution}
+                  onChange={(e) => updateField("institution", e.target.value as "CESDE" | "SENA")}
                   className="zs-input"
                 >
-                  <option value="REGULAR">Regular</option>
-                  <option value="EMPRESARIAL">Empresarial</option>
+                  <option value="CESDE">CESDE</option>
+                  <option value="SENA">SENA</option>
                 </select>
               </label>
-            ) : null}
 
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Fecha de inicio</span>
-              <input type="date" value={form.startDate} onChange={(e) => updateField("startDate", e.target.value)} className="zs-input" />
-            </label>
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Materia</span>
+                <select value={form.subjectId} onChange={(e) => updateField("subjectId", e.target.value)} className="zs-input">
+                  <option value="">Selecciona una materia</option>
+                  {subjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Fecha de fin</span>
-              <input type="date" value={form.endDate} onChange={(e) => updateField("endDate", e.target.value)} className="zs-input" />
-            </label>
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Periodo</span>
+                <input
+                  type="text"
+                  value={form.period}
+                  onChange={(e) => updateField("period", e.target.value.toUpperCase())}
+                  placeholder="2026-01"
+                  className="zs-input"
+                />
+              </label>
 
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Hora de inicio</span>
-              <input type="time" value={form.startTime} onChange={(e) => updateField("startTime", e.target.value)} className="zs-input" />
-            </label>
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">
+                  {form.institution === "SENA" ? "Ficha" : "Grupo"}
+                </span>
+                <select value={form.audienceId} onChange={(e) => updateField("audienceId", e.target.value)} className="zs-input">
+                  <option value="">{form.institution === "SENA" ? "Selecciona una ficha" : "Selecciona un grupo"}</option>
+                  {audienceOptions.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {form.institution === "SENA" ? `Ficha ${item.name}` : item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-foreground">Hora de fin</span>
-              <input type="time" value={form.endTime} onChange={(e) => updateField("endTime", e.target.value)} className="zs-input" />
-            </label>
-
-            <label className="space-y-2 md:col-span-2">
-              <span className="text-sm font-medium text-foreground">Salón</span>
-              <input
-                type="text"
-                value={form.classroom}
-                onChange={(e) => updateField("classroom", e.target.value)}
-                placeholder="Ej. A-203"
-                className="zs-input"
-              />
-            </label>
-
-            {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL" ? (
-              <>
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-foreground">Día 1</span>
-                  <select value={form.dayOfWeek1} onChange={(e) => updateField("dayOfWeek1", e.target.value)} className="zs-input">
-                    <option value="">Selecciona día</option>
-                    {WEEK_DAY_OPTIONS.map((day) => (
-                      <option key={day} value={day}>
-                        {day}
-                      </option>
-                    ))}
+              {form.institution === "CESDE" ? (
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Tipo de grupo CESDE</span>
+                  <select
+                    value={form.cesdeGroupType}
+                    onChange={(e) => updateField("cesdeGroupType", e.target.value as "REGULAR" | "EMPRESARIAL")}
+                    className="zs-input"
+                  >
+                    <option value="REGULAR">Regular</option>
+                    <option value="EMPRESARIAL">Empresarial</option>
                   </select>
                 </label>
+              ) : null}
+              </WorkloadFormSection>
 
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-foreground">Día 2 (opcional)</span>
-                  <select value={form.dayOfWeek2} onChange={(e) => updateField("dayOfWeek2", e.target.value)} className="zs-input">
-                    <option value="">Sin segundo día</option>
-                    {WEEK_DAY_OPTIONS.map((day) => (
-                      <option key={day} value={day}>
-                        {day}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : null}
+              <WorkloadFormSection
+                icon={Building2}
+                title="Ubicación operativa"
+                description="Define la sede, la jornada y el salón donde se ejecutará la carga."
+              >
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Sede</span>
+                <select value={form.siteId} onChange={(e) => updateField("siteId", e.target.value)} className="zs-input">
+                  <option value="">Selecciona una sede</option>
+                  {sites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Jornada</span>
+                <select value={form.shiftId} onChange={(e) => updateField("shiftId", e.target.value)} className="zs-input">
+                  <option value="">Selecciona una jornada</option>
+                  {shifts.map((shift) => (
+                    <option key={shift.id} value={shift.id}>
+                      {shift.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-2 md:col-span-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Salón</span>
+                <input
+                  type="text"
+                  value={form.classroom}
+                  onChange={(e) => updateField("classroom", e.target.value)}
+                  placeholder="Ej. A-203"
+                  className="zs-input"
+                />
+              </label>
+              </WorkloadFormSection>
+
+              <WorkloadFormSection
+                icon={CalendarDays}
+                title="Agenda de la carga"
+                description="Organiza fechas, horarios y frecuencia semanal según el tipo de grupo."
+              >
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Fecha de inicio</span>
+                <input type="date" value={form.startDate} onChange={(e) => updateField("startDate", e.target.value)} className="zs-input" />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Fecha de fin</span>
+                <input type="date" value={form.endDate} onChange={(e) => updateField("endDate", e.target.value)} className="zs-input" />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Hora de inicio</span>
+                <input type="time" value={form.startTime} onChange={(e) => updateField("startTime", e.target.value)} className="zs-input" />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Hora de fin</span>
+                <input type="time" value={form.endTime} onChange={(e) => updateField("endTime", e.target.value)} className="zs-input" />
+              </label>
+
+              {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL" ? (
+                <>
+                  <label className="space-y-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Día 1</span>
+                    <select value={form.dayOfWeek1} onChange={(e) => updateField("dayOfWeek1", e.target.value)} className="zs-input">
+                      <option value="">Selecciona día</option>
+                      {WEEK_DAY_OPTIONS.map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Día 2 (opcional)</span>
+                    <select value={form.dayOfWeek2} onChange={(e) => updateField("dayOfWeek2", e.target.value)} className="zs-input">
+                      <option value="">Sin segundo día</option>
+                      {WEEK_DAY_OPTIONS.map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
+              </WorkloadFormSection>
+            </div>
           </div>
 
           <div className="mt-4 rounded-2xl border border-border bg-surface px-4 py-3 text-xs text-foreground/65">
             {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL"
-              ? "CESDE empresarial: define fecha de inicio, fecha de fin y hasta 2 días por semana. Drive generará sesiones por fechas reales dentro de ese rango."
+              ? "CESDE empresarial: define fecha de inicio, fecha de fin y hasta 2 días por semana. La carga semanal se ajusta según las jornadas configuradas, pero Drive mantiene una única estructura por grupo."
               : form.institution === "CESDE"
                 ? "CESDE regular: se conserva la lógica estándar del encarpetado por semanas."
                 : "SENA: se conserva la lógica estándar actual del módulo y del encarpetado."}
           </div>
 
-          <div className="mt-5 grid gap-3 rounded-2xl border border-border bg-surface px-4 py-4 md:grid-cols-4">
-            <div className="flex items-center gap-2 text-sm text-foreground/70">
+          <div className="mt-4 grid gap-2 rounded-2xl border border-border bg-surface px-4 py-3 md:grid-cols-5">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               <GraduationCap className="h-4 w-4" />
               <span>{subjects.find((item) => item.id === form.subjectId)?.name ?? "Materia"}</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-foreground/70">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               <CalendarDays className="h-4 w-4" />
               <span>{form.period.trim() || "Periodo"}</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-foreground/70">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               {form.institution === "SENA" ? <Hash className="h-4 w-4" /> : <Group className="h-4 w-4" />}
               <span>
                 {form.institution === "SENA"
@@ -1526,19 +2727,19 @@ export default function AdminWorkloadPage() {
                   : audienceOptions.find((item) => item.id === form.audienceId)?.name ?? "Grupo"}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-foreground/70">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               <MapPinned className="h-4 w-4" />
               <span>{sites.find((item) => item.id === form.siteId)?.name ?? "Sede"}</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-foreground/70">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               <Building2 className="h-4 w-4" />
               <span>{shifts.find((item) => item.id === form.shiftId)?.name ?? "Jornada"}</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-foreground/70">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               <Clock3 className="h-4 w-4" />
               <span>{formatTimeRange(form.startTime, form.endTime)}</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-foreground/70">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               <CalendarDays className="h-4 w-4" />
               <span>
                 {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL"
@@ -1548,7 +2749,7 @@ export default function AdminWorkloadPage() {
                   : dayNameFromIsoDate(form.startDate) || "Día principal"}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-foreground/70 md:col-span-2">
+            <div className="flex items-center gap-2 text-xs text-foreground/70 md:col-span-2">
               <Clock3 className="h-4 w-4" />
               <span>
                 {currentDurationMinutes ? `${currentDurationMinutes} min reloj` : "Duración"}
@@ -1557,8 +2758,16 @@ export default function AdminWorkloadPage() {
                   : ""}
               </span>
             </div>
+            <div className="flex items-center gap-2 text-xs text-foreground/70 md:col-span-2">
+              <CalendarDays className="h-4 w-4" />
+              <span>
+                {currentDurationMinutes
+                  ? `${currentWeeklySessionCount} jornada${currentWeeklySessionCount === 1 ? "" : "s"} por semana -> ${formatHours(currentWeeklyAcademicHours)} h/semana`
+                  : "Carga semanal"}
+              </span>
+            </div>
             {form.institution === "CESDE" ? (
-              <div className="flex items-center gap-2 text-sm text-foreground/70">
+              <div className="flex items-center gap-2 text-xs text-foreground/70">
                 <Group className="h-4 w-4" />
                 <span>{form.cesdeGroupType === "EMPRESARIAL" ? "CESDE empresarial" : "CESDE regular"}</span>
               </div>
@@ -1566,13 +2775,108 @@ export default function AdminWorkloadPage() {
           </div>
 
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-            <button type="button" onClick={closeModal} className="zs-btn-secondary" disabled={saving}>
+            <button type="button" onClick={closeModal} className="zs-btn-secondary">
               Cancelar
             </button>
-            <button type="button" onClick={() => void saveRow()} className="zs-btn-primary" disabled={saving}>
+            <button type="button" onClick={() => void saveRow()} className="zs-btn-primary">
               {editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              {saving ? "Guardando..." : editingId ? "Guardar cambios" : "Registrar carga"}
+              {editingId ? "Guardar cambios" : "Registrar carga"}
             </button>
+          </div>
+        </ModalShell>
+      ) : null}
+
+      {selectedPayrollStatement ? (
+        <ModalShell
+          title={`Colilla ${selectedPayrollStatement.rangeStart} - ${selectedPayrollStatement.rangeEnd}`}
+          subtitle={`Detalle discriminado del corte guardado el ${selectedPayrollStatement.createdAtLabel}.`}
+          onClose={() => setSelectedPayrollStatement(null)}
+        >
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="zs-card-muted px-3 py-3">
+                <p className="text-xs text-foreground/55">Período</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {selectedPayrollStatement.rangeStart} - {selectedPayrollStatement.rangeEnd}
+                </p>
+              </div>
+              <div className="zs-card-muted px-3 py-3">
+                <p className="text-xs text-foreground/55">Valor hora</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {formatCurrency(selectedPayrollStatement.hourlyRate)}
+                </p>
+              </div>
+              <div className="zs-card-muted px-3 py-3">
+                <p className="text-xs text-foreground/55">Horas liquidadas</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {formatHours(selectedPayrollStatement.totalHours)} h
+                </p>
+              </div>
+              <div className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 px-3 py-3">
+                <p className="text-xs text-fuchsia-700/75">Total liquidado</p>
+                <p className="mt-1 text-sm font-semibold text-fuchsia-700">
+                  {formatCurrency(selectedPayrollStatement.totalValue)}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Detalle de clases liquidadas</p>
+                  <p className="mt-1 text-xs text-foreground/55">
+                    {selectedPayrollStatement.itemCount} registro(s) incluidos en la colilla.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void downloadPayrollStatementPdf(selectedPayrollStatement)}
+                  className="zs-btn-secondary h-9 px-3 text-xs"
+                >
+                  <Save className="h-4 w-4" />
+                  Descargar PDF
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-surface text-foreground/55">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Materia</th>
+                      <th className="px-3 py-2 font-semibold">Grupo</th>
+                      <th className="px-3 py-2 font-semibold">Sede</th>
+                      <th className="px-3 py-2 font-semibold">Jornada</th>
+                      <th className="px-3 py-2 font-semibold">Fecha</th>
+                      <th className="px-3 py-2 font-semibold">Horario</th>
+                      <th className="px-3 py-2 font-semibold">Salón</th>
+                      <th className="px-3 py-2 font-semibold text-right">Horas</th>
+                      <th className="px-3 py-2 font-semibold text-right">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedPayrollStatement.items.map((item, index) => (
+                      <tr key={`${item.loadId}-${item.date}-${index}`} className="border-t border-border/70">
+                        <td className="px-3 py-2.5 font-medium text-foreground">{item.subjectName}</td>
+                        <td className="px-3 py-2.5 text-foreground/70">
+                          {item.audienceType === "ficha" ? `Ficha ${item.audienceName}` : item.audienceName}
+                        </td>
+                        <td className="px-3 py-2.5 text-foreground/70">{item.siteName}</td>
+                        <td className="px-3 py-2.5 text-foreground/70">{item.shiftName}</td>
+                        <td className="px-3 py-2.5 text-foreground/70">
+                          {item.date} · {item.dayName}
+                        </td>
+                        <td className="px-3 py-2.5 text-foreground/70">{formatTimeRange(item.startTime, item.endTime)}</td>
+                        <td className="px-3 py-2.5 text-foreground/70">{item.classroom || "-"}</td>
+                        <td className="px-3 py-2.5 text-right text-foreground/70">{formatHours(item.academicHours)}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-fuchsia-700">
+                          {formatCurrency(item.estimatedValue)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </ModalShell>
       ) : null}

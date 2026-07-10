@@ -30,6 +30,8 @@ import {
   X,
 } from "lucide-react";
 import { IconButton } from "@/app/admin/ui/icon-button";
+import { useFeedback } from "@/app/feedback-provider";
+import { reportFormError } from "@/lib/form-feedback";
 
 type Row = {
   id: string;
@@ -116,6 +118,7 @@ function CollectionPanel({
   collectionName: string;
   compactHeader?: boolean;
 }) {
+  const feedback = useFeedback();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,28 +174,32 @@ function CollectionPanel({
     return rows.find((r) => r.id === editId) ?? null;
   }, [editId, rows]);
 
+  function showError(message: string) {
+    return reportFormError({ message, feedback, setMessage: setError });
+  }
+
   async function create() {
     const res = normalizeSentenceText(newName);
     if (!res.ok) {
-      setError(res.error);
+      showError(res.error);
       return;
     }
     const baseId = toStableId(res.value);
     if (!baseId) {
-      setError("ID inválido. Usa letras, números y guion bajo.");
+      showError("ID inválido. Usa letras, números y guion bajo.");
       return;
     }
 
     const byId = rows.find((r) => r.id.toLowerCase() === baseId.toLowerCase());
     if (byId) {
-      setError(`Ya existe: "${byId.name}" (ID: ${byId.id}). Edita el existente.`);
+      showError(`Ya existe: "${byId.name}" (ID: ${byId.id}). Edita el existente.`);
       return;
     }
 
     const normalizedName = res.value.trim().toLowerCase();
     const byName = rows.find((r) => r.name.trim().toLowerCase() === normalizedName);
     if (byName) {
-      setError(`Ya existe: "${byName.name}" (ID: ${byName.id}). Edita el existente.`);
+      showError(`Ya existe: "${byName.name}" (ID: ${byName.id}). Edita el existente.`);
       return;
     }
 
@@ -208,8 +215,9 @@ function CollectionPanel({
       });
       setNewName("");
       setCreateOpen(false);
+      feedback.success(`${title} creado correctamente.`);
     } catch {
-      setError(`No fue posible crear en ${collectionName}.`);
+      showError(`No fue posible crear en ${collectionName}.`);
     } finally {
       setSavingId(null);
     }
@@ -218,7 +226,7 @@ function CollectionPanel({
   async function saveName(id: string) {
     const res = normalizeSentenceText(editName ?? "");
     if (!res.ok) {
-      setError(res.error);
+      showError(res.error);
       return;
     }
     setSavingId(id);
@@ -231,8 +239,9 @@ function CollectionPanel({
       setEditId(null);
       setEditName("");
       setEditOpen(false);
+      feedback.success(`${title} actualizado correctamente.`);
     } catch {
-      setError(`No fue posible guardar cambios en ${collectionName}.`);
+      showError(`No fue posible guardar cambios en ${collectionName}.`);
     } finally {
       setSavingId(null);
     }
@@ -246,8 +255,9 @@ function CollectionPanel({
         active: next,
         updatedAt: serverTimestamp(),
       });
+      feedback.success(next ? `${title} activado.` : `${title} inactivado.`);
     } catch {
-      setError(`No fue posible actualizar estado en ${collectionName}.`);
+      showError(`No fue posible actualizar estado en ${collectionName}.`);
     } finally {
       setSavingId(null);
     }
@@ -260,7 +270,7 @@ function CollectionPanel({
       setCopiedId(id);
       window.setTimeout(() => setCopiedId((curr) => (curr === id ? null : curr)), 1200);
     } catch {
-      setError("No fue posible copiar el ID.");
+      showError("No fue posible copiar el ID.");
     }
   }
 
@@ -530,7 +540,7 @@ function CollectionPanel({
               <button
                 type="button"
                 onClick={() => void create()}
-                disabled={!newName.trim() || savingId === "__new__"}
+                disabled={savingId === "__new__"}
                 className="inline-flex h-9 items-center justify-center rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {savingId === "__new__" ? "Creando..." : "Crear"}
@@ -598,7 +608,7 @@ function CollectionPanel({
                   onClick={() => {
                     if (editId) void saveName(editId);
                   }}
-                  disabled={!editName.trim() || savingId === editId}
+                  disabled={savingId === editId}
                   className="inline-flex h-9 items-center justify-center rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {savingId === editId ? "Guardando..." : "Guardar"}
@@ -613,6 +623,7 @@ function CollectionPanel({
 }
 
 function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
+  const feedback = useFeedback();
   const [rows, setRows] = useState<FichaRow[]>([]);
   const [trimesters, setTrimesters] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -682,6 +693,10 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
       });
   }, [filter, rows, search, trimesterNameById]);
 
+  function showError(message: string) {
+    return reportFormError({ message, feedback, setMessage: setError });
+  }
+
   async function copyId(id: string) {
     setError(null);
     try {
@@ -689,19 +704,19 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
       setCopiedId(id);
       window.setTimeout(() => setCopiedId((curr) => (curr === id ? null : curr)), 1200);
     } catch {
-      setError("No fue posible copiar la ficha.");
+      showError("No fue posible copiar la ficha.");
     }
   }
 
   async function create() {
     const number = newNumber.trim();
     if (!isValidFichaNumber(number)) {
-      setError("La ficha debe ser numérica y tener 7 a 9 dígitos.");
+      showError("La ficha debe ser numérica y tener 7 a 9 dígitos.");
       return;
     }
     const byId = rows.find((r) => r.id === number);
     if (byId) {
-      setError(`Ya existe la ficha ${byId.number}.`);
+      showError(`Ya existe la ficha ${byId.number}.`);
       return;
     }
     setSavingId("__new__");
@@ -719,8 +734,9 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
       setNewNumber("");
       setNewTrimesterId("");
       setCreateOpen(false);
+      feedback.success("Ficha creada correctamente.");
     } catch {
-      setError("No fue posible crear la ficha.");
+      showError("No fue posible crear la ficha.");
     } finally {
       setSavingId(null);
     }
@@ -730,14 +746,14 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
     if (!editId) return;
     const number = editNumber.trim();
     if (!isValidFichaNumber(number)) {
-      setError("La ficha debe ser numérica y tener 7 a 9 dígitos.");
+      showError("La ficha debe ser numérica y tener 7 a 9 dígitos.");
       return;
     }
     setSavingId(editId);
     setError(null);
     try {
       if (number !== editId) {
-        setError("No se puede cambiar el número de ficha (ID). Crea una nueva ficha si necesitas otro número.");
+        showError("No se puede cambiar el número de ficha (ID). Crea una nueva ficha si necesitas otro número.");
         return;
       }
       await updateDoc(doc(firestore, "fichas", editId), {
@@ -750,8 +766,9 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
       setEditId(null);
       setEditNumber("");
       setEditTrimesterId("");
+      feedback.success("Ficha actualizada correctamente.");
     } catch {
-      setError("No fue posible guardar la ficha.");
+      showError("No fue posible guardar la ficha.");
     } finally {
       setSavingId(null);
     }
@@ -765,8 +782,9 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
         active: next,
         updatedAt: serverTimestamp(),
       });
+      feedback.success(next ? "Ficha activada." : "Ficha inactivada.");
     } catch {
-      setError("No fue posible actualizar el estado.");
+      showError("No fue posible actualizar el estado.");
     } finally {
       setSavingId(null);
     }
@@ -1043,7 +1061,7 @@ function FichasPanel({ compactHeader = false }: { compactHeader?: boolean }) {
               <button
                 type="button"
                 onClick={() => void create()}
-                disabled={!newNumber.trim() || savingId === "__new__"}
+                disabled={savingId === "__new__"}
                 className="inline-flex h-9 items-center justify-center rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {savingId === "__new__" ? "Creando..." : "Crear"}

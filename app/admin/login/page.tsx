@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
+import { useFeedback } from "@/app/feedback-provider";
+import { isValidEmail, reportFormError } from "@/lib/form-feedback";
 
 export default function AdminLoginPage() {
   const router = useRouter();
   const { user, isAdmin, loading } = useAuth();
+  const feedback = useFeedback();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -20,13 +23,43 @@ export default function AdminLoginPage() {
   }, [canRedirect, router]);
 
   async function loginEmailPassword() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      reportFormError({
+        message: "Debes ingresar el correo de acceso.",
+        feedback,
+        setMessage: setError,
+      });
+      return;
+    }
+    if (!isValidEmail(trimmedEmail)) {
+      reportFormError({
+        message: "El correo no tiene un formato válido.",
+        feedback,
+        setMessage: setError,
+      });
+      return;
+    }
+    if (!password) {
+      reportFormError({
+        message: "Debes ingresar la contraseña.",
+        feedback,
+        setMessage: setError,
+      });
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+      await signInWithEmailAndPassword(firebaseAuth, trimmedEmail, password);
       router.replace("/admin");
     } catch {
-      setError("No fue posible iniciar sesion. Verifica tus credenciales.");
+      reportFormError({
+        message: "No fue posible iniciar sesion. Verifica tus credenciales.",
+        feedback,
+        setMessage: setError,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -79,7 +112,7 @@ export default function AdminLoginPage() {
 
           <button
             onClick={loginEmailPassword}
-            disabled={submitting || !email || !password}
+            disabled={submitting}
             className="zs-btn-primary h-11"
           >
             Entrar

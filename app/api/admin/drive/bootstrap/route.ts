@@ -52,6 +52,38 @@ function normalizeCesdeGroupType(value: unknown) {
   return toString(value, "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
 }
 
+function parseTimeToMinutes(value: string) {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number.parseInt(match[1]!, 10);
+  const minute = Number.parseInt(match[2]!, 10);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function calculateAcademicHours(durationMinutes: number, institution: string) {
+  const minutesPerHour = institution.toUpperCase() === "CESDE" ? 45 : 60;
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return 0;
+  return Math.max(0, Math.floor(durationMinutes / minutesPerHour));
+}
+
+function calculateWeeklyAcademicHours(args: {
+  institution: string;
+  cesdeGroupType: string;
+  dayOfWeek2: string;
+  academicHours: number;
+}) {
+  const weeklySessions =
+    args.institution.toUpperCase() === "CESDE" &&
+    normalizeCesdeGroupType(args.cesdeGroupType) === "EMPRESARIAL" &&
+    args.dayOfWeek2.trim()
+      ? 2
+      : 1;
+  return args.academicHours * weeklySessions;
+}
+
 function makeWorkspaceId(parts: string[]) {
   return parts
     .map((p) => p.trim())
@@ -59,6 +91,32 @@ function makeWorkspaceId(parts: string[]) {
     .join("__")
     .replace(/[^a-zA-Z0-9_-]/g, "_")
     .slice(0, 250);
+}
+
+function makeManualWorkspaceId(args: {
+  institution: string;
+  period: string;
+  campus: string;
+  jornada: string;
+  groupId: string;
+  subjectId: string;
+  dayOfWeek1: string;
+  dayOfWeek2: string;
+}) {
+  return makeWorkspaceId([
+    args.institution.toUpperCase(),
+    args.period,
+    args.campus.toUpperCase(),
+    args.jornada.toUpperCase(),
+    args.groupId,
+    args.subjectId,
+    args.dayOfWeek1.toUpperCase(),
+    args.dayOfWeek2.toUpperCase() || "SIN_SEGUNDO_DIA",
+  ]);
+}
+
+function normalizeCompareValue(value: unknown) {
+  return toString(value, "").trim().toUpperCase();
 }
 
 function nodeIdFromPath(pathKey: string) {
@@ -123,6 +181,12 @@ export async function POST(req: Request) {
     const dayOfWeek2 = toString(body?.dayOfWeek2, "").trim();
     const startDateRaw = toString(body?.startDate, "").trim();
     const endDateRaw = toString(body?.endDate, "").trim();
+    const siteId = toString(body?.siteId, "").trim();
+    const shiftId = toString(body?.shiftId, "").trim();
+    const startTime = toString(body?.startTime, "").trim();
+    const endTime = toString(body?.endTime, "").trim();
+    const classroom = toString(body?.classroom, "").trim().toUpperCase();
+    const shouldCreateTeachingLoad = !sourceTeachingLoadId;
 
     if (debug) {
       console.log("[drive/bootstrap] start", {
@@ -140,6 +204,11 @@ export async function POST(req: Request) {
         dayOfWeek2,
         startDateRaw,
         endDateRaw,
+        siteId,
+        shiftId,
+        startTime,
+        endTime,
+        shouldCreateTeachingLoad,
         uid,
       });
     }
@@ -176,18 +245,87 @@ export async function POST(req: Request) {
     if (isCesdeEmpresarial && dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
       return NextResponse.json({ error: "El segundo día no puede ser igual al primero." }, { status: 400 });
     }
+    if (shouldCreateTeachingLoad && !endDateRaw) {
+      return NextResponse.json({ error: "Para reflejar la estructura en el calendario debes indicar fecha de fin." }, { status: 400 });
+    }
+    if (shouldCreateTeachingLoad && !siteId) {
+      return NextResponse.json({ error: "Debes seleccionar una sede para crear la carga horaria." }, { status: 400 });
+    }
+    if (shouldCreateTeachingLoad && !shiftId) {
+      return NextResponse.json({ error: "Debes seleccionar una jornada para crear la carga horaria." }, { status: 400 });
+    }
+    if (shouldCreateTeachingLoad && !startTime) {
+      return NextResponse.json({ error: "Debes indicar la hora de inicio para crear la carga horaria." }, { status: 400 });
+    }
+    if (shouldCreateTeachingLoad && !endTime) {
+      return NextResponse.json({ error: "Debes indicar la hora de fin para crear la carga horaria." }, { status: 400 });
+    }
+    if (shouldCreateTeachingLoad && !classroom) {
+      return NextResponse.json({ error: "Debes indicar el salón para crear la carga horaria." }, { status: 400 });
+    }
+
+    const startMinutes = shouldCreateTeachingLoad ? parseTimeToMinutes(startTime) : null;
+    const endMinutes = shouldCreateTeachingLoad ? parseTimeToMinutes(endTime) : null;
+    if (shouldCreateTeachingLoad && (startMinutes === null || endMinutes === null)) {
+      return NextResponse.json({ error: "La franja horaria enviada no es válida." }, { status: 400 });
+    }
+    if (shouldCreateTeachingLoad && endMinutes! <= startMinutes!) {
+      return NextResponse.json({ error: "La hora de fin debe ser posterior a la hora de inicio." }, { status: 400 });
+    }
 
     const subjectsSnap = await adminDb.collection("subjects").doc(subjectId).get();
     const subjectName = subjectsSnap.exists ? toString(subjectsSnap.data()?.name, subjectId) : subjectId;
     const groupsSnap = await adminDb.collection(isSena ? "fichas" : "groups").doc(groupId).get();
     const groupName = groupsSnap.exists ? toString(groupsSnap.data()?.name, groupId) : groupId;
+    const siteSnap = shouldCreateTeachingLoad ? await adminDb.collection("sites").doc(siteId).get() : null;
+    const shiftSnap = shouldCreateTeachingLoad ? await adminDb.collection("shifts").doc(shiftId).get() : null;
+    const siteName = shouldCreateTeachingLoad
+      ? siteSnap?.exists
+        ? toString(siteSnap.data()?.name, campus || siteId)
+        : campus || siteId
+      : campus;
+    const shiftName = shouldCreateTeachingLoad
+      ? shiftSnap?.exists
+        ? toString(shiftSnap.data()?.name, jornada || shiftId)
+        : jornada || shiftId
+      : jornada;
 
     const workspaceId =
-      requestedWorkspaceId || makeWorkspaceId([institution.toUpperCase(), period, campus, groupId, subjectId]);
+      requestedWorkspaceId ||
+      makeManualWorkspaceId({
+        institution,
+        period,
+        campus,
+        jornada,
+        groupId,
+        subjectId,
+        dayOfWeek1,
+        dayOfWeek2,
+      });
     const workspaceRef = adminDb.collection("driveWorkspaces").doc(workspaceId);
     const existing = await workspaceRef.get();
     if (existing.exists) {
       return NextResponse.json({ error: "Ya existe una estructura con esos datos." }, { status: 409 });
+    }
+
+    if (!sourceTeachingLoadId) {
+      const possibleDuplicates = await adminDb.collection("driveWorkspaces").where("period", "==", period).get();
+      const conflictingWorkspace = possibleDuplicates.docs.find((doc) => {
+        if (doc.id === workspaceId) return true;
+        const data = doc.data() as Record<string, unknown>;
+        return (
+          normalizeCompareValue(data.institution) === institution.toUpperCase() &&
+          normalizeCompareValue(data.subjectId) === subjectId.toUpperCase() &&
+          normalizeCompareValue(data.groupId) === groupId.toUpperCase() &&
+          normalizeCompareValue(data.campus) === campus.toUpperCase() &&
+          normalizeCompareValue(data.jornada) === jornada.toUpperCase() &&
+          normalizeCompareValue(data.dayOfWeek1) === dayOfWeek1.toUpperCase() &&
+          normalizeCompareValue(data.dayOfWeek2 || "") === dayOfWeek2.toUpperCase()
+        );
+      });
+      if (conflictingWorkspace) {
+        return NextResponse.json({ error: "Ya existe una estructura con la misma programación académica." }, { status: 409 });
+      }
     }
 
     let driveRootId = "";
@@ -319,6 +457,60 @@ export async function POST(req: Request) {
     });
     await batch.commit();
 
+    let linkedTeachingLoadId = sourceTeachingLoadId || "";
+    if (shouldCreateTeachingLoad) {
+      const durationMinutes = endMinutes! - startMinutes!;
+      const academicHours = calculateAcademicHours(durationMinutes, institution);
+      const weeklyAcademicHours = calculateWeeklyAcademicHours({
+        institution,
+        cesdeGroupType,
+        dayOfWeek2,
+        academicHours,
+      });
+      const teachingLoadRef = adminDb.collection("teachingLoads").doc();
+      linkedTeachingLoadId = teachingLoadRef.id;
+      await teachingLoadRef.set({
+        id: teachingLoadRef.id,
+        institution: institution.toUpperCase(),
+        cesdeGroupType: isCesde ? cesdeGroupType : "",
+        period,
+        subjectId,
+        subjectName,
+        audienceId: groupId,
+        audienceName: groupName,
+        audienceType: isSena ? "ficha" : "group",
+        siteId,
+        siteName,
+        shiftId,
+        shiftName,
+        startDate: startDateRaw,
+        endDate: endDateRaw,
+        startTime,
+        endTime,
+        classroom,
+        durationMinutes,
+        academicHours,
+        weeklyAcademicHours,
+        dayOfWeek1,
+        dayOfWeek2,
+        driveWorkspaceId: workspaceId,
+        driveStatus: "linked",
+        driveErrorMessage: "",
+        drivePublicFolderUrl: driveStructure.publicFolder.folderUrl,
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await workspaceRef.set(
+        {
+          sourceType: "manual",
+          sourceTeachingLoadId: linkedTeachingLoadId,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+    }
+
     const statsRef = adminDb.collection("driveMeta").doc("stats");
     await statsRef.set(
       {
@@ -340,6 +532,7 @@ export async function POST(req: Request) {
           adminFolderUrl: driveStructure.privateFolder?.folderUrl ?? "",
           publicFolderUrl: driveStructure.publicFolder.folderUrl,
         },
+        teachingLoadId: linkedTeachingLoadId,
         weekCount: driveStructure.weeks.length || weekCount,
         message: createdStructure.message,
       },

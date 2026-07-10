@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { deleteWorkspaceCascade } from "@/lib/firebase/admin-cascade-delete";
+import { deleteTeachingLoadCascade } from "@/lib/firebase/admin-cascade-delete";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -43,23 +43,23 @@ async function assertAdmin(req: Request) {
   }
   if (!adminSnap.exists) return { ok: false as const, status: 403, error: "Forbidden" };
 
-  return { ok: true as const, adminDb, uid };
+  return { ok: true as const, adminDb };
 }
 
 export async function POST(req: Request) {
   const admin = await assertAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
-  const adminDb = admin.adminDb;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const workspaceId = toString(body?.workspaceId, "").trim();
-  if (!workspaceId) return NextResponse.json({ error: "Debes indicar workspaceId." }, { status: 400 });
+  const teachingLoadId = toString(body?.teachingLoadId, "").trim();
+  if (!teachingLoadId) {
+    return NextResponse.json({ error: "Debes indicar teachingLoadId." }, { status: 400 });
+  }
 
-  const result = await deleteWorkspaceCascade(adminDb, workspaceId);
-  if (!result.deletedWorkspace) {
-    return NextResponse.json({ error: "Workspace no encontrado." }, { status: 404 });
+  const result = await deleteTeachingLoadCascade(admin.adminDb, teachingLoadId);
+  if (!result.deletedTeachingLoad) {
+    return NextResponse.json({ error: "Carga horaria no encontrada." }, { status: 404 });
   }
 
   return NextResponse.json({ ok: true, ...result }, { status: 200 });
 }
-
