@@ -10,26 +10,42 @@ import {
   query,
   where,
 } from "firebase/firestore";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { firestore } from "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
+import { getColombiaHolidayName } from "@/lib/colombia-holidays";
 
 type DashboardData = {
   counts: {
     templatesTotal: number;
     templatesActive: number;
     publishedActive: number;
+    publishedClosed: number;
     questionsTotal: number;
     questionsPublished: number;
     questionsDraft: number;
     questionsArchived: number;
-      subjectsTotal: number;
-      groupsTotal: number;
-      fichasTotal: number;
-      sitesTotal: number;
-      shiftsTotal: number;
-      momentsTotal: number;
-      studyDocsActive: number;
-      driveWorkspacesTotal: number;
+    subjectsTotal: number;
+    groupsTotal: number;
+    fichasTotal: number;
+    sitesTotal: number;
+    shiftsTotal: number;
+    momentsTotal: number;
+    studyDocsActive: number;
+    driveWorkspacesTotal: number;
     teachingLoadsTotal: number;
     teachingLoadsActive: number;
     teachingHoursTotal: number;
@@ -53,6 +69,42 @@ type DashboardData = {
     status: string;
     fraud: number;
   }[];
+};
+
+type TeachingLoadRow = {
+  id: string;
+  institution: string;
+  cesdeGroupType: string;
+  subjectName: string;
+  audienceName: string;
+  audienceType: string;
+  siteName: string;
+  shiftName: string;
+  startDate: string;
+  endDate: string;
+  dayOfWeek1: string;
+  dayOfWeek2: string;
+  driveWorkspaceId: string;
+  startTime: string;
+  endTime: string;
+  classroom: string;
+  durationMinutes: number;
+  academicHours: number;
+  active: boolean;
+};
+
+type DriveWorkspaceRow = {
+  id: string;
+  institution: string;
+  subjectName: string;
+  groupName: string;
+  period: string;
+  campus: string;
+  jornada: string;
+  dayOfWeek1: string;
+  dayOfWeek2: string;
+  weekCount: number;
+  healthBroken: boolean;
 };
 
 function normalizeGradeTo5(item: Record<string, unknown>) {
@@ -126,6 +178,172 @@ function formatFixed(value: number, digits: number) {
 function formatHoursValue(value: number) {
   if (!Number.isFinite(value)) return "-";
   return Number.isInteger(value) ? `${value}` : value.toFixed(2);
+}
+
+function startOfWeek(date: Date) {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  next.setDate(next.getDate() + amount);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function isoDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function parseLocalDate(value: string) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (![year, month, day].every((n) => Number.isFinite(n))) return null;
+  return new Date(year, month - 1, day);
+}
+
+function isSameOrAfterDay(target: Date, reference: Date) {
+  return new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime() >=
+    new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+}
+
+function isSameOrBeforeDay(target: Date, reference: Date) {
+  return new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime() <=
+    new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+}
+
+const WEEKDAY_INDEX_BY_NAME: Record<string, number> = {
+  DOMINGO: 0,
+  DOM: 0,
+  LUNES: 1,
+  LUN: 1,
+  MARTES: 2,
+  MAR: 2,
+  MIERCOLES: 3,
+  MIE: 3,
+  JUEVES: 4,
+  JUE: 4,
+  VIERNES: 5,
+  VIE: 5,
+  SABADO: 6,
+  SAB: 6,
+};
+
+function normalizeWeekdayLabel(value: string) {
+  return value
+    .trim()
+    .toUpperCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function weekdayIndexFromName(value: string) {
+  const normalized = normalizeWeekdayLabel(value);
+  if (!normalized) return null;
+  return WEEKDAY_INDEX_BY_NAME[normalized] ?? null;
+}
+
+function getRowWeekdayIndexes(row: Pick<TeachingLoadRow, "dayOfWeek1" | "dayOfWeek2" | "startDate">) {
+  const selected = new Set<number>();
+  [row.dayOfWeek1, row.dayOfWeek2].forEach((value) => {
+    const index = weekdayIndexFromName(value);
+    if (index !== null) selected.add(index);
+  });
+  if (!selected.size && row.startDate) {
+    const fallback = parseLocalDate(row.startDate);
+    if (fallback) selected.add(fallback.getDay());
+  }
+  return selected;
+}
+
+function minutesFromTimeLoose(value: string) {
+  if (!value) return null;
+  const trimmed = value.trim().toLowerCase();
+  const match = trimmed.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  let hour = Number.parseInt(match[1] ?? "", 10);
+  const minute = Number.parseInt(match[2] ?? "", 10);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  const hasPm = /\bp\.?\s*m\.?\b|\bpm\b/.test(trimmed);
+  const hasAm = /\ba\.?\s*m\.?\b|\bam\b/.test(trimmed);
+  if (hasPm && hour < 12) hour += 12;
+  if (hasAm && hour === 12) hour = 0;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function formatWeekRange(startDate: Date) {
+  const endDate = addDays(startDate, 6);
+  const startLabel = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short" }).format(startDate);
+  const endLabel = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short" }).format(endDate);
+  return `${startLabel} - ${endLabel}`;
+}
+
+function formatWeekdayShort(date: Date) {
+  return new Intl.DateTimeFormat("es-CO", { weekday: "short" }).format(date);
+}
+
+function formatDayMonth(date: Date) {
+  return new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short" }).format(date);
+}
+
+function formatTimeMinutes(value: number) {
+  const safe = Math.max(0, value);
+  const hour24 = Math.floor(safe / 60);
+  const minute = safe % 60;
+  const suffix = hour24 >= 12 ? "pm" : "am";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function computeDurationMinutes(institution: string, durationMinutesRaw: number, startTime: string, endTime: string) {
+  if (Number.isFinite(durationMinutesRaw) && durationMinutesRaw > 0) return durationMinutesRaw;
+  const startMinutes = minutesFromTimeLoose(startTime);
+  const endMinutes = minutesFromTimeLoose(endTime);
+  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return 0;
+  return endMinutes - startMinutes;
+}
+
+function computeAcademicHours(institution: string, academicHoursRaw: unknown, durationMinutes: number) {
+  if (typeof academicHoursRaw === "number" && Number.isFinite(academicHoursRaw) && academicHoursRaw > 0) {
+    return academicHoursRaw;
+  }
+  const minutesPerHour = institution.toUpperCase() === "SENA" ? 60 : 45;
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return 0;
+  return Math.max(0, Math.floor(durationMinutes / minutesPerHour));
+}
+
+function formatChartValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return formatCompactNumber(value);
+  if (typeof value === "string" && value.trim()) return value;
+  return "-";
+}
+
+function Bar3DShape(props: Record<string, unknown>) {
+  const x = typeof props.x === "number" ? props.x : 0;
+  const y = typeof props.y === "number" ? props.y : 0;
+  const width = typeof props.width === "number" ? props.width : 0;
+  const height = typeof props.height === "number" ? props.height : 0;
+  const fill = typeof props.fill === "string" ? props.fill : "currentColor";
+  if (width <= 0 || height <= 0) return null;
+  const depth = Math.min(10, Math.max(4, Math.round(width * 0.18)));
+  const sideFill = `${fill}CC`;
+  const topFill = `${fill}AA`;
+  const front = `M${x},${y + height} L${x},${y} L${x + width},${y} L${x + width},${y + height} Z`;
+  const top = `M${x},${y} L${x + depth},${y - depth} L${x + width + depth},${y - depth} L${x + width},${y} Z`;
+  const side = `M${x + width},${y} L${x + width + depth},${y - depth} L${x + width + depth},${y + height - depth} L${x + width},${y + height} Z`;
+  return (
+    <g>
+      <path d={top} fill={topFill} />
+      <path d={side} fill={sideFill} />
+      <path d={front} fill={fill} />
+    </g>
+  );
 }
 
 function toDateFromTimestamp(value: unknown) {
@@ -267,15 +485,49 @@ function Donut({
   );
 }
 
+function KpiCard({
+  label,
+  value,
+  subtitle,
+  valueMeta,
+}: {
+  label: string;
+  value: React.ReactNode;
+  subtitle: React.ReactNode;
+  valueMeta?: React.ReactNode;
+}) {
+  return (
+    <article className="zs-card flex min-h-[106px] flex-col justify-between p-4">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">{label}</p>
+      <div className="mt-2 flex flex-1 flex-col justify-end">
+        <p className="text-2xl font-semibold leading-none tracking-tight text-foreground">{value}</p>
+        {valueMeta ? (
+          <div className="mt-2">
+            <span className="inline-flex rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/60">
+              {valueMeta}
+            </span>
+          </div>
+        ) : null}
+      </div>
+      <p className="mt-2 truncate text-[11px] leading-tight text-foreground/55">{subtitle}</p>
+    </article>
+  );
+}
+
 export function DashboardView() {
   const { loading: authLoading, isAdmin, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [teachingLoads, setTeachingLoads] = useState<TeachingLoadRow[]>([]);
+  const [driveWorkspaces, setDriveWorkspaces] = useState<DriveWorkspaceRow[]>([]);
   const [data, setData] = useState<DashboardData>({
     counts: {
       templatesTotal: 0,
       templatesActive: 0,
       publishedActive: 0,
+      publishedClosed: 0,
       questionsTotal: 0,
       questionsPublished: 0,
       questionsDraft: 0,
@@ -370,6 +622,9 @@ export function DashboardView() {
         add("publishedActive", () =>
           getCountFromServer(query(collection(firestore, "publishedExams"), where("status", "==", "published"))),
         );
+        add("publishedClosed", () =>
+          getCountFromServer(query(collection(firestore, "publishedExams"), where("status", "==", "closed"))),
+        );
         add("questionsTotal", () => getCountFromServer(collection(firestore, "questions")));
         add("questionsPublished", () =>
           getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "published"))),
@@ -390,6 +645,7 @@ export function DashboardView() {
           getCountFromServer(query(collection(firestore, "studyDocs"), where("active", "==", true))),
         );
         add("driveWorkspacesTotal", () => getCountFromServer(collection(firestore, "driveWorkspaces")));
+        add("driveWorkspaces", () => getDocs(collection(firestore, "driveWorkspaces")));
         add("teachingLoads", () => getDocs(collection(firestore, "teachingLoads")));
         add("attemptsTotal", () => getCountFromServer(collection(firestore, "attempts")));
         add("attemptsSubmitted", () =>
@@ -446,7 +702,8 @@ export function DashboardView() {
         const fichaDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.fichas);
         const templateDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.templatesSample);
         const attemptDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.attemptsRecent);
-        const teachingLoadDocs = docsFromQuerySnap<{ data: () => Record<string, unknown> }>(out.teachingLoads);
+        const teachingLoadDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.teachingLoads);
+        const driveWorkspaceDocs = docsFromQuerySnap<{ id: string; data: () => Record<string, unknown> }>(out.driveWorkspaces);
 
         const groups = groupDocs.map((d) => ({
           id: d.id,
@@ -470,14 +727,15 @@ export function DashboardView() {
           (acc, docSnap) => {
             const row = docSnap.data() as Record<string, unknown>;
             const institution = safeToString(row.institution, "CESDE").toUpperCase();
-            const durationMinutes =
+            const durationMinutesRaw =
               typeof row.durationMinutes === "number" && Number.isFinite(row.durationMinutes) ? row.durationMinutes : 0;
-            const fallbackAcademicHours =
-              institution === "SENA" ? durationMinutes / 60 : durationMinutes / 45;
-            const academicHours =
-              typeof row.academicHours === "number" && Number.isFinite(row.academicHours)
-                ? row.academicHours
-                : fallbackAcademicHours;
+            const durationMinutes = computeDurationMinutes(
+              institution,
+              durationMinutesRaw,
+              safeToString(row.startTime, ""),
+              safeToString(row.endTime, ""),
+            );
+            const academicHours = computeAcademicHours(institution, row.academicHours, durationMinutes);
             const active = typeof row.active === "boolean" ? row.active : true;
             acc.total += 1;
             if (active) acc.active += 1;
@@ -488,6 +746,56 @@ export function DashboardView() {
           },
           { total: 0, active: 0, hoursTotal: 0, hoursCesde: 0, hoursSena: 0 },
         );
+
+        const teachingLoadRows: TeachingLoadRow[] = teachingLoadDocs.map((docSnap) => {
+          const row = docSnap.data() as Record<string, unknown>;
+          const institution = safeToString(row.institution, "CESDE").toUpperCase();
+          const durationMinutesRaw =
+            typeof row.durationMinutes === "number" && Number.isFinite(row.durationMinutes) ? row.durationMinutes : 0;
+          const startTime = safeToString(row.startTime, "");
+          const endTime = safeToString(row.endTime, "");
+          const durationMinutes = computeDurationMinutes(institution, durationMinutesRaw, startTime, endTime);
+          const academicHours = computeAcademicHours(institution, row.academicHours, durationMinutes);
+          return {
+            id: docSnap.id,
+            institution,
+            cesdeGroupType: safeToString(row.cesdeGroupType, ""),
+            subjectName: safeToString(row.subjectName, safeToString(row.subjectId, "Materia")),
+            audienceName: safeToString(row.audienceName, safeToString(row.audienceId, "Grupo")),
+            audienceType: safeToString(row.audienceType, "group"),
+            siteName: safeToString(row.siteName, safeToString(row.siteId, "")),
+            shiftName: safeToString(row.shiftName, safeToString(row.shiftId, "")),
+            startDate: safeToString(row.startDate, ""),
+            endDate: safeToString(row.endDate, ""),
+            dayOfWeek1: safeToString(row.dayOfWeek1, ""),
+            dayOfWeek2: safeToString(row.dayOfWeek2, ""),
+            driveWorkspaceId: safeToString(row.driveWorkspaceId, ""),
+            startTime,
+            endTime,
+            classroom: safeToString(row.classroom, ""),
+            durationMinutes,
+            academicHours,
+            active: typeof row.active === "boolean" ? row.active : true,
+          };
+        });
+
+        const driveWorkspaceRows: DriveWorkspaceRow[] = driveWorkspaceDocs.map((docSnap) => {
+          const row = docSnap.data() as Record<string, unknown>;
+          const health = (row.health as Record<string, unknown> | undefined) ?? {};
+          return {
+            id: docSnap.id,
+            institution: safeToString(row.institution, ""),
+            subjectName: safeToString(row.subjectName, safeToString(row.subjectId, "Materia")),
+            groupName: safeToString(row.groupName, safeToString(row.groupId, "Grupo")),
+            period: safeToString(row.period, ""),
+            campus: safeToString(row.campus, ""),
+            jornada: safeToString(row.jornada, ""),
+            dayOfWeek1: safeToString(row.dayOfWeek1, ""),
+            dayOfWeek2: safeToString(row.dayOfWeek2, ""),
+            weekCount: typeof row.weekCount === "number" && Number.isFinite(row.weekCount) ? row.weekCount : 0,
+            healthBroken: Boolean(health.broken),
+          };
+        });
 
         const groupNameById = new Map([...groups, ...fichas].map((g) => [g.id, g.name]));
         const templateNameById = new Map(templates.map((t) => [t.id, t.name]));
@@ -619,6 +927,7 @@ export function DashboardView() {
           templatesTotal: countFromAggregateSnap(out.templatesTotal),
           templatesActive: countFromAggregateSnap(out.templatesActive),
           publishedActive: countFromAggregateSnap(out.publishedActive),
+          publishedClosed: countFromAggregateSnap(out.publishedClosed),
           questionsTotal: questionsTotalSnap.data().count,
           questionsPublished: questionsPublishedSnap.data().count,
           questionsDraft: questionsDraftSnap.data().count,
@@ -644,6 +953,8 @@ export function DashboardView() {
         };
 
         if (!cancelled) {
+          setTeachingLoads(teachingLoadRows);
+          setDriveWorkspaces(driveWorkspaceRows);
           setData({
             counts,
             activity14,
@@ -677,10 +988,235 @@ export function DashboardView() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, isAdmin, user]);
+  }, [authLoading, isAdmin, refreshKey, user]);
+
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, idx) => addDays(weekStart, idx)), [weekStart]);
+  const holidayByDateKey = useMemo(() => {
+    return new Map(
+      weekDays.flatMap((day) => {
+        const holidayName = getColombiaHolidayName(day);
+        return holidayName ? [[isoDate(day), holidayName] as [string, string]] : [];
+      }),
+    );
+  }, [weekDays]);
+  const workWindow = useMemo(() => ({ startMinutes: 6 * 60, endMinutes: 22 * 60 }), []);
+  const weekWorkMinutes = useMemo(() => {
+    const perDay = workWindow.endMinutes - workWindow.startMinutes;
+    const holidayCount = weekDays.reduce((acc, day) => (holidayByDateKey.has(isoDate(day)) ? acc + 1 : acc), 0);
+    return Math.max(0, (7 - holidayCount) * perDay);
+  }, [holidayByDateKey, weekDays, workWindow.endMinutes, workWindow.startMinutes]);
+
+  const workloadWeek = useMemo(() => {
+    const occupiedIntervalsByDay = new Map<number, Array<[number, number]>>();
+    const scheduledHoursByDay = new Map<number, number>();
+    const driveWorkspaceIds = new Set<string>();
+    let totalOccurrences = 0;
+
+    teachingLoads
+      .filter((row) => row.active)
+      .forEach((row) => {
+        const weekdayIndexes = getRowWeekdayIndexes(row);
+        if (!weekdayIndexes.size) return;
+        const rowStart = parseLocalDate(row.startDate);
+        const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
+        if (!rowStart || !rowEnd) return;
+        const startMinutes = minutesFromTimeLoose(row.startTime);
+        const endMinutes = minutesFromTimeLoose(row.endTime);
+        if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return;
+
+        weekDays.forEach((day) => {
+          const dateKey = isoDate(day);
+          if (holidayByDateKey.has(dateKey)) return;
+          if (!weekdayIndexes.has(day.getDay())) return;
+          if (!isSameOrAfterDay(day, rowStart) || !isSameOrBeforeDay(day, rowEnd)) return;
+          const clampedStart = Math.max(startMinutes, workWindow.startMinutes);
+          const clampedEnd = Math.min(endMinutes, workWindow.endMinutes);
+          if (clampedEnd <= clampedStart) return;
+          const dayIndex = day.getDay();
+          const current = occupiedIntervalsByDay.get(dayIndex) ?? [];
+          current.push([clampedStart, clampedEnd]);
+          occupiedIntervalsByDay.set(dayIndex, current);
+          scheduledHoursByDay.set(dayIndex, (scheduledHoursByDay.get(dayIndex) ?? 0) + row.academicHours);
+          if (row.driveWorkspaceId) driveWorkspaceIds.add(row.driveWorkspaceId);
+          totalOccurrences += 1;
+        });
+      });
+
+    const mergeIntervals = (intervals: Array<[number, number]>) => {
+      const sorted = intervals.slice().sort((a, b) => a[0] - b[0]);
+      const merged: Array<[number, number]> = [];
+      sorted.forEach((interval) => {
+        const last = merged[merged.length - 1];
+        if (!last || interval[0] > last[1]) merged.push(interval);
+        else last[1] = Math.max(last[1], interval[1]);
+      });
+      return merged;
+    };
+
+    const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+    const labels = new Map<number, string>([
+      [1, "Lun"],
+      [2, "Mar"],
+      [3, "Mié"],
+      [4, "Jue"],
+      [5, "Vie"],
+      [6, "Sáb"],
+      [0, "Dom"],
+    ]);
+
+    const perDay = dayOrder.map((dayIndex) => {
+      const dayDate = weekDays.find((day) => day.getDay() === dayIndex);
+      const dayDateLabel = dayDate ? formatDayMonth(dayDate) : "";
+      const intervals = mergeIntervals(occupiedIntervalsByDay.get(dayIndex) ?? []);
+      const occupiedMinutes = intervals.reduce((acc, [s, e]) => acc + (e - s), 0);
+      const freeMinutes = Math.max(0, workWindow.endMinutes - workWindow.startMinutes - occupiedMinutes);
+      const occupiedHours = occupiedMinutes / 60;
+      const freeHours = freeMinutes / 60;
+      const scheduledHours = scheduledHoursByDay.get(dayIndex) ?? 0;
+      return {
+        dayIndex,
+        label: labels.get(dayIndex) ?? `${dayIndex}`,
+        dateLabel: dayDateLabel,
+        fullLabel: dayDateLabel ? `${labels.get(dayIndex) ?? `${dayIndex}`} ${dayDateLabel}` : labels.get(dayIndex) ?? `${dayIndex}`,
+        occupiedHours,
+        freeHours,
+        scheduledHours,
+      };
+    });
+
+    const nonHolidayDayCount = weekDays.reduce((acc, day) => (holidayByDateKey.has(isoDate(day)) ? acc : acc + 1), 0);
+    const totalOccupiedMinutes = perDay.reduce((acc, d) => acc + d.occupiedHours * 60, 0);
+    const totalFreeMinutes = Math.max(0, nonHolidayDayCount * (workWindow.endMinutes - workWindow.startMinutes) - totalOccupiedMinutes);
+    const occupancy = weekWorkMinutes ? totalOccupiedMinutes / weekWorkMinutes : 0;
+    const totalAcademicHours = perDay.reduce((acc, d) => acc + d.scheduledHours, 0);
+    const busiest = perDay.reduce((a, b) => (b.scheduledHours > a.scheduledHours ? b : a), perDay[0]!);
+    const lightest = perDay.reduce((a, b) => (b.scheduledHours < a.scheduledHours ? b : a), perDay[0]!);
+
+    return {
+      perDay,
+      totalOccurrences,
+      driveWorkspaceCount: driveWorkspaceIds.size,
+      totalAcademicHours,
+      totalOccupiedHours: totalOccupiedMinutes / 60,
+      totalFreeHours: totalFreeMinutes / 60,
+      occupancy,
+      busiestDay: busiest,
+      lightestDay: lightest,
+    };
+  }, [holidayByDateKey, teachingLoads, weekDays, weekWorkMinutes, workWindow.endMinutes, workWindow.startMinutes]);
+
+  const driveLinkedTotal = useMemo(() => {
+    const ids = new Set<string>();
+    teachingLoads.forEach((row) => {
+      if (row.driveWorkspaceId) ids.add(row.driveWorkspaceId);
+    });
+    return ids.size;
+  }, [teachingLoads]);
+
+  const weekTimeline = useMemo(() => {
+    const itemsByDate = new Map<
+      string,
+      Array<{
+        id: string;
+        startMinutes: number;
+        endMinutes: number;
+        timeLabel: string;
+        subjectName: string;
+        audienceName: string;
+        institution: string;
+        siteName: string;
+        shiftName: string;
+        classroom: string;
+      }>
+    >();
+
+    teachingLoads
+      .filter((row) => row.active)
+      .forEach((row) => {
+        const weekdayIndexes = getRowWeekdayIndexes(row);
+        if (!weekdayIndexes.size) return;
+        const rowStart = parseLocalDate(row.startDate);
+        const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
+        if (!rowStart || !rowEnd) return;
+        const startMinutes = minutesFromTimeLoose(row.startTime);
+        const endMinutes = minutesFromTimeLoose(row.endTime);
+        if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return;
+
+        weekDays.forEach((day) => {
+          const dateKey = isoDate(day);
+          if (holidayByDateKey.has(dateKey)) return;
+          if (!weekdayIndexes.has(day.getDay())) return;
+          if (!isSameOrAfterDay(day, rowStart) || !isSameOrBeforeDay(day, rowEnd)) return;
+          const bucket = itemsByDate.get(dateKey) ?? [];
+          bucket.push({
+            id: `${row.id}-${dateKey}`,
+            startMinutes,
+            endMinutes,
+            timeLabel: `${formatTimeMinutes(startMinutes)} - ${formatTimeMinutes(endMinutes)}`,
+            subjectName: row.subjectName,
+            audienceName: row.audienceName,
+            institution: row.institution,
+            siteName: row.siteName,
+            shiftName: row.shiftName,
+            classroom: row.classroom,
+          });
+          itemsByDate.set(dateKey, bucket);
+        });
+      });
+
+    return weekDays.map((day) => {
+      const dateKey = isoDate(day);
+      const holidayName = holidayByDateKey.get(dateKey) ?? null;
+      const items = (itemsByDate.get(dateKey) ?? []).sort((a, b) => {
+        if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+        return a.subjectName.localeCompare(b.subjectName, "es");
+      });
+      return {
+        dateKey,
+        weekdayLabel: formatWeekdayShort(day),
+        dayLabel: formatDayMonth(day),
+        holidayName,
+        items,
+      };
+    });
+  }, [holidayByDateKey, teachingLoads, weekDays]);
+
+  const driveSummary = useMemo(() => {
+    const totalWeeks = driveWorkspaces.reduce((acc, ws) => acc + (Number.isFinite(ws.weekCount) ? ws.weekCount : 0), 0);
+    const broken = driveWorkspaces.filter((ws) => ws.healthBroken).length;
+    const cesde = driveWorkspaces.filter((ws) => ws.institution.toUpperCase() === "CESDE").length;
+    const sena = driveWorkspaces.filter((ws) => ws.institution.toUpperCase() === "SENA").length;
+    const days = new Map<string, number>();
+    driveWorkspaces.forEach((ws) => {
+      const key = normalizeWeekdayLabel(ws.dayOfWeek1) || "SIN_DIA";
+      days.set(key, (days.get(key) ?? 0) + 1);
+    });
+    const topDay = Array.from(days.entries()).sort((a, b) => b[1] - a[1])[0] ?? ["-", 0];
+    return { totalWeeks, broken, cesde, sena, topDayLabel: topDay[0], topDayCount: topDay[1] };
+  }, [driveWorkspaces]);
 
   const avgGrade7 = data.summary7.avgGrade;
   const fraud7 = data.summary7.fraudAttempts;
+  const activity14Data = useMemo(
+    () => data.activity14.labels.map((label, idx) => ({ label, value: data.activity14.values[idx] ?? 0 })),
+    [data.activity14.labels, data.activity14.values],
+  );
+  const drivePieData = useMemo(
+    () => [
+      { label: "CESDE", value: driveSummary.cesde, fill: "#a855f7" },
+      { label: "SENA", value: driveSummary.sena, fill: "#10b981" },
+      { label: "Broken", value: driveSummary.broken, fill: "#f59e0b" },
+    ],
+    [driveSummary.broken, driveSummary.cesde, driveSummary.sena],
+  );
+  const attemptsStatusData = useMemo(
+    () => [
+      { label: "En progreso", value: data.counts.attemptsInProgress, fill: "#6366f1" },
+      { label: "Enviados", value: data.counts.attemptsSubmitted, fill: "#0ea5e9" },
+      { label: "Anulados", value: data.counts.attemptsAnnulled, fill: "#f43f5e" },
+    ],
+    [data.counts.attemptsAnnulled, data.counts.attemptsInProgress, data.counts.attemptsSubmitted],
+  );
 
   return (
     <div className="space-y-6">
@@ -690,216 +1226,197 @@ export function DashboardView() {
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Banco de preguntas</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.questionsTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Publicadas</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.questionsPublished)}
-            </span>
+      <section className="zs-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-base font-semibold tracking-tight text-foreground">Dashboard</p>
+            <p className="mt-1 text-sm text-foreground/55">Métricas reales de Drive, carga horaria y exámenes.</p>
           </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Grupos CESDE</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.groupsTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Materias</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.subjectsTotal)}
-            </span>
-          </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Fichas SENA</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.fichasTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Momentos</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.momentsTotal)}
-            </span>
-          </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <p className="text-sm text-foreground/55">Carga horaria</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-            {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsTotal)}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-foreground/65">
-            <span>Activas</span>
-            <span className="font-semibold text-foreground">
-              {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsActive)}
-            </span>
-          </div>
-        </article>
-
-        <article className="zs-card p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-foreground/55">Horas académicas</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatHoursValue(data.counts.teachingHoursTotal)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading
-                  ? "-"
-                  : `CESDE ${formatHoursValue(data.counts.teachingHoursCesde)} h | SENA ${formatHoursValue(data.counts.teachingHoursSena)} h`}
-              </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-foreground/70">
+              Semana: {formatWeekRange(weekStart)}
             </div>
-            <MiniSparkline
-              values={[
-                data.counts.teachingHoursCesde,
-                data.counts.teachingHoursSena,
-                data.counts.teachingHoursTotal,
-              ]}
-              tone="emerald"
-            />
+            <button type="button" onClick={() => setWeekStart((prev) => addDays(prev, -7))} className="zs-btn-secondary h-9 px-3 text-xs">
+              Semana anterior
+            </button>
+            <button type="button" onClick={() => setWeekStart(startOfWeek(new Date()))} className="zs-btn-secondary h-9 px-3 text-xs">
+              Hoy
+            </button>
+            <button type="button" onClick={() => setWeekStart((prev) => addDays(prev, 7))} className="zs-btn-secondary h-9 px-3 text-xs">
+              Semana siguiente
+            </button>
+            <button type="button" onClick={() => setRefreshKey((k) => k + 1)} className="zs-btn-primary h-9 px-3 text-xs">
+              Actualizar
+            </button>
+          </div>
+        </div>
+        {holidayByDateKey.size ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-foreground/60">
+            <span className="font-semibold text-foreground/70">Festivos en la semana:</span>
+            {Array.from(holidayByDateKey.entries()).map(([dateKey, name]) => (
+              <span key={dateKey} className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                {dateKey} · {name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+        <KpiCard
+          label="Drive vinculados"
+          value={loading ? "-" : formatCompactNumber(driveLinkedTotal)}
+          subtitle={loading ? "-" : `${formatCompactNumber(workloadWeek.driveWorkspaceCount)} en esta semana`}
+        />
+        <KpiCard
+          label="Ocupación semanal"
+          value={loading ? "-" : `${Math.round(workloadWeek.occupancy * 100)}%`}
+          subtitle={
+            loading
+              ? "-"
+              : `${formatHoursValue(workloadWeek.totalAcademicHours)} h académicas · ${workloadWeek.totalOccurrences} sesiones`
+          }
+        />
+        <KpiCard
+          label="Día más copado"
+          value={loading ? "-" : workloadWeek.busiestDay.label}
+          valueMeta={loading ? null : workloadWeek.busiestDay.dateLabel}
+          subtitle={loading ? "-" : `${formatHoursValue(workloadWeek.busiestDay.scheduledHours)} h académicas`}
+        />
+        <KpiCard
+          label="Día más suave"
+          value={loading ? "-" : workloadWeek.lightestDay.label}
+          valueMeta={loading ? null : workloadWeek.lightestDay.dateLabel}
+          subtitle={loading ? "-" : `${formatHoursValue(workloadWeek.lightestDay.scheduledHours)} h académicas`}
+        />
+        <KpiCard
+          label="Exámenes activos"
+          value={loading ? "-" : formatCompactNumber(data.counts.publishedActive)}
+          subtitle={loading ? "-" : `${formatCompactNumber(data.counts.publishedClosed)} cerrados`}
+        />
+        <KpiCard
+          label="Intentos (7 días)"
+          value={loading ? "-" : formatCompactNumber(data.summary7.submittedAttempts)}
+          subtitle={loading ? "-" : `${formatCompactNumber(fraud7)} con fraude`}
+        />
+        <KpiCard
+          label="Promedio (7 días)"
+          value={loading ? "-" : avgGrade7 === null ? "-" : `${formatFixed(avgGrade7, 2)} / 5`}
+          subtitle={loading ? "-" : `${formatCompactNumber(data.counts.templatesActive)} plantillas activas`}
+        />
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <article className="zs-card p-5 xl:col-span-2">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Carga horaria semanal (visual)</h2>
+          <p className="text-sm text-foreground/55">Tiempo ocupado vs libre (6:00 am - 10:00 pm). Excluye festivos.</p>
+          <div className="mt-4 h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={workloadWeek.perDay} barCategoryGap={18}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.08)" />
+                <XAxis dataKey="fullLabel" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v) => formatChartValue(v)} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v) => formatChartValue(v)} />
+                <Bar dataKey="occupiedHours" name="Ocupado (h)" fill="#a855f7" shape={<Bar3DShape />} />
+                <Bar dataKey="freeHours" name="Libre (h)" fill="#e5e7eb" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </article>
 
-        <article className="zs-card p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-foreground/55">Workspaces Drive</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.driveWorkspacesTotal)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading ? "-" : `${formatCompactNumber(data.counts.sitesTotal)} sedes | ${formatCompactNumber(data.counts.shiftsTotal)} jornadas`}
-              </p>
-            </div>
-            <MiniSparkline values={data.activity14.values.slice(-10)} tone="indigo" />
+        <article className="zs-card p-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Drive (distribución)</h2>
+          <p className="text-sm text-foreground/55">Workspaces por institución + estado.</p>
+          <div className="mt-4 h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip formatter={(v) => formatChartValue(v)} />
+                <Pie data={drivePieData} dataKey="value" nameKey="label" innerRadius={54} outerRadius={92} paddingAngle={3}>
+                  {drivePieData.map((entry) => (
+                    <Cell key={entry.label} fill={entry.fill} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-3 grid gap-2 text-sm">
+            {drivePieData.map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 text-foreground/70">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.fill }} />
+                  {row.label}
+                </span>
+                <span className="font-semibold text-foreground">{formatCompactNumber(row.value)}</span>
+              </div>
+            ))}
           </div>
         </article>
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <article className="zs-card p-5 xl:col-span-2">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Estado de intentos</h2>
-          <p className="text-sm text-foreground/55">Resumen por estados y fraude.</p>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">En progreso</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsInProgress)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Enviados (todos)</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsSubmitted)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Fraude (enviado)</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsFraudSubmitted)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {fraud7 ? `${fraud7} con eventos` : "Sin eventos en recientes"}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Anulados</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.attemptsAnnulled)}
-              </p>
-            </div>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Actividad de exámenes (14 días)</h2>
+          <p className="text-sm text-foreground/55">Envíos por día (intentos enviados).</p>
+          <div className="mt-4 h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={activity14Data}>
+                <defs>
+                  <linearGradient id="attemptsGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.08)" />
+                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v) => formatChartValue(v)} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v) => formatChartValue(v)} />
+                <Area type="monotone" dataKey="value" stroke="#0ea5e9" fill="url(#attemptsGradient)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </article>
 
         <article className="zs-card p-5">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Operación académica</h2>
-          <p className="text-sm text-foreground/55">Catálogos, carga horaria, Drive y base documental real.</p>
-
-          <div className="mt-4">
-            <Donut
-              items={[
-                { label: "Publicadas", value: data.counts.questionsPublished, tone: "emerald" },
-                { label: "Borrador", value: data.counts.questionsDraft, tone: "amber" },
-                { label: "Archivadas", value: data.counts.questionsArchived, tone: "zinc" },
-              ]}
-            />
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Estados de intentos</h2>
+          <p className="text-sm text-foreground/55">Distribución global por estado.</p>
+          <div className="mt-4 h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip formatter={(v) => formatChartValue(v)} />
+                <Pie data={attemptsStatusData} dataKey="value" nameKey="label" innerRadius={50} outerRadius={92} paddingAngle={3}>
+                  {attemptsStatusData.map((entry) => (
+                    <Cell key={entry.label} fill={entry.fill} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
           </div>
+          <div className="mt-3 grid gap-2 text-sm">
+            {attemptsStatusData.map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 text-foreground/70">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.fill }} />
+                  {row.label}
+                </span>
+                <span className="font-semibold text-foreground">{formatCompactNumber(row.value)}</span>
+              </div>
+            ))}
+          </div>
+        </article>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Materias</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.subjectsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Grupos CESDE</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.groupsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Fichas SENA</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.fichasTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Momentos</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.momentsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Sedes</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.sitesTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Jornadas</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.shiftsTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Documentos activos</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.studyDocsActive)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Workspaces Drive</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.driveWorkspacesTotal)}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Carga horaria</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.teachingLoadsTotal)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading ? "-" : `${formatHoursValue(data.counts.teachingHoursTotal)} h acumuladas`}
-              </p>
-            </div>
-            <div className="zs-card-muted px-3 py-3">
-              <p className="text-xs text-foreground/55">Exámenes publicados</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                {loading ? "-" : formatCompactNumber(data.counts.publishedActive)}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
-                {loading ? "-" : `${formatCompactNumber(data.counts.templatesTotal)} plantillas`}
-              </p>
-            </div>
+        <article className="zs-card p-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Distribución de notas</h2>
+          <p className="text-sm text-foreground/55">Histograma sobre intentos recientes.</p>
+          <div className="mt-4 h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.gradeDist} barCategoryGap={14}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.08)" />
+                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v) => formatChartValue(v)} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v) => formatChartValue(v)} />
+                <Bar dataKey="value" name="Intentos" fill="#10b981" shape={<Bar3DShape />} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </article>
       </section>
@@ -976,7 +1493,10 @@ export function DashboardView() {
                   </thead>
                   <tbody>
                     {data.latestAttempts.map((row) => (
-                      <tr key={`${row.when}-${row.exam}-${row.student}`} className="border-t border-border/60 text-sm text-foreground/70">
+                      <tr
+                        key={`${row.when}-${row.exam}-${row.student}`}
+                        className="border-t border-border/60 text-sm text-foreground/70"
+                      >
                         <td className="px-3 py-2 text-xs text-foreground/65">{row.when}</td>
                         <td className="px-3 py-2">
                           <div className="truncate font-medium text-foreground">{row.exam}</div>
@@ -1003,6 +1523,64 @@ export function DashboardView() {
             </div>
           )}
         </article>
+      </section>
+
+      <section className="zs-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">Materias por día</h2>
+            <p className="text-sm text-foreground/55">Orden cronológico según la semana seleccionada (excluye festivos).</p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+          {weekTimeline.map((day) => (
+            <div key={day.dateKey} className="rounded-2xl border border-border bg-surface p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                    {day.weekdayLabel}
+                  </p>
+                  <p className="mt-0.5 text-sm font-semibold text-foreground">{day.dayLabel}</p>
+                </div>
+                {day.holidayName ? (
+                  <span className="inline-flex shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800" title={day.holidayName}>
+                    Festivo
+                  </span>
+                ) : null}
+              </div>
+
+              {day.holidayName ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900/80">
+                  {day.holidayName}
+                </div>
+              ) : day.items.length ? (
+                <div className="mt-3 space-y-2">
+                  {day.items.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-border bg-white px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] font-semibold text-foreground">{item.subjectName}</p>
+                          <p className="mt-0.5 truncate text-[10px] text-foreground/60">
+                            {item.audienceName} · {item.siteName} · {item.shiftName}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-[10px] font-semibold text-foreground/70">{item.timeLabel}</p>
+                          <p className="mt-0.5 text-[10px] text-foreground/55">{item.classroom || "-"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-dashed border-border bg-white/60 px-3 py-3 text-center text-[11px] text-foreground/55">
+                  Sin programación
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );
