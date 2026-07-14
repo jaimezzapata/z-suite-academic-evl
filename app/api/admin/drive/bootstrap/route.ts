@@ -6,6 +6,10 @@ import {
   getAppsScriptDriveRootFolderId,
   getAppsScriptDriveStructure,
 } from "@/lib/google/apps-script-drive";
+import {
+  calculateAcademicHoursForInstitution,
+  getWeeklyAcademicHoursFromSource,
+} from "@/lib/teaching-load-sessions";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -38,6 +42,31 @@ function parseISODate(value: string) {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+function dayNameFromIsoDate(value: string) {
+  const date = parseISODate(value);
+  if (!date) return "";
+  return ["DOMINGO", "LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO"][date.getUTCDay()] ?? "";
+}
+
+function resolveScheduleDays(args: {
+  institution: string;
+  cesdeGroupType: string;
+  startDate: string;
+  dayOfWeek1: string;
+  dayOfWeek2: string;
+}) {
+  const isSena = args.institution.toUpperCase() === "SENA";
+  const isCesdeEmpresarial =
+    args.institution.toUpperCase() === "CESDE" && normalizeCesdeGroupType(args.cesdeGroupType) === "EMPRESARIAL";
+  const usesManualWeekdays = isSena || isCesdeEmpresarial;
+  return {
+    isCesdeEmpresarial,
+    usesManualWeekdays,
+    dayOfWeek1: args.dayOfWeek1 || dayNameFromIsoDate(args.startDate),
+    dayOfWeek2: usesManualWeekdays ? args.dayOfWeek2 : "",
+  };
+}
+
 function toPeriodParts(value: string) {
   const v = value.trim().toUpperCase();
   const match = v.match(/^(\d{4})-(\d{2})$/);
@@ -61,27 +90,6 @@ function parseTimeToMinutes(value: string) {
   if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
   return hour * 60 + minute;
-}
-
-function calculateAcademicHours(durationMinutes: number, institution: string) {
-  const minutesPerHour = institution.toUpperCase() === "CESDE" ? 45 : 60;
-  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return 0;
-  return Math.max(0, Math.floor(durationMinutes / minutesPerHour));
-}
-
-function calculateWeeklyAcademicHours(args: {
-  institution: string;
-  cesdeGroupType: string;
-  dayOfWeek2: string;
-  academicHours: number;
-}) {
-  const weeklySessions =
-    args.institution.toUpperCase() === "CESDE" &&
-    normalizeCesdeGroupType(args.cesdeGroupType) === "EMPRESARIAL" &&
-    args.dayOfWeek2.trim()
-      ? 2
-      : 1;
-  return args.academicHours * weeklySessions;
 }
 
 function makeWorkspaceId(parts: string[]) {
@@ -122,6 +130,16 @@ function normalizeCompareValue(value: unknown) {
 function nodeIdFromPath(pathKey: string) {
   return pathKey.replace(/\//g, "__").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 250);
 }
+
+type WorkspaceNode = {
+  pathKey: string;
+  name: string;
+  kind: string;
+  parentPathKey: string | null;
+  driveFolderId: string;
+  driveFolderUrl: string;
+  meta?: Record<string, unknown>;
+};
 
 async function assertAdmin(req: Request) {
   const authHeader = req.headers.get("authorization") ?? "";
@@ -185,6 +203,8 @@ export async function POST(req: Request) {
     const shiftId = toString(body?.shiftId, "").trim();
     const startTime = toString(body?.startTime, "").trim();
     const endTime = toString(body?.endTime, "").trim();
+    const day2StartTime = toString(body?.day2StartTime, "").trim();
+    const day2EndTime = toString(body?.day2EndTime, "").trim();
     const classroom = toString(body?.classroom, "").trim().toUpperCase();
     const shouldCreateTeachingLoad = !sourceTeachingLoadId;
 
@@ -208,6 +228,8 @@ export async function POST(req: Request) {
         shiftId,
         startTime,
         endTime,
+        day2StartTime,
+        day2EndTime,
         shouldCreateTeachingLoad,
         uid,
       });
@@ -219,8 +241,6 @@ export async function POST(req: Request) {
     if (!period) return NextResponse.json({ error: "Debes indicar el periodo (ej. 2026-01)." }, { status: 400 });
     if (!campus) return NextResponse.json({ error: "Debes indicar la sede." }, { status: 400 });
     if (!jornada) return NextResponse.json({ error: "Debes indicar la jornada." }, { status: 400 });
-    if (!dayOfWeek1) return NextResponse.json({ error: "Debes indicar el primer día de clase." }, { status: 400 });
-
     const startDate = parseISODate(startDateRaw);
     if (!startDate) return NextResponse.json({ error: "Fecha de inicio inválida." }, { status: 400 });
     const endDate = endDateRaw ? parseISODate(endDateRaw) : null;
@@ -236,13 +256,26 @@ export async function POST(req: Request) {
 
     const isCesde = institution.toUpperCase() === "CESDE";
     const isSena = institution.toUpperCase() === "SENA";
-    const isCesdeEmpresarial = isCesde && cesdeGroupType === "EMPRESARIAL";
+    const scheduleDays = resolveScheduleDays({
+      institution,
+      cesdeGroupType,
+      startDate: startDateRaw,
+      dayOfWeek1,
+      dayOfWeek2,
+    });
+    const isCesdeEmpresarial = scheduleDays.isCesdeEmpresarial;
+    const usesManualWeekdays = scheduleDays.usesManualWeekdays;
+    const resolvedDayOfWeek1 = scheduleDays.dayOfWeek1;
+    const resolvedDayOfWeek2 = scheduleDays.dayOfWeek2;
     const weekCount = isCesde ? 18 : 11;
 
     if (isCesdeEmpresarial && !endDateRaw) {
       return NextResponse.json({ error: "Para CESDE empresarial debes indicar fecha de fin." }, { status: 400 });
     }
-    if (isCesdeEmpresarial && dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
+    if (!resolvedDayOfWeek1) {
+      return NextResponse.json({ error: "No fue posible resolver el día principal." }, { status: 400 });
+    }
+    if (usesManualWeekdays && resolvedDayOfWeek2 && resolvedDayOfWeek2 === resolvedDayOfWeek1) {
       return NextResponse.json({ error: "El segundo día no puede ser igual al primero." }, { status: 400 });
     }
     if (shouldCreateTeachingLoad && !endDateRaw) {
@@ -272,6 +305,16 @@ export async function POST(req: Request) {
     if (shouldCreateTeachingLoad && endMinutes! <= startMinutes!) {
       return NextResponse.json({ error: "La hora de fin debe ser posterior a la hora de inicio." }, { status: 400 });
     }
+    const resolvedDay2StartTime = resolvedDayOfWeek2 ? day2StartTime || startTime : "";
+    const resolvedDay2EndTime = resolvedDayOfWeek2 ? day2EndTime || endTime : "";
+    const day2StartMinutes = shouldCreateTeachingLoad && resolvedDayOfWeek2 ? parseTimeToMinutes(resolvedDay2StartTime) : null;
+    const day2EndMinutes = shouldCreateTeachingLoad && resolvedDayOfWeek2 ? parseTimeToMinutes(resolvedDay2EndTime) : null;
+    if (shouldCreateTeachingLoad && resolvedDayOfWeek2 && (day2StartMinutes === null || day2EndMinutes === null)) {
+      return NextResponse.json({ error: "La franja horaria del segundo día no es válida." }, { status: 400 });
+    }
+    if (shouldCreateTeachingLoad && resolvedDayOfWeek2 && day2EndMinutes! <= day2StartMinutes!) {
+      return NextResponse.json({ error: "La hora de fin del segundo día debe ser posterior a la de inicio." }, { status: 400 });
+    }
 
     const subjectsSnap = await adminDb.collection("subjects").doc(subjectId).get();
     const subjectName = subjectsSnap.exists ? toString(subjectsSnap.data()?.name, subjectId) : subjectId;
@@ -299,8 +342,8 @@ export async function POST(req: Request) {
         jornada,
         groupId,
         subjectId,
-        dayOfWeek1,
-        dayOfWeek2,
+        dayOfWeek1: resolvedDayOfWeek1,
+        dayOfWeek2: resolvedDayOfWeek2,
       });
     const workspaceRef = adminDb.collection("driveWorkspaces").doc(workspaceId);
     const existing = await workspaceRef.get();
@@ -319,8 +362,8 @@ export async function POST(req: Request) {
           normalizeCompareValue(data.groupId) === groupId.toUpperCase() &&
           normalizeCompareValue(data.campus) === campus.toUpperCase() &&
           normalizeCompareValue(data.jornada) === jornada.toUpperCase() &&
-          normalizeCompareValue(data.dayOfWeek1) === dayOfWeek1.toUpperCase() &&
-          normalizeCompareValue(data.dayOfWeek2 || "") === dayOfWeek2.toUpperCase()
+          normalizeCompareValue(data.dayOfWeek1) === resolvedDayOfWeek1.toUpperCase() &&
+          normalizeCompareValue(data.dayOfWeek2 || "") === resolvedDayOfWeek2.toUpperCase()
         );
       });
       if (conflictingWorkspace) {
@@ -339,8 +382,8 @@ export async function POST(req: Request) {
       subjectName,
       cohortCode: groupName,
       cesdeGroupType,
-      dayOfWeek1,
-      dayOfWeek2,
+      dayOfWeek1: resolvedDayOfWeek1,
+      dayOfWeek2: resolvedDayOfWeek2,
       jornada,
       sede: campus,
       startDate: startDateRaw,
@@ -365,8 +408,12 @@ export async function POST(req: Request) {
         campus,
         jornada,
         cesdeGroupType: isCesde ? cesdeGroupType : "",
-        dayOfWeek1,
-        dayOfWeek2,
+        dayOfWeek1: resolvedDayOfWeek1,
+        dayOfWeek2: resolvedDayOfWeek2,
+        startTime,
+        endTime,
+        day2StartTime: resolvedDayOfWeek2 ? resolvedDay2StartTime : "",
+        day2EndTime: resolvedDayOfWeek2 ? resolvedDay2EndTime : "",
         weekCount: driveStructure.weeks.length || weekCount,
         startDate: startDateRaw,
         endDate: endDateRaw,
@@ -396,59 +443,51 @@ export async function POST(req: Request) {
     );
 
     const nodesRef = workspaceRef.collection("nodes");
-  const nodes: Array<{
-    pathKey: string;
-    name: string;
-    kind: string;
-    parentPathKey: string | null;
-    driveFolderId: string;
-    driveFolderUrl: string;
-    meta?: Record<string, unknown>;
-  }> = [];
+    const nodes: WorkspaceNode[] = [];
 
-  function pushNode(node: (typeof nodes)[number]) {
-    nodes.push(node);
-  }
+    function pushNode(node: WorkspaceNode) {
+      nodes.push(node);
+    }
 
-  pushNode({
-    pathKey: "group",
-    name: driveStructure.classFolder.folderName,
-    kind: "group",
-    parentPathKey: null,
-    driveFolderId: driveStructure.classFolder.folderId,
-    driveFolderUrl: driveStructure.classFolder.folderUrl,
-  });
-  if (driveStructure.privateFolder) {
     pushNode({
-      pathKey: "admin",
-      name: driveStructure.privateFolder.folderName,
-      kind: "admin",
+      pathKey: "group",
+      name: driveStructure.classFolder.folderName,
+      kind: "group",
+      parentPathKey: null,
+      driveFolderId: driveStructure.classFolder.folderId,
+      driveFolderUrl: driveStructure.classFolder.folderUrl,
+    });
+    if (driveStructure.privateFolder) {
+      pushNode({
+        pathKey: "admin",
+        name: driveStructure.privateFolder.folderName,
+        kind: "admin",
+        parentPathKey: "group",
+        driveFolderId: driveStructure.privateFolder.folderId,
+        driveFolderUrl: driveStructure.privateFolder.folderUrl,
+      });
+    }
+    pushNode({
+      pathKey: "publica",
+      name: driveStructure.publicFolder.folderName,
+      kind: "public",
       parentPathKey: "group",
-      driveFolderId: driveStructure.privateFolder.folderId,
-      driveFolderUrl: driveStructure.privateFolder.folderUrl,
+      driveFolderId: driveStructure.publicFolder.folderId,
+      driveFolderUrl: driveStructure.publicFolder.folderUrl,
     });
-  }
-  pushNode({
-    pathKey: "publica",
-    name: driveStructure.publicFolder.folderName,
-    kind: "public",
-    parentPathKey: "group",
-    driveFolderId: driveStructure.publicFolder.folderId,
-    driveFolderUrl: driveStructure.publicFolder.folderUrl,
-  });
-
-  driveStructure.weeks.forEach((week, index) => {
-    const weekNumber = typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber) ? week.weekNumber : index + 1;
-    pushNode({
-      pathKey: `publica/S${pad2(weekNumber)}`,
-      name: week.folderName,
-      kind: "week",
-      parentPathKey: "publica",
-      driveFolderId: week.folderId,
-      driveFolderUrl: week.folderUrl,
-      meta: { week: weekNumber },
+    
+    driveStructure.weeks.forEach((week, index) => {
+      const weekNumber = typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber) ? week.weekNumber : index + 1;
+      pushNode({
+        pathKey: `publica/S${pad2(weekNumber)}`,
+        name: week.folderName,
+        kind: "week",
+        parentPathKey: "publica",
+        driveFolderId: week.folderId,
+        driveFolderUrl: week.folderUrl,
+        meta: { week: weekNumber },
+      });
     });
-  });
 
     const batch = adminDb.batch();
     nodes.forEach((n) => {
@@ -460,12 +499,24 @@ export async function POST(req: Request) {
     let linkedTeachingLoadId = sourceTeachingLoadId || "";
     if (shouldCreateTeachingLoad) {
       const durationMinutes = endMinutes! - startMinutes!;
-      const academicHours = calculateAcademicHours(durationMinutes, institution);
-      const weeklyAcademicHours = calculateWeeklyAcademicHours({
+      const academicHours = calculateAcademicHoursForInstitution(durationMinutes, institution);
+      const day2DurationMinutes = resolvedDayOfWeek2 ? day2EndMinutes! - day2StartMinutes! : 0;
+      const day2AcademicHours = resolvedDayOfWeek2
+        ? calculateAcademicHoursForInstitution(day2DurationMinutes, institution)
+        : 0;
+      const weeklyAcademicHours = getWeeklyAcademicHoursFromSource({
         institution,
-        cesdeGroupType,
-        dayOfWeek2,
+        startDate: startDateRaw,
+        dayOfWeek1: resolvedDayOfWeek1,
+        dayOfWeek2: resolvedDayOfWeek2,
+        startTime,
+        endTime,
+        durationMinutes,
         academicHours,
+        day2StartTime: resolvedDay2StartTime,
+        day2EndTime: resolvedDay2EndTime,
+        day2DurationMinutes,
+        day2AcademicHours,
       });
       const teachingLoadRef = adminDb.collection("teachingLoads").doc();
       linkedTeachingLoadId = teachingLoadRef.id;
@@ -487,12 +538,16 @@ export async function POST(req: Request) {
         endDate: endDateRaw,
         startTime,
         endTime,
+        day2StartTime: resolvedDayOfWeek2 ? resolvedDay2StartTime : "",
+        day2EndTime: resolvedDayOfWeek2 ? resolvedDay2EndTime : "",
         classroom,
         durationMinutes,
         academicHours,
+        day2DurationMinutes,
+        day2AcademicHours,
         weeklyAcademicHours,
-        dayOfWeek1,
-        dayOfWeek2,
+        dayOfWeek1: resolvedDayOfWeek1,
+        dayOfWeek2: resolvedDayOfWeek2,
         driveWorkspaceId: workspaceId,
         driveStatus: "linked",
         driveErrorMessage: "",

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, DragEvent as ReactDragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -48,6 +48,13 @@ import { useFeedback } from "@/app/feedback-provider";
 import { reportFormError, reportFormSuccess } from "@/lib/form-feedback";
 import { getSubjectTechnologyMeta } from "@/lib/subject-tech-branding";
 import { getColombiaHolidayName } from "@/lib/colombia-holidays";
+import {
+  calculateAcademicHoursForInstitution,
+  diffMinutesLoose,
+  getTeachingLoadSessions,
+  getWeeklyAcademicHoursFromSource,
+  getWeeklySessionCountFromSource,
+} from "@/lib/teaching-load-sessions";
 
 type CatalogItem = { id: string; name: string };
 
@@ -69,9 +76,13 @@ type TeachingLoadRow = {
   endDate: string;
   startTime: string;
   endTime: string;
+  day2StartTime: string;
+  day2EndTime: string;
   classroom: string;
   durationMinutes: number;
   academicHours: number;
+  day2DurationMinutes: number;
+  day2AcademicHours: number;
   weeklyAcademicHours: number;
   dayOfWeek1: string;
   dayOfWeek2: string;
@@ -96,6 +107,8 @@ type TeachingLoadForm = {
   dayOfWeek2: string;
   startTime: string;
   endTime: string;
+  day2StartTime: string;
+  day2EndTime: string;
   classroom: string;
 };
 
@@ -127,6 +140,7 @@ type PayrollStatementItem = {
   startTime: string;
   endTime: string;
   academicHours: number;
+  sessionDayOfWeek: string;
   hourlyRate: number;
   estimatedValue: number;
   cesdeGroupType: string;
@@ -146,6 +160,43 @@ type PayrollStatementRow = {
   createdAtLabel: string;
 };
 
+type WorkloadFocusState = {
+  institution?: "CESDE" | "SENA";
+  startDate?: string;
+};
+
+type CalendarEventItem = {
+  id: string;
+  row: TeachingLoadRow;
+  dayIndex: number;
+  top: string;
+  height: string;
+  tone: string;
+  subjectName: string;
+  audienceName: string;
+  classroom: string;
+  timeRange: string;
+  hoursLabel: string;
+  academicHours: number;
+  dateRange: string;
+  shortDateRange: string;
+  slot: 1 | 2;
+  dateKey: string;
+  startMinutes: number;
+  endMinutes: number;
+  durationMinutes: number;
+};
+
+type DragCalendarEventState = {
+  eventId: string;
+  rowId: string;
+  slot: 1 | 2;
+  dateKey: string;
+  startMinutes: number;
+  endMinutes: number;
+  durationMinutes: number;
+};
+
 const EMPTY_FORM: TeachingLoadForm = {
   institution: "CESDE",
   cesdeGroupType: "REGULAR",
@@ -160,6 +211,8 @@ const EMPTY_FORM: TeachingLoadForm = {
   dayOfWeek2: "",
   startTime: "",
   endTime: "",
+  day2StartTime: "",
+  day2EndTime: "",
   classroom: "",
 };
 
@@ -172,6 +225,8 @@ const EMPTY_FILTERS: WorkloadFilters = {
   dateFrom: "",
   dateTo: "",
 };
+
+const WORKLOAD_FOCUS_STORAGE_KEY = "workload-focus";
 
 const WEEKDAY_INDEX_BY_NAME: Record<string, number> = {
   DOMINGO: 0,
@@ -230,27 +285,78 @@ function normalizeCesdeGroupType(value: unknown) {
   return toString(value, "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
 }
 
-function getWeeklySessionCount(values: {
-  institution: string;
-  cesdeGroupType: string;
-  dayOfWeek2: string;
-}) {
+function usesManualWeekdays(values: { institution: string; cesdeGroupType: string }) {
   const institution = (values.institution || "CESDE").toUpperCase();
   const cesdeGroupType = normalizeCesdeGroupType(values.cesdeGroupType);
-  return institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && values.dayOfWeek2 ? 2 : 1;
+  return institution === "SENA" || (institution === "CESDE" && cesdeGroupType === "EMPRESARIAL");
+}
+
+function getWeeklySessionCount(values: {
+  institution: string;
+  startDate?: string;
+  cesdeGroupType: string;
+  dayOfWeek1?: string;
+  dayOfWeek2: string;
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
+  academicHours?: number;
+  day2StartTime?: string;
+  day2EndTime?: string;
+  day2DurationMinutes?: number;
+  day2AcademicHours?: number;
+}) {
+  return getWeeklySessionCountFromSource({
+    institution: values.institution,
+    startDate: values.startDate ?? "",
+    dayOfWeek1: values.dayOfWeek1 ?? "",
+    dayOfWeek2: values.dayOfWeek2,
+    startTime: values.startTime ?? "",
+    endTime: values.endTime ?? "",
+    durationMinutes: values.durationMinutes,
+    academicHours: values.academicHours,
+    day2StartTime: values.day2StartTime,
+    day2EndTime: values.day2EndTime,
+    day2DurationMinutes: values.day2DurationMinutes,
+    day2AcademicHours: values.day2AcademicHours,
+  });
 }
 
 function getWeeklyAcademicHours(values: {
   institution: string;
+  startDate?: string;
   cesdeGroupType: string;
+  dayOfWeek1?: string;
   dayOfWeek2: string;
+  startTime?: string;
+  endTime?: string;
   academicHours: number;
+  durationMinutes?: number;
+  day2StartTime?: string;
+  day2EndTime?: string;
+  day2DurationMinutes?: number;
+  day2AcademicHours?: number;
   weeklyAcademicHours?: number;
 }) {
-  if (typeof values.weeklyAcademicHours === "number" && Number.isFinite(values.weeklyAcademicHours)) {
-    return values.weeklyAcademicHours;
-  }
-  return roundHours(values.academicHours * getWeeklySessionCount(values));
+  return roundHours(
+    getWeeklyAcademicHoursFromSource(
+      {
+        institution: values.institution,
+        startDate: values.startDate ?? "",
+        dayOfWeek1: values.dayOfWeek1 ?? "",
+        dayOfWeek2: values.dayOfWeek2,
+        startTime: values.startTime ?? "",
+        endTime: values.endTime ?? "",
+        durationMinutes: values.durationMinutes,
+        academicHours: values.academicHours,
+        day2StartTime: values.day2StartTime,
+        day2EndTime: values.day2EndTime,
+        day2DurationMinutes: values.day2DurationMinutes,
+        day2AcademicHours: values.day2AcademicHours,
+      },
+      values.weeklyAcademicHours,
+    ),
+  );
 }
 
 function sortByName(items: CatalogItem[]) {
@@ -299,17 +405,31 @@ function WorkloadFormSection({
 }
 
 function diffMinutes(startTime: string, endTime: string) {
-  if (!startTime || !endTime) return 0;
-  const [startHour, startMinute] = startTime.split(":").map(Number);
-  const [endHour, endMinute] = endTime.split(":").map(Number);
-  if ([startHour, startMinute, endHour, endMinute].some((n) => !Number.isFinite(n))) return 0;
-  return endHour * 60 + endMinute - (startHour * 60 + startMinute);
+  return diffMinutesLoose(startTime, endTime);
 }
 
 function calculateAcademicHours(durationMinutes: number, institution: string) {
-  const minutesPerHour = institution === "CESDE" ? 45 : 60;
-  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return 0;
-  return Math.max(0, Math.floor(durationMinutes / minutesPerHour));
+  return calculateAcademicHoursForInstitution(durationMinutes, institution);
+}
+
+function formatScheduleSummary(row: Pick<
+  TeachingLoadRow,
+  | "startDate"
+  | "dayOfWeek1"
+  | "dayOfWeek2"
+  | "startTime"
+  | "endTime"
+  | "durationMinutes"
+  | "academicHours"
+  | "institution"
+  | "day2StartTime"
+  | "day2EndTime"
+  | "day2DurationMinutes"
+  | "day2AcademicHours"
+>) {
+  return getTeachingLoadSessions(row)
+    .map((session) => `${session.dayOfWeek} ${formatTimeRange(session.startTime, session.endTime)} · ${formatHours(session.academicHours)} h`)
+    .join(" | ");
 }
 
 function roundHours(value: number) {
@@ -401,6 +521,15 @@ function fortnightRangeFromDate(date: Date) {
 function shiftFortnightRange(rangeStart: string, direction: -1 | 1) {
   const baseDate = parseLocalDate(rangeStart) ?? new Date();
   return fortnightRangeFromDate(addDays(baseDate, direction * 16));
+}
+
+function isSecondFortnightRange(rangeStart: string, rangeEnd: string) {
+  const start = parseLocalDate(rangeStart);
+  const end = parseLocalDate(rangeEnd);
+  if (!start || !end) return false;
+  if (start.getFullYear() !== end.getFullYear() || start.getMonth() !== end.getMonth()) return false;
+  const expected = fortnightRangeFromDate(start);
+  return start.getDate() === 16 && rangeStart === expected.start && rangeEnd === expected.end;
 }
 
 function dayNameFromIsoDate(value: string) {
@@ -495,8 +624,8 @@ function buildPayrollOccurrences(row: TeachingLoadRow, rangeStart: string, range
   const effectiveStart = isSameOrAfterDay(rowStart, start) ? rowStart : start;
   const effectiveEnd = isSameOrBeforeDay(rowEnd, end) ? rowEnd : end;
   if (effectiveEnd < effectiveStart) return [] as PayrollStatementItem[];
-  const weekdayIndexes = getRowWeekdayIndexes(row);
-  if (!weekdayIndexes.size) return [] as PayrollStatementItem[];
+  const sessions = getTeachingLoadSessions(row);
+  if (!sessions.length) return [] as PayrollStatementItem[];
 
   const items: PayrollStatementItem[] = [];
   for (
@@ -504,56 +633,40 @@ function buildPayrollOccurrences(row: TeachingLoadRow, rangeStart: string, range
     isSameOrBeforeDay(cursor, effectiveEnd);
     cursor = addDays(cursor, 1)
   ) {
-    if (!weekdayIndexes.has(cursor.getDay())) continue;
     const date = isoDate(cursor);
-    items.push({
-      loadId: row.id,
-      subjectId: row.subjectId,
-      subjectName: row.subjectName,
-      audienceId: row.audienceId,
-      audienceName: row.audienceName,
-      audienceType: row.audienceType,
-      siteId: row.siteId,
-      siteName: row.siteName,
-      shiftId: row.shiftId,
-      shiftName: row.shiftName,
-      period: row.period,
-      classroom: row.classroom,
-      date,
-      dayName: dayNameFromIsoDate(date),
-      startTime: row.startTime,
-      endTime: row.endTime,
-      academicHours: row.academicHours,
-      hourlyRate,
-      estimatedValue: roundHours(row.academicHours * hourlyRate),
-      cesdeGroupType: row.cesdeGroupType,
-    });
+    sessions
+      .filter((session) => session.weekdayIndex === cursor.getDay())
+      .forEach((session) => {
+        items.push({
+          loadId: row.id,
+          subjectId: row.subjectId,
+          subjectName: row.subjectName,
+          audienceId: row.audienceId,
+          audienceName: row.audienceName,
+          audienceType: row.audienceType,
+          siteId: row.siteId,
+          siteName: row.siteName,
+          shiftId: row.shiftId,
+          shiftName: row.shiftName,
+          period: row.period,
+          classroom: row.classroom,
+          date,
+          dayName: dayNameFromIsoDate(date),
+          startTime: session.startTime,
+          endTime: session.endTime,
+          academicHours: session.academicHours,
+          sessionDayOfWeek: session.dayOfWeek,
+          hourlyRate,
+          estimatedValue: roundHours(session.academicHours * hourlyRate),
+          cesdeGroupType: row.cesdeGroupType,
+        });
+      });
   }
   return items;
 }
 
 function countOccurrencesInRange(row: TeachingLoadRow, rangeStart: string, rangeEnd: string) {
-  const start = parseLocalDate(rangeStart);
-  const end = parseLocalDate(rangeEnd);
-  const rowStart = parseLocalDate(row.startDate);
-  const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
-  if (!start || !end || !rowStart || !rowEnd) return 0;
-  if (end < start) return 0;
-  const effectiveStart = isSameOrAfterDay(rowStart, start) ? rowStart : start;
-  const effectiveEnd = isSameOrBeforeDay(rowEnd, end) ? rowEnd : end;
-  if (effectiveEnd < effectiveStart) return 0;
-  const weekdayIndexes = getRowWeekdayIndexes(row);
-  if (!weekdayIndexes.size) return 0;
-
-  let total = 0;
-  for (
-    let cursor = new Date(effectiveStart.getFullYear(), effectiveStart.getMonth(), effectiveStart.getDate());
-    isSameOrBeforeDay(cursor, effectiveEnd);
-    cursor = addDays(cursor, 1)
-  ) {
-    if (weekdayIndexes.has(cursor.getDay())) total += 1;
-  }
-  return total;
+  return buildPayrollOccurrences(row, rangeStart, rangeEnd, 0).length;
 }
 
 const CALENDAR_START_MINUTES = 6 * 60;
@@ -589,6 +702,14 @@ function minutesToTimeString(totalMinutes: number) {
   const hour = Math.floor(safe / 60);
   const minute = safe % 60;
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function makeCalendarDropTargetId(dateKey: string, startMinutes: number) {
+  return `${dateKey}__${startMinutes}`;
+}
+
+function sameWeekday(a: string, b: string) {
+  return normalizeWeekdayLabel(a) === normalizeWeekdayLabel(b);
 }
 
 function ModalShell({
@@ -641,7 +762,7 @@ export default function AdminWorkloadPage() {
   const [rows, setRows] = useState<TeachingLoadRow[]>([]);
   const [payrollStatements, setPayrollStatements] = useState<PayrollStatementRow[]>([]);
 
-  const [tab, setTab] = useState<"CESDE" | "SENA" | "ALL">("CESDE");
+  const [tab, setTab] = useState<"CESDE" | "SENA" | "ALL">("ALL");
   const [viewMode, setViewMode] = useState<"list" | "calendar" | "payroll">("calendar");
   const [modalOpen, setModalOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -654,6 +775,9 @@ export default function AdminWorkloadPage() {
   const [cesdeHourlyRate, setCesdeHourlyRate] = useState(DEFAULT_PAYROLL_VALUES.cesdeHourlyRate);
   const [senaMonthlySalary, setSenaMonthlySalary] = useState(DEFAULT_PAYROLL_VALUES.senaMonthlySalary);
   const [selectedPayrollStatement, setSelectedPayrollStatement] = useState<PayrollStatementRow | null>(null);
+  const [draggingCalendarEvent, setDraggingCalendarEvent] = useState<DragCalendarEventState | null>(null);
+  const [calendarDropTarget, setCalendarDropTarget] = useState<string | null>(null);
+  const [movingCalendarEventId, setMovingCalendarEventId] = useState<string | null>(null);
 
   function showValidationError(message: string) {
     return reportFormError({ message, feedback, setMessage: setError });
@@ -711,14 +835,25 @@ export default function AdminWorkloadPage() {
           const cesdeGroupType = normalizeCesdeGroupType(row.cesdeGroupType);
           const startTime = toString(row.startTime, "");
           const endTime = toString(row.endTime, "");
+              const day2StartTime = toString(row.day2StartTime, "");
+              const day2EndTime = toString(row.day2EndTime, "");
           const startDate = toString(row.startDate, "");
+              const dayOfWeek1 = toString(row.dayOfWeek1, dayNameFromIsoDate(startDate));
           const dayOfWeek2 = toString(row.dayOfWeek2, "");
           const fallbackMinutes = Math.max(0, diffMinutes(startTime, endTime));
+              const day2FallbackMinutes = dayOfWeek2
+                ? Math.max(0, diffMinutes(day2StartTime || startTime, day2EndTime || endTime))
+                : 0;
           const fallbackAcademicHours = calculateAcademicHours(fallbackMinutes, institution);
+              const day2FallbackAcademicHours = dayOfWeek2 ? calculateAcademicHours(day2FallbackMinutes, institution) : 0;
           const academicHours =
             typeof row.academicHours === "number" && Number.isFinite(row.academicHours)
               ? row.academicHours
               : fallbackAcademicHours;
+              const day2AcademicHours =
+                typeof row.day2AcademicHours === "number" && Number.isFinite(row.day2AcademicHours)
+                  ? row.day2AcademicHours
+                  : day2FallbackAcademicHours;
           return {
             id: d.id,
             institution,
@@ -737,17 +872,46 @@ export default function AdminWorkloadPage() {
             endDate: toString(row.endDate, ""),
             startTime,
             endTime,
+                day2StartTime,
+                day2EndTime,
             classroom: toString(row.classroom, ""),
             durationMinutes:
               typeof row.durationMinutes === "number" && Number.isFinite(row.durationMinutes)
                 ? row.durationMinutes
                 : fallbackMinutes,
             academicHours,
+                day2DurationMinutes:
+                  typeof row.day2DurationMinutes === "number" && Number.isFinite(row.day2DurationMinutes)
+                    ? row.day2DurationMinutes
+                    : day2FallbackMinutes,
+                day2AcademicHours,
             weeklyAcademicHours:
-              typeof row.weeklyAcademicHours === "number" && Number.isFinite(row.weeklyAcademicHours)
-                ? row.weeklyAcademicHours
-                : roundHours(academicHours * (institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && dayOfWeek2 ? 2 : 1)),
-            dayOfWeek1: toString(row.dayOfWeek1, dayNameFromIsoDate(startDate)),
+                  getWeeklyAcademicHours({
+                    institution,
+                    startDate,
+                    cesdeGroupType,
+                    dayOfWeek1,
+                    dayOfWeek2,
+                    startTime,
+                    endTime,
+                    durationMinutes:
+                      typeof row.durationMinutes === "number" && Number.isFinite(row.durationMinutes)
+                        ? row.durationMinutes
+                        : fallbackMinutes,
+                    academicHours,
+                    day2StartTime,
+                    day2EndTime,
+                    day2DurationMinutes:
+                      typeof row.day2DurationMinutes === "number" && Number.isFinite(row.day2DurationMinutes)
+                        ? row.day2DurationMinutes
+                        : day2FallbackMinutes,
+                    day2AcademicHours,
+                    weeklyAcademicHours:
+                      typeof row.weeklyAcademicHours === "number" && Number.isFinite(row.weeklyAcademicHours)
+                        ? row.weeklyAcademicHours
+                        : undefined,
+                  }),
+                dayOfWeek1,
             dayOfWeek2,
             driveWorkspaceId: toString(row.driveWorkspaceId, ""),
             driveStatus: toString(row.driveStatus, "pending"),
@@ -809,6 +973,7 @@ export default function AdminWorkloadPage() {
                     dayName: toString(value.dayName, ""),
                     startTime: toString(value.startTime, ""),
                     endTime: toString(value.endTime, ""),
+                    sessionDayOfWeek: toString(value.sessionDayOfWeek, toString(value.dayName, "")),
                     academicHours:
                       typeof value.academicHours === "number" && Number.isFinite(value.academicHours) ? value.academicHours : 0,
                     hourlyRate: typeof value.hourlyRate === "number" && Number.isFinite(value.hourlyRate) ? value.hourlyRate : 0,
@@ -859,6 +1024,23 @@ export default function AdminWorkloadPage() {
       if (typeof parsed.payrollRangeEnd === "string") setPayrollRangeEnd(parsed.payrollRangeEnd);
     } catch {}
   }, []);
+
+      useEffect(() => {
+        if (typeof window === "undefined") return;
+        try {
+          const raw = window.localStorage.getItem(WORKLOAD_FOCUS_STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw) as WorkloadFocusState;
+          if (parsed.institution === "CESDE" || parsed.institution === "SENA") {
+            setTab(parsed.institution);
+          }
+          const focusDate = typeof parsed.startDate === "string" ? parseLocalDate(parsed.startDate) : null;
+          if (focusDate) {
+            setCalendarWeekStart(startOfWeek(focusDate));
+          }
+          window.localStorage.removeItem(WORKLOAD_FOCUS_STORAGE_KEY);
+        } catch {}
+      }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -958,20 +1140,59 @@ export default function AdminWorkloadPage() {
     () =>
       getWeeklySessionCount({
         institution: form.institution,
+            startDate: form.startDate,
         cesdeGroupType: form.cesdeGroupType,
+            dayOfWeek1: form.dayOfWeek1.trim() || dayNameFromIsoDate(form.startDate) || "",
         dayOfWeek2: form.dayOfWeek2.trim(),
+            startTime: form.startTime,
+            endTime: form.endTime,
+            durationMinutes: currentDurationMinutes,
+            academicHours: currentAcademicHours,
+            day2StartTime: form.day2StartTime.trim(),
+            day2EndTime: form.day2EndTime.trim(),
       }),
-    [form.cesdeGroupType, form.dayOfWeek2, form.institution],
+        [
+          currentAcademicHours,
+          currentDurationMinutes,
+          form.cesdeGroupType,
+          form.day2EndTime,
+          form.day2StartTime,
+          form.dayOfWeek1,
+          form.dayOfWeek2,
+          form.endTime,
+          form.institution,
+          form.startDate,
+          form.startTime,
+        ],
   );
   const currentWeeklyAcademicHours = useMemo(
     () =>
       getWeeklyAcademicHours({
         institution: form.institution,
+            startDate: form.startDate,
         cesdeGroupType: form.cesdeGroupType,
+            dayOfWeek1: form.dayOfWeek1.trim() || dayNameFromIsoDate(form.startDate) || "",
         dayOfWeek2: form.dayOfWeek2.trim(),
+            startTime: form.startTime,
+            endTime: form.endTime,
+            durationMinutes: currentDurationMinutes,
         academicHours: currentAcademicHours,
+            day2StartTime: form.day2StartTime.trim(),
+            day2EndTime: form.day2EndTime.trim(),
       }),
-    [currentAcademicHours, form.cesdeGroupType, form.dayOfWeek2, form.institution],
+        [
+          currentAcademicHours,
+          currentDurationMinutes,
+          form.cesdeGroupType,
+          form.day2EndTime,
+          form.day2StartTime,
+          form.dayOfWeek1,
+          form.dayOfWeek2,
+          form.endTime,
+          form.institution,
+          form.startDate,
+          form.startTime,
+        ],
   );
   const effectiveViewMode = isMobile && viewMode === "calendar" ? "list" : viewMode;
   const payrollHourlyRateValue = useMemo(() => safeNumberFromInput(cesdeHourlyRate), [cesdeHourlyRate]);
@@ -992,45 +1213,53 @@ export default function AdminWorkloadPage() {
     [calendarDays],
   );
 
-  const calendarEvents = useMemo(() => {
+  const calendarEvents = useMemo<CalendarEventItem[]>(() => {
     return filteredRows
       .flatMap((row) => {
         const rangeStart = parseLocalDate(row.startDate);
         const rangeEnd = parseLocalDate(row.endDate) ?? rangeStart;
-        const startMinutes = minutesFromTime(row.startTime);
-        const endMinutes = minutesFromTime(row.endTime);
-        if (!rangeStart || !rangeEnd || startMinutes === null || endMinutes === null) return [];
-        if (endMinutes <= startMinutes) return [];
-        const weekdayIndexes = getRowWeekdayIndexes(row);
-        if (!weekdayIndexes.size) return [];
-        const topMinutes = Math.max(0, startMinutes - CALENDAR_START_MINUTES);
-        const clampedEnd = Math.min(endMinutes, CALENDAR_END_MINUTES);
-        const clampedStart = Math.max(startMinutes, CALENDAR_START_MINUTES);
-        const blockMinutes = Math.max(30, clampedEnd - clampedStart);
-        const top = `${(topMinutes / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * 100}%`;
-        const height = `${(blockMinutes / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * 100}%`;
+        if (!rangeStart || !rangeEnd) return [];
+        const sessions = getTeachingLoadSessions(row);
+        if (!sessions.length) return [];
         return calendarDays.flatMap((day, dayIndex) => {
           const dayKey = isoDate(day);
           if (calendarHolidayMap.has(dayKey)) return [];
-          if (!weekdayIndexes.has(day.getDay())) return [];
           if (!isSameOrAfterDay(day, rangeStart) || !isSameOrBeforeDay(day, rangeEnd)) return [];
-          return [
-            {
-              id: `${row.id}-${dayKey}`,
-              row,
-              dayIndex,
-              top,
-              height,
-              tone: getEventTone(row.institution, row.subjectName),
-              subjectName: row.subjectName,
-              audienceName: row.audienceType === "ficha" ? `Ficha ${row.audienceName}` : row.audienceName,
-              classroom: row.classroom,
-              timeRange: formatTimeRange(row.startTime, row.endTime),
-              hoursLabel: `${formatHours(row.academicHours)} h`,
-              dateRange: formatDateRange(row.startDate, row.endDate),
-              shortDateRange: formatCompactDateRange(row.startDate, row.endDate),
-            },
-          ];
+          return sessions.flatMap((session) => {
+            if (session.weekdayIndex !== day.getDay()) return [];
+            const startMinutes = minutesFromTime(session.startTime);
+            const endMinutes = minutesFromTime(session.endTime);
+            if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return [];
+            const topMinutes = Math.max(0, startMinutes - CALENDAR_START_MINUTES);
+            const clampedEnd = Math.min(endMinutes, CALENDAR_END_MINUTES);
+            const clampedStart = Math.max(startMinutes, CALENDAR_START_MINUTES);
+            const blockMinutes = Math.max(30, clampedEnd - clampedStart);
+            const top = `${(topMinutes / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * 100}%`;
+            const height = `${(blockMinutes / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * 100}%`;
+            return [
+              {
+                id: `${row.id}-${session.slot}-${dayKey}`,
+                row,
+                dayIndex,
+                top,
+                height,
+                tone: getEventTone(row.institution, row.subjectName),
+                subjectName: row.subjectName,
+                audienceName: row.audienceType === "ficha" ? `Ficha ${row.audienceName}` : row.audienceName,
+                classroom: row.classroom,
+                timeRange: formatTimeRange(session.startTime, session.endTime),
+                hoursLabel: `${formatHours(session.academicHours)} h`,
+                academicHours: session.academicHours,
+                dateRange: formatDateRange(row.startDate, row.endDate),
+                shortDateRange: formatCompactDateRange(row.startDate, row.endDate),
+                slot: session.slot,
+                dateKey: dayKey,
+                startMinutes,
+                endMinutes,
+                durationMinutes: session.durationMinutes,
+              },
+            ];
+          });
         });
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
@@ -1046,11 +1275,11 @@ export default function AdminWorkloadPage() {
       const institution = (event.row.institution || "CESDE").toUpperCase();
       if (institution === "SENA") {
         senaLoadIds.add(event.row.id);
-        senaHours += event.row.academicHours;
+            senaHours += event.academicHours;
         return;
       }
       cesdeLoadIds.add(event.row.id);
-      cesdeHours += event.row.academicHours;
+          cesdeHours += event.academicHours;
     });
 
     return {
@@ -1066,17 +1295,19 @@ export default function AdminWorkloadPage() {
   const payrollSummary = useMemo(() => {
     const cesdeRows = filteredRows.filter((row) => (row.institution || "CESDE").toUpperCase() === "CESDE");
     const senaRows = filteredRows.filter((row) => (row.institution || "CESDE").toUpperCase() === "SENA");
+    const isSecondFortnight = isSecondFortnightRange(payrollRangeStart, payrollRangeEnd);
 
     const cesdeBreakdown = cesdeRows
       .map((row) => {
-        const occurrences = countOccurrencesInRange(row, payrollRangeStart, payrollRangeEnd);
-        const programmedHours = roundHours(occurrences * row.academicHours);
-        const estimatedValue = roundHours(programmedHours * payrollHourlyRateValue);
+            const occurrences = buildPayrollOccurrences(row, payrollRangeStart, payrollRangeEnd, payrollHourlyRateValue);
+            const programmedHours = roundHours(occurrences.reduce((sum, item) => sum + item.academicHours, 0));
+            const estimatedValue = roundHours(occurrences.reduce((sum, item) => sum + item.estimatedValue, 0));
         return {
           row,
-          occurrences,
+              occurrences: occurrences.length,
           programmedHours,
           estimatedValue,
+              scheduleSummary: formatScheduleSummary(row),
         };
       })
       .filter((item) => item.occurrences > 0)
@@ -1086,6 +1317,11 @@ export default function AdminWorkloadPage() {
     const cesdeEstimated = roundHours(cesdeBreakdown.reduce((sum, item) => sum + item.estimatedValue, 0));
     const senaMonthlyReference = senaRows.length ? senaMonthlySalaryValue : 0;
     const senaQuincenaReference = roundHours(senaMonthlyReference / 2);
+    const totalMixedReference = roundHours(isSecondFortnight ? cesdeEstimated + senaMonthlyReference : cesdeEstimated);
+    const totalMixedLabel = isSecondFortnight ? "Total mes estimado" : "CESDE estimado";
+    const totalMixedHint = isSecondFortnight
+      ? "CESDE segunda quincena + SENA mensual completo"
+      : "Primera quincena: solo CESDE";
 
     return {
       cesdeBreakdown,
@@ -1095,7 +1331,10 @@ export default function AdminWorkloadPage() {
       senaLoads: senaRows.length,
       senaMonthlyReference,
       senaQuincenaReference,
-      totalMixedReference: roundHours(cesdeEstimated + senaQuincenaReference),
+      isSecondFortnight,
+      totalMixedReference,
+      totalMixedLabel,
+      totalMixedHint,
     };
   }, [filteredRows, payrollHourlyRateValue, payrollRangeEnd, payrollRangeStart, senaMonthlySalaryValue]);
 
@@ -1211,6 +1450,8 @@ export default function AdminWorkloadPage() {
       dayOfWeek2: row.dayOfWeek2 || "",
       startTime: row.startTime,
       endTime: row.endTime,
+          day2StartTime: row.day2StartTime || "",
+          day2EndTime: row.day2EndTime || "",
       classroom: row.classroom,
     });
     setError(null);
@@ -1230,13 +1471,23 @@ export default function AdminWorkloadPage() {
         next.audienceId = "";
         if (value === "SENA") {
           next.cesdeGroupType = "REGULAR";
-          next.dayOfWeek2 = "";
         }
       }
       if (key === "cesdeGroupType" && value === "REGULAR") {
         next.dayOfWeek2 = "";
+        next.day2StartTime = "";
+        next.day2EndTime = "";
       }
-      if (key === "startDate" && !prev.period.trim()) next.period = periodFromDate(String(value));
+      if (key === "dayOfWeek2" && !String(value).trim()) {
+        next.day2StartTime = "";
+        next.day2EndTime = "";
+      }
+      if (key === "startDate") {
+        if (!prev.period.trim()) next.period = periodFromDate(String(value));
+        if (!next.dayOfWeek1.trim()) {
+          next.dayOfWeek1 = dayNameFromIsoDate(String(value)) || next.dayOfWeek1;
+        }
+      }
       return next;
     });
   }
@@ -1254,6 +1505,10 @@ export default function AdminWorkloadPage() {
     endDate: string;
     dayOfWeek1: string;
     dayOfWeek2: string;
+        startTime: string;
+        endTime: string;
+        day2StartTime: string;
+        day2EndTime: string;
   }) {
     const user = firebaseAuth.currentUser;
     if (!user) {
@@ -1279,6 +1534,10 @@ export default function AdminWorkloadPage() {
         dayOfWeek2: args.dayOfWeek2,
         startDate: args.startDate,
         endDate: args.endDate,
+            startTime: args.startTime,
+            endTime: args.endTime,
+            day2StartTime: args.day2StartTime,
+            day2EndTime: args.day2EndTime,
       }),
     });
 
@@ -1357,26 +1616,43 @@ export default function AdminWorkloadPage() {
       return;
     }
     const cesdeGroupType = form.institution === "CESDE" ? form.cesdeGroupType : "REGULAR";
+    const manualWeekdays = usesManualWeekdays({
+      institution: form.institution,
+      cesdeGroupType,
+    });
     const academicHours = calculateAcademicHours(durationMinutes, form.institution);
-    const dayOfWeek1 =
-      form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL"
-        ? form.dayOfWeek1.trim()
-        : dayNameFromIsoDate(form.startDate) || "";
+    const dayOfWeek1 = form.dayOfWeek1.trim() || dayNameFromIsoDate(form.startDate) || "";
     if (!dayOfWeek1) {
       showValidationError("No fue posible resolver el día principal de la carga.");
       return;
     }
-    const dayOfWeek2 =
-      form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" ? form.dayOfWeek2.trim() : "";
-    if (form.institution === "CESDE" && cesdeGroupType === "EMPRESARIAL" && dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
+    const dayOfWeek2 = manualWeekdays ? form.dayOfWeek2.trim() : "";
+    if (manualWeekdays && dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
       showValidationError("El segundo día no puede ser igual al primero.");
       return;
     }
+    const resolvedDay2StartTime = dayOfWeek2 ? form.day2StartTime.trim() || form.startTime : "";
+    const resolvedDay2EndTime = dayOfWeek2 ? form.day2EndTime.trim() || form.endTime : "";
+    const day2DurationMinutes = dayOfWeek2 ? diffMinutes(resolvedDay2StartTime, resolvedDay2EndTime) : 0;
+    if (dayOfWeek2 && day2DurationMinutes <= 0) {
+      showValidationError("La franja horaria del segundo día no es válida.");
+      return;
+    }
+    const day2AcademicHours = dayOfWeek2 ? calculateAcademicHours(day2DurationMinutes, form.institution) : 0;
     const weeklyAcademicHours = getWeeklyAcademicHours({
       institution: form.institution,
+      startDate: form.startDate,
       cesdeGroupType,
+      dayOfWeek1,
       dayOfWeek2,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      durationMinutes,
       academicHours,
+      day2StartTime: resolvedDay2StartTime,
+      day2EndTime: resolvedDay2EndTime,
+      day2DurationMinutes,
+      day2AcademicHours,
     });
 
     const isEditing = Boolean(editingId);
@@ -1399,9 +1675,13 @@ export default function AdminWorkloadPage() {
       endDate: form.endDate,
       startTime: form.startTime,
       endTime: form.endTime,
+      day2StartTime: dayOfWeek2 ? resolvedDay2StartTime : "",
+      day2EndTime: dayOfWeek2 ? resolvedDay2EndTime : "",
       classroom,
       durationMinutes,
       academicHours,
+      day2DurationMinutes,
+      day2AcademicHours,
       weeklyAcademicHours,
       dayOfWeek1,
       dayOfWeek2,
@@ -1409,6 +1689,7 @@ export default function AdminWorkloadPage() {
       updatedAt: serverTimestamp(),
     };
     const hasLinkedDrive = Boolean(currentRow?.driveWorkspaceId?.trim());
+    const focusDate = parseLocalDate(form.startDate);
 
     flushSync(() => {
       setError(null);
@@ -1432,6 +1713,15 @@ export default function AdminWorkloadPage() {
               createdAt: serverTimestamp(),
             });
           }
+
+          flushSync(() => {
+            setTab(form.institution);
+            setViewMode("calendar");
+            setFilters(EMPTY_FILTERS);
+            if (focusDate) {
+              setCalendarWeekStart(startOfWeek(focusDate));
+            }
+          });
 
           if (hasLinkedDrive) {
             setSuccess("Carga horaria actualizada correctamente. La estructura de Drive existente se conserva.");
@@ -1458,6 +1748,10 @@ export default function AdminWorkloadPage() {
               endDate: form.endDate,
               dayOfWeek1,
               dayOfWeek2,
+              startTime: form.startTime,
+              endTime: form.endTime,
+              day2StartTime: dayOfWeek2 ? resolvedDay2StartTime : "",
+              day2EndTime: dayOfWeek2 ? resolvedDay2EndTime : "",
             });
             await updateDoc(doc(firestore, "teachingLoads", savedId), {
               driveWorkspaceId: driveResult.workspaceId,
@@ -1497,6 +1791,362 @@ export default function AdminWorkloadPage() {
         }
       })();
     }, 0);
+  }
+
+  function readDraggedCalendarEvent(event: ReactDragEvent<HTMLElement>) {
+    if (draggingCalendarEvent) return draggingCalendarEvent;
+    try {
+      const raw = event.dataTransfer.getData("text/plain");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<DragCalendarEventState>;
+      if (
+        typeof parsed.eventId === "string" &&
+        typeof parsed.rowId === "string" &&
+        (parsed.slot === 1 || parsed.slot === 2) &&
+        typeof parsed.dateKey === "string" &&
+        typeof parsed.startMinutes === "number" &&
+        typeof parsed.endMinutes === "number" &&
+        typeof parsed.durationMinutes === "number"
+      ) {
+        return parsed as DragCalendarEventState;
+      }
+    } catch {}
+    return null;
+  }
+
+  function handleCalendarDragStart(event: ReactDragEvent<HTMLDivElement>, item: CalendarEventItem) {
+    const nextDragState: DragCalendarEventState = {
+      eventId: item.id,
+      rowId: item.row.id,
+      slot: item.slot,
+      dateKey: item.dateKey,
+      startMinutes: item.startMinutes,
+      endMinutes: item.endMinutes,
+      durationMinutes: item.durationMinutes,
+    };
+    setDraggingCalendarEvent(nextDragState);
+    setCalendarDropTarget(null);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", JSON.stringify(nextDragState));
+  }
+
+  function handleCalendarDragEnd() {
+    setDraggingCalendarEvent(null);
+    setCalendarDropTarget(null);
+  }
+
+  async function moveCalendarEventToSlot(targetDate: Date, targetStartMinutes: number, dragged: DragCalendarEventState) {
+    if (movingCalendarEventId) return;
+
+    const row = rows.find((item) => item.id === dragged.rowId);
+    if (!row) {
+      reportFormError({
+        message: "No fue posible ubicar la carga que intentas mover.",
+        feedback,
+        setMessage: setError,
+      });
+      setDraggingCalendarEvent(null);
+      setCalendarDropTarget(null);
+      return;
+    }
+
+    const targetDateKey = isoDate(targetDate);
+    if (calendarHolidayMap.has(targetDateKey)) {
+      reportFormError({
+        message: "No puedes mover una carga a un día festivo desde el calendario.",
+        feedback,
+        setMessage: setError,
+      });
+      setDraggingCalendarEvent(null);
+      setCalendarDropTarget(null);
+      return;
+    }
+
+    const targetEndMinutes = targetStartMinutes + dragged.durationMinutes;
+    if (targetEndMinutes > CALENDAR_END_MINUTES) {
+      reportFormError({
+        message: "Ese movimiento deja la sesión por fuera del rango visible del calendario.",
+        feedback,
+        setMessage: setError,
+      });
+      setDraggingCalendarEvent(null);
+      setCalendarDropTarget(null);
+      return;
+    }
+
+    const nextDayLabel = dayNameFromIsoDate(targetDateKey);
+    if (!nextDayLabel) {
+      reportFormError({
+        message: "No fue posible resolver el nuevo día para esta carga.",
+        feedback,
+        setMessage: setError,
+      });
+      setDraggingCalendarEvent(null);
+      setCalendarDropTarget(null);
+      return;
+    }
+
+    const nextStartTime = minutesToTimeString(targetStartMinutes);
+    const nextEndTime = minutesToTimeString(targetEndMinutes);
+    const currentDayLabel = dragged.slot === 1 ? row.dayOfWeek1 : row.dayOfWeek2;
+    const currentStartTime = dragged.slot === 1 ? row.startTime : row.day2StartTime || row.startTime;
+    const currentEndTime = dragged.slot === 1 ? row.endTime : row.day2EndTime || row.endTime;
+
+    if (
+      sameWeekday(currentDayLabel, nextDayLabel) &&
+      currentStartTime === nextStartTime &&
+      currentEndTime === nextEndTime
+    ) {
+      setDraggingCalendarEvent(null);
+      setCalendarDropTarget(null);
+      return;
+    }
+
+    const primaryDurationMinutes =
+      dragged.slot === 1 ? dragged.durationMinutes : Math.max(0, row.durationMinutes || diffMinutes(row.startTime, row.endTime));
+    const primaryAcademicHours =
+      dragged.slot === 1 ? calculateAcademicHours(dragged.durationMinutes, row.institution) : row.academicHours;
+    const secondaryDurationMinutes =
+      dragged.slot === 2
+        ? dragged.durationMinutes
+        : row.dayOfWeek2
+          ? Math.max(0, row.day2DurationMinutes || diffMinutes(row.day2StartTime || row.startTime, row.day2EndTime || row.endTime))
+          : 0;
+    const secondaryAcademicHours =
+      dragged.slot === 2
+        ? calculateAcademicHours(dragged.durationMinutes, row.institution)
+        : row.dayOfWeek2
+          ? row.day2AcademicHours
+          : 0;
+
+    const nextDayOfWeek1 = dragged.slot === 1 ? nextDayLabel : row.dayOfWeek1 || dayNameFromIsoDate(row.startDate) || nextDayLabel;
+    const nextDayOfWeek2 = dragged.slot === 2 ? nextDayLabel : row.dayOfWeek2;
+    if (nextDayOfWeek2 && sameWeekday(nextDayOfWeek1, nextDayOfWeek2)) {
+      reportFormError({
+        message: "No puedes dejar las dos jornadas en el mismo día desde el calendario.",
+        feedback,
+        setMessage: setError,
+      });
+      setDraggingCalendarEvent(null);
+      setCalendarDropTarget(null);
+      return;
+    }
+
+    const nextStartTime1 = dragged.slot === 1 ? nextStartTime : row.startTime;
+    const nextEndTime1 = dragged.slot === 1 ? nextEndTime : row.endTime;
+    const nextDay2StartTime = nextDayOfWeek2 ? (dragged.slot === 2 ? nextStartTime : row.day2StartTime || row.startTime) : "";
+    const nextDay2EndTime = nextDayOfWeek2 ? (dragged.slot === 2 ? nextEndTime : row.day2EndTime || row.endTime) : "";
+    const nextDay2DurationMinutes = nextDayOfWeek2 ? secondaryDurationMinutes : 0;
+    const nextDay2AcademicHours = nextDayOfWeek2 ? secondaryAcademicHours : 0;
+
+    const weeklyAcademicHours = getWeeklyAcademicHours({
+      institution: row.institution,
+      startDate: row.startDate,
+      cesdeGroupType: row.cesdeGroupType,
+      dayOfWeek1: nextDayOfWeek1,
+      dayOfWeek2: nextDayOfWeek2,
+      startTime: nextStartTime1,
+      endTime: nextEndTime1,
+      durationMinutes: primaryDurationMinutes,
+      academicHours: primaryAcademicHours,
+      day2StartTime: nextDay2StartTime,
+      day2EndTime: nextDay2EndTime,
+      day2DurationMinutes: nextDay2DurationMinutes,
+      day2AcademicHours: nextDay2AcademicHours,
+    });
+
+    setMovingCalendarEventId(dragged.eventId);
+    setError(null);
+    try {
+      await updateDoc(doc(firestore, "teachingLoads", row.id), {
+        dayOfWeek1: nextDayOfWeek1,
+        dayOfWeek2: nextDayOfWeek2,
+        startTime: nextStartTime1,
+        endTime: nextEndTime1,
+        durationMinutes: primaryDurationMinutes,
+        academicHours: primaryAcademicHours,
+        day2StartTime: nextDay2StartTime,
+        day2EndTime: nextDay2EndTime,
+        day2DurationMinutes: nextDay2DurationMinutes,
+        day2AcademicHours: nextDay2AcademicHours,
+        weeklyAcademicHours,
+        updatedAt: serverTimestamp(),
+      });
+      feedback.success("Carga reubicada en el calendario.");
+    } catch {
+      reportFormError({
+        message: "No fue posible mover la carga en el calendario.",
+        feedback,
+        setMessage: setError,
+      });
+    } finally {
+      setDraggingCalendarEvent(null);
+      setCalendarDropTarget(null);
+      setMovingCalendarEventId(null);
+    }
+  }
+
+  async function downloadCalendarPdf() {
+    if (!calendarEvents.length) {
+      reportFormError({
+        message: "No hay bloques visibles en el calendario para exportar.",
+        feedback,
+        setMessage: setError,
+      });
+      return;
+    }
+
+    try {
+      const [{ jsPDF }] = await Promise.all([import("jspdf")]);
+      const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const marginX = 24;
+      const headerTop = 28;
+      const headerBottom = 92;
+      const timeColumnWidth = 54;
+      const dayHeaderHeight = 42;
+      const gridTop = headerBottom + dayHeaderHeight;
+      const gridBottom = pageHeight - 24;
+      const gridHeight = gridBottom - gridTop;
+      const gridWidth = pageWidth - marginX * 2 - timeColumnWidth;
+      const dayColumnWidth = gridWidth / 7;
+      const slotHeight = gridHeight / CALENDAR_SLOTS;
+      const calendarLabel = tab === "ALL" ? "Horario general" : `Horario ${tab}`;
+      const exportedAt = new Intl.DateTimeFormat("es-CO", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date());
+
+      const eventPalette = (institution: string) =>
+        institution.toUpperCase() === "SENA"
+          ? {
+              fill: [220, 252, 231] as const,
+              border: [16, 185, 129] as const,
+              text: [6, 78, 59] as const,
+            }
+          : {
+              fill: [250, 232, 255] as const,
+              border: [192, 38, 211] as const,
+              text: [112, 26, 117] as const,
+            };
+
+      const writeClampedText = (
+        text: string,
+        x: number,
+        y: number,
+        maxWidth: number,
+        maxLines: number,
+        lineHeight: number,
+      ) => {
+        const lines = doc.splitTextToSize(text, maxWidth) as string[];
+        lines.slice(0, maxLines).forEach((line, index) => {
+          const content = index === maxLines - 1 && lines.length > maxLines ? `${line}...` : line;
+          doc.text(content, x, y + index * lineHeight);
+        });
+      };
+
+      doc.setFontSize(18);
+      doc.setTextColor(17, 24, 39);
+      doc.text(calendarLabel, marginX, headerTop);
+      doc.setFontSize(10);
+      doc.setTextColor(90, 90, 90);
+      doc.text(`Semana: ${formatWeekRange(calendarWeekStart)}`, marginX, headerTop + 18);
+      doc.text(`Generado: ${exportedAt}`, marginX, headerTop + 32);
+      doc.text(`Bloques visibles: ${calendarEvents.length}`, marginX, headerTop + 46);
+
+      doc.setDrawColor(229, 231, 235);
+      doc.setFillColor(249, 250, 251);
+      doc.roundedRect(marginX, headerBottom, timeColumnWidth, dayHeaderHeight, 8, 8, "FD");
+      doc.setTextColor(107, 114, 128);
+      doc.setFontSize(9);
+      doc.text("Hora", marginX + 14, headerBottom + 24);
+
+      calendarDays.forEach((day, index) => {
+        const holidayName = calendarHolidayMap.get(isoDate(day));
+        const x = marginX + timeColumnWidth + index * dayColumnWidth;
+        doc.setFillColor(holidayName ? 255 : 249, holidayName ? 247 : 250, holidayName ? 237 : 251);
+        doc.setDrawColor(229, 231, 235);
+        doc.roundedRect(x, headerBottom, dayColumnWidth, dayHeaderHeight, 8, 8, "FD");
+        doc.setFontSize(8);
+        doc.setTextColor(107, 114, 128);
+        doc.text(String(formatWeekday(day)).toUpperCase(), x + 8, headerBottom + 15);
+        doc.setFontSize(11);
+        doc.setTextColor(17, 24, 39);
+        doc.text(formatDayMonth(day), x + 8, headerBottom + 30);
+        if (holidayName) {
+          doc.setFontSize(7);
+          doc.setTextColor(146, 64, 14);
+          writeClampedText("Festivo", x + dayColumnWidth - 42, headerBottom + 15, 34, 1, 8);
+        }
+      });
+
+      for (let index = 0; index <= CALENDAR_SLOTS; index += 1) {
+        const y = gridTop + index * slotHeight;
+        doc.setDrawColor(229, 231, 235);
+        doc.line(marginX + timeColumnWidth, y, pageWidth - marginX, y);
+        if (index < CALENDAR_SLOTS) {
+          doc.setFontSize(7);
+          doc.setTextColor(107, 114, 128);
+          doc.text(CALENDAR_LABELS[index] ?? "", marginX + 6, y + 10);
+        }
+      }
+
+      for (let index = 0; index <= 7; index += 1) {
+        const x = marginX + timeColumnWidth + index * dayColumnWidth;
+        doc.setDrawColor(229, 231, 235);
+        doc.line(x, headerBottom, x, gridBottom);
+      }
+
+      calendarEvents.forEach((event) => {
+        const x = marginX + timeColumnWidth + event.dayIndex * dayColumnWidth + 3;
+        const y =
+          gridTop +
+          ((event.startMinutes - CALENDAR_START_MINUTES) / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * gridHeight +
+          2;
+        const width = dayColumnWidth - 6;
+        const height = Math.max(
+          24,
+          (event.durationMinutes / (CALENDAR_END_MINUTES - CALENDAR_START_MINUTES)) * gridHeight - 4,
+        );
+        const palette = eventPalette(event.row.institution);
+
+        doc.setFillColor(palette.fill[0], palette.fill[1], palette.fill[2]);
+        doc.setDrawColor(palette.border[0], palette.border[1], palette.border[2]);
+        doc.roundedRect(x, y, width, height, 6, 6, "FD");
+
+        doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
+        doc.setFontSize(8);
+        writeClampedText(event.subjectName, x + 6, y + 10, width - 12, height > 58 ? 2 : 1, 9);
+        doc.setFontSize(7);
+        writeClampedText(event.audienceName, x + 6, y + (height > 58 ? 28 : 20), width - 12, 1, 8);
+        writeClampedText(
+          `${event.timeRange} | ${event.classroom || "N/A"}`,
+          x + 6,
+          y + (height > 58 ? 39 : 30),
+          width - 12,
+          height > 78 ? 2 : 1,
+          8,
+        );
+        if (height > 92) {
+          writeClampedText(event.shortDateRange, x + 6, y + height - 10, width - 12, 1, 8);
+        }
+      });
+
+      const safeWeek = isoDate(calendarWeekStart);
+      const scope = tab === "ALL" ? "todo" : tab.toLowerCase();
+      doc.save(`horario-${scope}-${safeWeek}.pdf`);
+      feedback.success("Horario descargado en PDF.");
+    } catch {
+      reportFormError({
+        message: "No fue posible descargar el horario en PDF.",
+        feedback,
+        setMessage: setError,
+      });
+    }
   }
 
   async function removeRow(row: TeachingLoadRow) {
@@ -1692,6 +2342,7 @@ export default function AdminWorkloadPage() {
       period: periodFromDate(date),
       startDate: date,
       endDate: date,
+      dayOfWeek1: dayNameFromIsoDate(date) || "",
       startTime,
       endTime,
     });
@@ -1751,13 +2402,13 @@ export default function AdminWorkloadPage() {
           </article>
           <article className="zs-card-muted px-3 py-3">
             <p className="text-xs text-foreground/55">
-              {effectiveViewMode === "payroll" ? "Mixto estimado" : "Materias activas"}
+              {effectiveViewMode === "payroll" ? payrollSummary.totalMixedLabel : "Materias activas"}
             </p>
             <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
               {effectiveViewMode === "payroll" ? formatCurrency(payrollSummary.totalMixedReference) : loading ? "-" : subjects.length}
             </p>
             <p className="mt-1 text-xs text-foreground/55">
-              {effectiveViewMode === "payroll" ? "CESDE quincena + referencia SENA / 2" : "Disponibles para asignación"}
+              {effectiveViewMode === "payroll" ? payrollSummary.totalMixedHint : "Disponibles para asignación"}
             </p>
           </article>
         </div>
@@ -1921,7 +2572,7 @@ export default function AdminWorkloadPage() {
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <CalendarDays className="h-3.5 w-3.5" />
-                        {row.dayOfWeek2 ? `${row.dayOfWeek1} y ${row.dayOfWeek2}` : row.dayOfWeek1 || "Sin día"}
+                            {row.dayOfWeek2 ? `${row.dayOfWeek1} y ${row.dayOfWeek2}` : row.dayOfWeek1 || "Sin día"}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <DoorOpen className="h-3.5 w-3.5" />
@@ -1933,15 +2584,19 @@ export default function AdminWorkloadPage() {
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <Clock3 className="h-3.5 w-3.5" />
-                        {formatTimeRange(row.startTime, row.endTime)}
+                            {formatScheduleSummary(row)}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <Clock3 className="h-3.5 w-3.5" />
-                        {row.durationMinutes} min reloj
+                            {row.dayOfWeek2
+                              ? `${row.durationMinutes} min + ${row.day2DurationMinutes || row.durationMinutes} min`
+                              : `${row.durationMinutes} min reloj`}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <GraduationCap className="h-3.5 w-3.5" />
-                        {formatHours(row.academicHours)} h {row.institution === "CESDE" ? "académicas" : "registradas"}
+                            {row.dayOfWeek2
+                              ? `${formatHours(row.academicHours)} h + ${formatHours(row.day2AcademicHours || row.academicHours)} h`
+                              : `${formatHours(row.academicHours)} h ${row.institution === "CESDE" ? "académicas" : "registradas"}`}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <Clock3 className="h-3.5 w-3.5" />
@@ -2107,11 +2762,11 @@ export default function AdminWorkloadPage() {
                     <p className="mt-1 text-xs text-foreground/55">{payrollSummary.senaLoads} carga(s) SENA visibles</p>
                   </article>
                   <article className="zs-card-muted px-3 py-3">
-                    <p className="text-xs text-foreground/55">Referencia mixta</p>
+                    <p className="text-xs text-foreground/55">{payrollSummary.totalMixedLabel}</p>
                     <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                       {formatCurrency(payrollSummary.totalMixedReference)}
                     </p>
-                    <p className="mt-1 text-xs text-foreground/55">CESDE quincena + SENA / 2</p>
+                    <p className="mt-1 text-xs text-foreground/55">{payrollSummary.totalMixedHint}</p>
                   </article>
                 </div>
               </div>
@@ -2310,6 +2965,14 @@ export default function AdminWorkloadPage() {
                     Semana siguiente
                     <ArrowRight className="h-4 w-4" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void downloadCalendarPdf()}
+                    className="zs-btn-secondary h-9 px-3 text-xs"
+                  >
+                    <Save className="h-4 w-4" />
+                    Descargar PDF
+                  </button>
                 </div>
               </div>
 
@@ -2369,7 +3032,34 @@ export default function AdminWorkloadPage() {
                               onClick={() =>
                                 openCreateFromCalendar(day, CALENDAR_START_MINUTES + index * CALENDAR_SLOT_MINUTES)
                               }
-                              className="absolute left-0 right-0 border-b border-dashed border-border/70 text-left transition hover:bg-primary/5"
+                              onDragOver={(event) => {
+                                if (!draggingCalendarEvent || holidayName) return;
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = "move";
+                                setCalendarDropTarget(
+                                  makeCalendarDropTargetId(isoDate(day), CALENDAR_START_MINUTES + index * CALENDAR_SLOT_MINUTES),
+                                );
+                              }}
+                              onDragLeave={() => {
+                                const nextTargetId = makeCalendarDropTargetId(
+                                  isoDate(day),
+                                  CALENDAR_START_MINUTES + index * CALENDAR_SLOT_MINUTES,
+                                );
+                                setCalendarDropTarget((current) => (current === nextTargetId ? null : current));
+                              }}
+                              onDrop={(event) => {
+                                if (holidayName) return;
+                                event.preventDefault();
+                                const dragged = readDraggedCalendarEvent(event);
+                                if (!dragged) return;
+                                void moveCalendarEventToSlot(day, CALENDAR_START_MINUTES + index * CALENDAR_SLOT_MINUTES, dragged);
+                              }}
+                              className={`absolute left-0 right-0 border-b border-dashed border-border/70 text-left transition hover:bg-primary/5 ${
+                                calendarDropTarget ===
+                                makeCalendarDropTargetId(isoDate(day), CALENDAR_START_MINUTES + index * CALENDAR_SLOT_MINUTES)
+                                  ? "bg-primary/10 ring-1 ring-inset ring-primary/30"
+                                  : ""
+                              }`}
                               style={{ top: `${(index / CALENDAR_SLOTS) * 100}%`, height: `${100 / CALENDAR_SLOTS}%` }}
                               aria-label={`Registrar carga el ${formatDayMonth(day)} a las ${CALENDAR_LABELS[index]}`}
                             />
@@ -2391,6 +3081,9 @@ export default function AdminWorkloadPage() {
                                   key={event.id}
                                   role="button"
                                   tabIndex={0}
+                                  draggable={movingCalendarEventId !== event.id}
+                                  onDragStart={(dragEvent) => handleCalendarDragStart(dragEvent, event)}
+                                  onDragEnd={handleCalendarDragEnd}
                                   onClick={() => openEdit(event.row)}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter" || e.key === " ") {
@@ -2398,7 +3091,9 @@ export default function AdminWorkloadPage() {
                                       openEdit(event.row);
                                     }
                                   }}
-                              className={`absolute left-1.5 right-1.5 z-10 overflow-hidden rounded-xl border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-primary/20 ${event.tone}`}
+                                  className={`absolute left-1.5 right-1.5 z-10 overflow-hidden rounded-xl border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-primary/20 ${
+                                    draggingCalendarEvent?.eventId === event.id ? "cursor-grabbing opacity-70" : "cursor-grab"
+                                  } ${movingCalendarEventId === event.id ? "pointer-events-none opacity-60" : ""} ${event.tone}`}
                                   style={{ top: event.top, height: event.height, minHeight: "92px" }}
                                 >
                                   {techMeta && PrimaryIcon ? (
@@ -2660,16 +3355,16 @@ export default function AdminWorkloadPage() {
               </label>
 
               <label className="space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Hora de inicio</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Hora día 1</span>
                 <input type="time" value={form.startTime} onChange={(e) => updateField("startTime", e.target.value)} className="zs-input" />
               </label>
 
               <label className="space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Hora de fin</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Fin día 1</span>
                 <input type="time" value={form.endTime} onChange={(e) => updateField("endTime", e.target.value)} className="zs-input" />
               </label>
 
-              {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL" ? (
+                  {usesManualWeekdays({ institution: form.institution, cesdeGroupType: form.cesdeGroupType }) ? (
                 <>
                   <label className="space-y-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Día 1</span>
@@ -2694,6 +3389,28 @@ export default function AdminWorkloadPage() {
                       ))}
                     </select>
                   </label>
+                      {form.dayOfWeek2 ? (
+                        <>
+                          <label className="space-y-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Hora día 2</span>
+                            <input
+                              type="time"
+                              value={form.day2StartTime}
+                              onChange={(e) => updateField("day2StartTime", e.target.value)}
+                              className="zs-input"
+                            />
+                          </label>
+                          <label className="space-y-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">Fin día 2</span>
+                            <input
+                              type="time"
+                              value={form.day2EndTime}
+                              onChange={(e) => updateField("day2EndTime", e.target.value)}
+                              className="zs-input"
+                            />
+                          </label>
+                        </>
+                      ) : null}
                 </>
               ) : null}
               </WorkloadFormSection>
@@ -2705,7 +3422,7 @@ export default function AdminWorkloadPage() {
               ? "CESDE empresarial: define fecha de inicio, fecha de fin y hasta 2 días por semana. La carga semanal se ajusta según las jornadas configuradas, pero Drive mantiene una única estructura por grupo."
               : form.institution === "CESDE"
                 ? "CESDE regular: se conserva la lógica estándar del encarpetado por semanas."
-                : "SENA: se conserva la lógica estándar actual del módulo y del encarpetado."}
+                    : "SENA: puedes definir 1 o 2 días por semana. Si no llenas el horario del día 2, se reutiliza el del día 1."}
           </div>
 
           <div className="mt-4 grid gap-2 rounded-2xl border border-border bg-surface px-4 py-3 md:grid-cols-5">
@@ -2737,12 +3454,16 @@ export default function AdminWorkloadPage() {
             </div>
             <div className="flex items-center gap-2 text-xs text-foreground/70">
               <Clock3 className="h-4 w-4" />
-              <span>{formatTimeRange(form.startTime, form.endTime)}</span>
+                  <span>
+                    {form.dayOfWeek2
+                      ? `${form.dayOfWeek1 || "Día 1"} ${formatTimeRange(form.startTime, form.endTime)} | ${form.dayOfWeek2} ${formatTimeRange(form.day2StartTime || form.startTime, form.day2EndTime || form.endTime)}`
+                      : formatTimeRange(form.startTime, form.endTime)}
+                  </span>
             </div>
             <div className="flex items-center gap-2 text-xs text-foreground/70">
               <CalendarDays className="h-4 w-4" />
               <span>
-                {form.institution === "CESDE" && form.cesdeGroupType === "EMPRESARIAL"
+                    {usesManualWeekdays({ institution: form.institution, cesdeGroupType: form.cesdeGroupType })
                   ? form.dayOfWeek2
                     ? `${form.dayOfWeek1 || "Día 1"} y ${form.dayOfWeek2}`
                     : form.dayOfWeek1 || "Día principal"
@@ -2752,10 +3473,18 @@ export default function AdminWorkloadPage() {
             <div className="flex items-center gap-2 text-xs text-foreground/70 md:col-span-2">
               <Clock3 className="h-4 w-4" />
               <span>
-                {currentDurationMinutes ? `${currentDurationMinutes} min reloj` : "Duración"}
-                {currentDurationMinutes
-                  ? ` -> ${formatHours(currentAcademicHours)} h ${form.institution === "CESDE" ? "académicas (45 min)" : "registradas"}`
+                    {currentDurationMinutes ? `${currentDurationMinutes} min día 1` : "Duración"}
+                    {currentDurationMinutes
+                      ? ` -> ${formatHours(currentAcademicHours)} h ${form.institution === "CESDE" ? "académicas (45 min)" : "registradas"}`
                   : ""}
+                    {form.dayOfWeek2
+                      ? ` | ${Math.max(0, diffMinutes(form.day2StartTime || form.startTime, form.day2EndTime || form.endTime))} min día 2 -> ${formatHours(
+                          calculateAcademicHours(
+                            Math.max(0, diffMinutes(form.day2StartTime || form.startTime, form.day2EndTime || form.endTime)),
+                            form.institution,
+                          ),
+                        )} h`
+                      : ""}
               </span>
             </div>
             <div className="flex items-center gap-2 text-xs text-foreground/70 md:col-span-2">

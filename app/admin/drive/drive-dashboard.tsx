@@ -42,6 +42,10 @@ type DriveWorkspaceRow = {
   jornada: string;
   dayOfWeek1: string;
   dayOfWeek2: string;
+  startTime: string;
+  endTime: string;
+  day2StartTime: string;
+  day2EndTime: string;
   weekCount: number;
   startDate: string;
   endDate: string;
@@ -66,6 +70,15 @@ type DriveNodeRow = {
   driveFolderUrl: string;
   meta?: { week?: number };
 };
+
+type DriveFormSectionProps = {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  children: ReactNode;
+};
+
+const WORKLOAD_FOCUS_STORAGE_KEY = "workload-focus";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -97,6 +110,10 @@ function toWorkspaceRow(id: string, data: Record<string, unknown>): DriveWorkspa
     jornada: toString(data.jornada, ""),
     dayOfWeek1: toString(data.dayOfWeek1, ""),
     dayOfWeek2: toString(data.dayOfWeek2, ""),
+    startTime: toString(data.startTime, ""),
+    endTime: toString(data.endTime, ""),
+    day2StartTime: toString(data.day2StartTime, ""),
+    day2EndTime: toString(data.day2EndTime, ""),
     weekCount: toNumber(data.weekCount, 0),
     startDate: toString(data.startDate, ""),
     endDate: toString(data.endDate, ""),
@@ -133,6 +150,40 @@ function formatDays(day1: string, day2: string) {
 function formatDateRange(startDate: string, endDate: string) {
   if (startDate && endDate) return `${startDate} -> ${endDate}`;
   return startDate || endDate || "-";
+}
+
+function formatScheduleRange(dayLabel: string, startTime: string, endTime: string) {
+  if (!dayLabel) return "";
+  if (startTime && endTime) return `${dayLabel} ${startTime} - ${endTime}`;
+  return dayLabel;
+}
+
+function parseLocalDate(value: string) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (![year, month, day].every((n) => Number.isFinite(n))) return null;
+  return new Date(year, month - 1, day);
+}
+
+function dayNameFromIsoDate(value: string) {
+  const date = parseLocalDate(value);
+  if (!date) return "";
+  return ["Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"][date.getDay()] ?? "";
+}
+
+function resolveScheduleDays(args: {
+  institution: "CESDE" | "SENA";
+  cesdeGroupType: "REGULAR" | "EMPRESARIAL";
+  startDate: string;
+  dayOfWeek1: string;
+  dayOfWeek2: string;
+}) {
+  const usesManualWeekdays = args.institution === "SENA" || (args.institution === "CESDE" && args.cesdeGroupType === "EMPRESARIAL");
+  return {
+    usesManualWeekdays,
+    dayOfWeek1: args.dayOfWeek1 || dayNameFromIsoDate(args.startDate),
+    dayOfWeek2: usesManualWeekdays ? args.dayOfWeek2 : "",
+  };
 }
 
 const WEEKDAY_ORDER = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"] as const;
@@ -229,12 +280,7 @@ function DriveFormSection({
   title,
   description,
   children,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
+}: DriveFormSectionProps) {
   return (
     <section className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-3">
       <div className="flex items-start gap-2.5">
@@ -281,6 +327,8 @@ export function DriveDashboard() {
   const [endDate, setEndDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [day2StartTime, setDay2StartTime] = useState("");
+  const [day2EndTime, setDay2EndTime] = useState("");
   const [classroom, setClassroom] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -295,6 +343,14 @@ export function DriveDashboard() {
   const [workspaceSyncingId, setWorkspaceSyncingId] = useState<string | null>(null);
   const [workspaceSyncError, setWorkspaceSyncError] = useState<string | null>(null);
   const loading = catalogsLoading || workspacesLoading;
+  const schedulePreview = resolveScheduleDays({
+    institution,
+    cesdeGroupType,
+    startDate,
+    dayOfWeek1,
+    dayOfWeek2,
+  });
+  const { usesManualWeekdays, dayOfWeek1: resolvedDayOfWeek1, dayOfWeek2: resolvedDayOfWeek2 } = schedulePreview;
 
   useEffect(() => {
     let cancelled = false;
@@ -417,7 +473,17 @@ export function DriveDashboard() {
       showCreateError("Debes seleccionar una jornada.");
       return;
     }
-    if (!dayOfWeek1.trim()) {
+    const scheduleDays = resolveScheduleDays({
+      institution,
+      cesdeGroupType,
+      startDate,
+      dayOfWeek1: dayOfWeek1.trim(),
+      dayOfWeek2: dayOfWeek2.trim(),
+    });
+    const scheduleDayOfWeek1 = scheduleDays.dayOfWeek1;
+    const scheduleDayOfWeek2 = scheduleDays.dayOfWeek2;
+
+    if (!scheduleDayOfWeek1) {
       showCreateError("Debes seleccionar el día principal.");
       return;
     }
@@ -433,13 +499,19 @@ export function DriveDashboard() {
       showCreateError("Debes indicar el salón.");
       return;
     }
+    const resolvedDay2Start = scheduleDayOfWeek2 ? day2StartTime.trim() || startTime.trim() : "";
+    const resolvedDay2End = scheduleDayOfWeek2 ? day2EndTime.trim() || endTime.trim() : "";
 
-    if (institution === "CESDE" && cesdeGroupType === "EMPRESARIAL") {
+    if (usesManualWeekdays) {
       if (!endDate.trim()) {
-        showCreateError("Para CESDE empresarial debes indicar la fecha de fin.");
+        showCreateError(
+          institution === "SENA"
+            ? "Para SENA debes indicar la fecha de fin."
+            : "Para CESDE empresarial debes indicar la fecha de fin.",
+        );
         return;
       }
-      if (dayOfWeek2 && dayOfWeek2 === dayOfWeek1) {
+      if (scheduleDayOfWeek2 && scheduleDayOfWeek2 === scheduleDayOfWeek1) {
         showCreateError("El segundo día no puede ser igual al primero.");
         return;
       }
@@ -450,6 +522,10 @@ export function DriveDashboard() {
     }
     if (endTime <= startTime) {
       showCreateError("La hora de fin debe ser posterior a la hora de inicio.");
+      return;
+    }
+    if (scheduleDayOfWeek2 && resolvedDay2End <= resolvedDay2Start) {
+      showCreateError("La hora de fin del segundo día debe ser posterior a la hora de inicio.");
       return;
     }
 
@@ -474,8 +550,8 @@ export function DriveDashboard() {
       shiftName: selectedShift.name,
       groupId,
       subjectId,
-      dayOfWeek1,
-      dayOfWeek2,
+      dayOfWeek1: scheduleDayOfWeek1,
+      dayOfWeek2: scheduleDayOfWeek2,
     });
     const optimisticWorkspace: DriveWorkspaceRow = {
       id: requestedWorkspaceId,
@@ -488,8 +564,12 @@ export function DriveDashboard() {
       period,
       campus: selectedSite.name,
       jornada: selectedShift.name,
-      dayOfWeek1,
-      dayOfWeek2,
+      dayOfWeek1: scheduleDayOfWeek1,
+      dayOfWeek2: scheduleDayOfWeek2,
+      startTime,
+      endTime,
+      day2StartTime: resolvedDay2Start,
+      day2EndTime: resolvedDay2End,
       weekCount: institution === "CESDE" ? 18 : 11,
       startDate,
       endDate,
@@ -503,6 +583,7 @@ export function DriveDashboard() {
     flushSync(() => {
       setCreateError(null);
       setCreateOpen(false);
+      setInstitutionTab(institution);
       setSelectedWorkspaceId(requestedWorkspaceId);
       setOptimisticWorkspaces((current) => [
         optimisticWorkspace,
@@ -528,12 +609,14 @@ export function DriveDashboard() {
               period,
               campus: selectedSite.name,
               jornada: selectedShift.name,
-              dayOfWeek1,
-              dayOfWeek2,
+              dayOfWeek1: scheduleDayOfWeek1,
+              dayOfWeek2: scheduleDayOfWeek2,
               startDate,
               endDate,
               startTime,
               endTime,
+              day2StartTime: resolvedDay2Start,
+              day2EndTime: resolvedDay2End,
               classroom: classroom.trim().toUpperCase(),
             }),
           });
@@ -542,6 +625,17 @@ export function DriveDashboard() {
             throw new Error(
               typeof data?.error === "string" ? data.error : `No fue posible crear (HTTP ${response.status}).`,
             );
+          }
+          if (typeof window !== "undefined") {
+            try {
+              window.localStorage.setItem(
+                WORKLOAD_FOCUS_STORAGE_KEY,
+                JSON.stringify({
+                  institution,
+                  startDate,
+                }),
+              );
+            } catch {}
           }
           setOptimisticWorkspaces((current) => current.filter((item) => item.id !== requestedWorkspaceId));
           feedback.success("Estructura creada y vinculada correctamente.");
@@ -732,6 +826,8 @@ export function DriveDashboard() {
               setEndDate("");
               setStartTime("");
               setEndTime("");
+              setDay2StartTime("");
+              setDay2EndTime("");
               setClassroom("");
               setCreateOpen(true);
             }}
@@ -1181,7 +1277,7 @@ export function DriveDashboard() {
                         <div className="rounded-2xl border border-zinc-200 bg-white/90 px-3 py-2 shadow-sm">
                           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Días</p>
                           <p className="mt-1 text-xs font-semibold text-zinc-800">
-                            {dayOfWeek2 ? `${dayOfWeek1} y ${dayOfWeek2}` : dayOfWeek1 || "Pendiente"}
+                            {resolvedDayOfWeek2 ? `${resolvedDayOfWeek1} y ${resolvedDayOfWeek2}` : resolvedDayOfWeek1 || "Pendiente"}
                           </p>
                         </div>
                         <div className="rounded-2xl border border-zinc-200 bg-white/90 px-3 py-2 shadow-sm">
@@ -1210,8 +1306,6 @@ export function DriveDashboard() {
                           setGroupId("");
                           if (next === "SENA") {
                             setCesdeGroupType("REGULAR");
-                            setDayOfWeek2("");
-                            setEndDate("");
                           }
                         }}
                         className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50"
@@ -1344,9 +1438,10 @@ export function DriveDashboard() {
                     <label className="grid gap-1.5">
                       <span className="text-xs font-semibold text-zinc-700">Día 1</span>
                       <select
-                        value={dayOfWeek1}
+                        value={resolvedDayOfWeek1}
                         onChange={(event) => setDayOfWeek1(event.target.value)}
-                        className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50"
+                        className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50 disabled:opacity-60"
+                        disabled={!usesManualWeekdays}
                       >
                         {WEEK_DAY_OPTIONS.map((day) => (
                           <option key={day} value={day}>
@@ -1359,10 +1454,17 @@ export function DriveDashboard() {
                     <label className="grid gap-1.5">
                       <span className="text-xs font-semibold text-zinc-700">Día 2 (opcional)</span>
                       <select
-                        value={dayOfWeek2}
-                        onChange={(event) => setDayOfWeek2(event.target.value)}
+                        value={resolvedDayOfWeek2}
+                            onChange={(event) => {
+                              const next = event.target.value;
+                              setDayOfWeek2(next);
+                              if (!next) {
+                                setDay2StartTime("");
+                                setDay2EndTime("");
+                              }
+                            }}
                         className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50 disabled:opacity-60"
-                        disabled={institution !== "CESDE" || cesdeGroupType !== "EMPRESARIAL"}
+                        disabled={!usesManualWeekdays}
                       >
                         <option value="">Sin segundo día</option>
                         {WEEK_DAY_OPTIONS.map((day) => (
@@ -1378,7 +1480,14 @@ export function DriveDashboard() {
                       <input
                         type="date"
                         value={startDate}
-                        onChange={(event) => setStartDate(event.target.value)}
+                        onChange={(event) => {
+                          const nextDate = event.target.value;
+                          setStartDate(nextDate);
+                          if (!dayOfWeek1.trim()) {
+                            const inferredDay = dayNameFromIsoDate(nextDate);
+                            if (inferredDay) setDayOfWeek1(inferredDay);
+                          }
+                        }}
                         className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50"
                       />
                     </label>
@@ -1394,7 +1503,7 @@ export function DriveDashboard() {
                     </label>
 
                     <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold text-zinc-700">Hora inicio</span>
+                          <span className="text-xs font-semibold text-zinc-700">Hora día 1</span>
                       <input
                         type="time"
                         value={startTime}
@@ -1404,7 +1513,7 @@ export function DriveDashboard() {
                     </label>
 
                     <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold text-zinc-700">Hora fin</span>
+                          <span className="text-xs font-semibold text-zinc-700">Fin día 1</span>
                       <input
                         type="time"
                         value={endTime}
@@ -1412,6 +1521,29 @@ export function DriveDashboard() {
                         className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50"
                       />
                     </label>
+                        {resolvedDayOfWeek2 ? (
+                          <>
+                            <label className="grid gap-1.5">
+                              <span className="text-xs font-semibold text-zinc-700">Hora día 2</span>
+                              <input
+                                type="time"
+                                value={day2StartTime}
+                                onChange={(event) => setDay2StartTime(event.target.value)}
+                                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50"
+                              />
+                            </label>
+
+                            <label className="grid gap-1.5">
+                              <span className="text-xs font-semibold text-zinc-700">Fin día 2</span>
+                              <input
+                                type="time"
+                                value={day2EndTime}
+                                onChange={(event) => setDay2EndTime(event.target.value)}
+                                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-zinc-50"
+                              />
+                            </label>
+                          </>
+                        ) : null}
                     </DriveFormSection>
                   </div>
 
@@ -1449,16 +1581,32 @@ export function DriveDashboard() {
                         Horario
                       </div>
                       <p className="mt-2 text-sm font-semibold text-zinc-800">
-                        {startTime && endTime ? `${startTime} - ${endTime}` : "Pendiente"}
+                            {startTime && endTime
+                              ? resolvedDayOfWeek2
+                                ? `${formatScheduleRange(resolvedDayOfWeek1, startTime, endTime)} | ${formatScheduleRange(
+                                    resolvedDayOfWeek2,
+                                    day2StartTime || startTime,
+                                    day2EndTime || endTime,
+                                  )}`
+                                : `${startTime} - ${endTime}`
+                              : "Pendiente"}
                       </p>
                     </div>
                   </div>
+
+                  {!usesManualWeekdays ? (
+                    <p className="mt-3 text-xs text-zinc-500">
+                      El día principal se calcula automáticamente a partir de la fecha de inicio para mantener el calendario sincronizado.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-600">
                   {institution === "CESDE" && cesdeGroupType === "EMPRESARIAL"
                     ? "CESDE empresarial: se crearán sesiones por fechas reales dentro del rango seleccionado, según 1 o 2 días a la semana, y además se registrará automáticamente en carga horaria."
-                    : "CESDE regular y SENA: se conserva la lógica estándar del Apps Script y la estructura también quedará enlazada al calendario."}
+                    : institution === "SENA"
+                          ? "SENA: puedes seleccionar 1 o 2 días por semana. Si no llenas el horario del día 2, se reutiliza el del día 1."
+                      : "CESDE regular: se conserva la lógica estándar del Apps Script y la estructura también quedará enlazada al calendario."}
                 </div>
               </div>
 
