@@ -28,6 +28,8 @@ import {
   Eye,
   Edit3,
   DoorOpen,
+  FileSpreadsheet,
+  FileText,
   Group,
   GraduationCap,
   Hash,
@@ -430,6 +432,22 @@ function formatScheduleSummary(row: Pick<
   return getTeachingLoadSessions(row)
     .map((session) => `${session.dayOfWeek} ${formatTimeRange(session.startTime, session.endTime)} · ${formatHours(session.academicHours)} h`)
     .join(" | ");
+}
+
+function countCoveredWeeks(startDate: string, endDate: string) {
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+  if (!start || !end) return 0;
+  const normalizedStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const normalizedEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  if (normalizedEnd.getTime() < normalizedStart.getTime()) return 0;
+  const diffDays = Math.floor((normalizedEnd.getTime() - normalizedStart.getTime()) / 86400000) + 1;
+  return Math.ceil(diffDays / 7);
+}
+
+function normalizeCsvValue(value: string | number | boolean) {
+  const raw = String(value ?? "");
+  return `"${raw.replaceAll("\"", "\"\"")}"`;
 }
 
 function roundHours(value: number) {
@@ -1292,6 +1310,49 @@ export default function AdminWorkloadPage() {
     };
   }, [calendarEvents]);
 
+  const generalScheduleReportRows = useMemo(() => {
+    return [...rows]
+      .sort((a, b) => {
+        const institutionDiff = (a.institution || "").localeCompare(b.institution || "", "es");
+        if (institutionDiff !== 0) return institutionDiff;
+        const subjectDiff = (a.subjectName || "").localeCompare(b.subjectName || "", "es");
+        if (subjectDiff !== 0) return subjectDiff;
+        return (a.audienceName || "").localeCompare(b.audienceName || "", "es");
+      })
+      .map((row) => {
+        const sessions = getTeachingLoadSessions(row);
+        const days = sessions.map((session) => session.dayOfWeek).filter(Boolean).join(" / ");
+        const groupOrFichaLabel = row.audienceType === "ficha" ? "Ficha" : "Grupo";
+        return {
+          institution: row.institution || "CESDE",
+          cesdeGroupType: row.cesdeGroupType || "-",
+          period: row.period || "-",
+          subject: row.subjectName || "-",
+          groupOrFichaType: groupOrFichaLabel,
+          groupOrFichaName: row.audienceName || "-",
+          site: row.siteName || "-",
+          shift: row.shiftName || "-",
+          classroom: row.classroom || "-",
+          startDate: row.startDate || "-",
+          endDate: row.endDate || "-",
+          coveredWeeks: countCoveredWeeks(row.startDate, row.endDate),
+          days: days || "-",
+          day1Start: row.startTime || "-",
+          day1End: row.endTime || "-",
+          day1Hours: formatHours(row.academicHours),
+          day2Start: row.day2StartTime || "-",
+          day2End: row.day2EndTime || "-",
+          day2Hours: row.dayOfWeek2 ? formatHours(row.day2AcademicHours) : "-",
+          weeklyHours: formatHours(getWeeklyAcademicHours(row)),
+          weeklySessions: getWeeklySessionCount(row),
+          scheduleSummary: formatScheduleSummary(row) || "-",
+          driveStatus: row.driveStatus || "-",
+          drivePublicFolderUrl: row.drivePublicFolderUrl || "-",
+          active: row.active ? "Activa" : "Inactiva",
+        };
+      });
+  }, [rows]);
+
   const payrollSummary = useMemo(() => {
     const cesdeRows = filteredRows.filter((row) => (row.institution || "CESDE").toUpperCase() === "CESDE");
     const senaRows = filteredRows.filter((row) => (row.institution || "CESDE").toUpperCase() === "SENA");
@@ -2149,6 +2210,186 @@ export default function AdminWorkloadPage() {
     }
   }
 
+  function downloadGeneralScheduleCsv() {
+    if (!generalScheduleReportRows.length) {
+      reportFormError({
+        message: "No hay cargas horarias registradas para exportar en CSV.",
+        feedback,
+        setMessage: setError,
+      });
+      return;
+    }
+
+    const headers = [
+      "Institucion",
+      "Tipo CESDE",
+      "Periodo",
+      "Materia",
+      "Tipo audiencia",
+      "Grupo o ficha",
+      "Sede",
+      "Jornada",
+      "Salon",
+      "Fecha inicio",
+      "Fecha fin",
+      "Cantidad semanas",
+      "Dias",
+      "Hora inicio dia 1",
+      "Hora fin dia 1",
+      "Horas dia 1",
+      "Hora inicio dia 2",
+      "Hora fin dia 2",
+      "Horas dia 2",
+      "Horas semanales",
+      "Sesiones por semana",
+      "Resumen horario",
+      "Estado Drive",
+      "URL publica Drive",
+      "Estado",
+    ];
+
+    const lines = [
+      headers.map((value) => normalizeCsvValue(value)).join(","),
+      ...generalScheduleReportRows.map((row) =>
+        [
+          row.institution,
+          row.cesdeGroupType,
+          row.period,
+          row.subject,
+          row.groupOrFichaType,
+          row.groupOrFichaName,
+          row.site,
+          row.shift,
+          row.classroom,
+          row.startDate,
+          row.endDate,
+          row.coveredWeeks,
+          row.days,
+          row.day1Start,
+          row.day1End,
+          row.day1Hours,
+          row.day2Start,
+          row.day2End,
+          row.day2Hours,
+          row.weeklyHours,
+          row.weeklySessions,
+          row.scheduleSummary,
+          row.driveStatus,
+          row.drivePublicFolderUrl,
+          row.active,
+        ]
+          .map((value) => normalizeCsvValue(value))
+          .join(","),
+      ),
+    ];
+
+    const blob = new Blob([`\uFEFF${lines.join("\r\n")}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `reporte-horarios-general-${isoDate(new Date())}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    feedback.success("Reporte general descargado en CSV.");
+  }
+
+  async function downloadGeneralSchedulePdf() {
+    if (!generalScheduleReportRows.length) {
+      reportFormError({
+        message: "No hay cargas horarias registradas para exportar en PDF.",
+        feedback,
+        setMessage: setError,
+      });
+      return;
+    }
+
+    try {
+      const [{ jsPDF }, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+      const autoTable = autoTableModule.default;
+      const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
+      const exportedAt = new Intl.DateTimeFormat("es-CO", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date());
+
+      doc.setFontSize(18);
+      doc.setTextColor(17, 24, 39);
+      doc.text("Reporte general de horarios", 28, 32);
+      doc.setFontSize(10);
+      doc.setTextColor(90, 90, 90);
+      doc.text(`Generado: ${exportedAt}`, 28, 48);
+      doc.text(`Total cargas: ${generalScheduleReportRows.length}`, 28, 62);
+
+      autoTable(doc, {
+        startY: 76,
+        theme: "grid",
+        styles: {
+          fontSize: 7,
+          cellPadding: 4,
+          lineColor: [230, 230, 230],
+          lineWidth: 0.5,
+          valign: "middle",
+          overflow: "linebreak",
+        },
+        headStyles: { fillColor: [243, 244, 246], textColor: [31, 41, 55] },
+        head: [[
+          "Inst.",
+          "Materia",
+          "Grupo/Ficha",
+          "Sede",
+          "Jornada",
+          "Inicio",
+          "Fin",
+          "Sem.",
+          "Dias",
+          "Horario",
+          "H sem.",
+          "Drive",
+        ]],
+        body: generalScheduleReportRows.map((row) => [
+          row.institution,
+          row.subject,
+          `${row.groupOrFichaType} ${row.groupOrFichaName}`,
+          row.site,
+          row.shift,
+          row.startDate,
+          row.endDate,
+          String(row.coveredWeeks),
+          row.days,
+          row.scheduleSummary,
+          row.weeklyHours,
+          row.driveStatus,
+        ]),
+        columnStyles: {
+          0: { cellWidth: 42 },
+          1: { cellWidth: 95 },
+          2: { cellWidth: 88 },
+          3: { cellWidth: 70 },
+          4: { cellWidth: 62 },
+          5: { cellWidth: 52 },
+          6: { cellWidth: 52 },
+          7: { cellWidth: 34 },
+          8: { cellWidth: 74 },
+          9: { cellWidth: 150 },
+          10: { cellWidth: 42 },
+          11: { cellWidth: 46 },
+        },
+      });
+
+      doc.save(`reporte-horarios-general-${isoDate(new Date())}.pdf`);
+      feedback.success("Reporte general descargado en PDF.");
+    } catch {
+      reportFormError({
+        message: "No fue posible descargar el reporte general en PDF.",
+        feedback,
+        setMessage: setError,
+      });
+    }
+  }
+
   async function removeRow(row: TeachingLoadRow) {
     const confirmed = await feedback.confirm({
       title: "Eliminar carga horaria",
@@ -2367,6 +2608,14 @@ export default function AdminWorkloadPage() {
             <button type="button" onClick={() => window.location.reload()} className="zs-btn-secondary h-9 px-3 text-xs">
               <RefreshCw className="h-4 w-4" />
               Recargar
+            </button>
+            <button type="button" onClick={() => void downloadGeneralSchedulePdf()} className="zs-btn-secondary h-9 px-3 text-xs">
+              <FileText className="h-4 w-4" />
+              Reporte PDF
+            </button>
+            <button type="button" onClick={downloadGeneralScheduleCsv} className="zs-btn-secondary h-9 px-3 text-xs">
+              <FileSpreadsheet className="h-4 w-4" />
+              Reporte CSV
             </button>
             <button type="button" onClick={() => openCreate()} className="zs-btn-primary h-9 px-3 text-xs">
               <Plus className="h-4 w-4" />

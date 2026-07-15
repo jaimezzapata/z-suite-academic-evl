@@ -27,6 +27,7 @@ import {
 import { firestore } from "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
 import { getColombiaHolidayName } from "@/lib/colombia-holidays";
+import { getTeachingLoadSessions } from "@/lib/teaching-load-sessions";
 
 type DashboardData = {
   counts: {
@@ -87,9 +88,13 @@ type TeachingLoadRow = {
   driveWorkspaceId: string;
   startTime: string;
   endTime: string;
+  day2StartTime: string;
+  day2EndTime: string;
   classroom: string;
   durationMinutes: number;
   academicHours: number;
+  day2DurationMinutes: number;
+  day2AcademicHours: number;
   active: boolean;
 };
 
@@ -240,25 +245,6 @@ function normalizeWeekdayLabel(value: string) {
     .toUpperCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "");
-}
-
-function weekdayIndexFromName(value: string) {
-  const normalized = normalizeWeekdayLabel(value);
-  if (!normalized) return null;
-  return WEEKDAY_INDEX_BY_NAME[normalized] ?? null;
-}
-
-function getRowWeekdayIndexes(row: Pick<TeachingLoadRow, "dayOfWeek1" | "dayOfWeek2" | "startDate">) {
-  const selected = new Set<number>();
-  [row.dayOfWeek1, row.dayOfWeek2].forEach((value) => {
-    const index = weekdayIndexFromName(value);
-    if (index !== null) selected.add(index);
-  });
-  if (!selected.size && row.startDate) {
-    const fallback = parseLocalDate(row.startDate);
-    if (fallback) selected.add(fallback.getDay());
-  }
-  return selected;
 }
 
 function minutesFromTimeLoose(value: string) {
@@ -752,10 +738,21 @@ export function DashboardView() {
           const institution = safeToString(row.institution, "CESDE").toUpperCase();
           const durationMinutesRaw =
             typeof row.durationMinutes === "number" && Number.isFinite(row.durationMinutes) ? row.durationMinutes : 0;
+          const day2DurationMinutesRaw =
+            typeof row.day2DurationMinutes === "number" && Number.isFinite(row.day2DurationMinutes) ? row.day2DurationMinutes : 0;
           const startTime = safeToString(row.startTime, "");
           const endTime = safeToString(row.endTime, "");
+          const day2StartTime = safeToString(row.day2StartTime, "");
+          const day2EndTime = safeToString(row.day2EndTime, "");
           const durationMinutes = computeDurationMinutes(institution, durationMinutesRaw, startTime, endTime);
           const academicHours = computeAcademicHours(institution, row.academicHours, durationMinutes);
+          const day2DurationMinutes = computeDurationMinutes(
+            institution,
+            day2DurationMinutesRaw,
+            day2StartTime,
+            day2EndTime,
+          );
+          const day2AcademicHours = computeAcademicHours(institution, row.day2AcademicHours, day2DurationMinutes);
           return {
             id: docSnap.id,
             institution,
@@ -772,9 +769,13 @@ export function DashboardView() {
             driveWorkspaceId: safeToString(row.driveWorkspaceId, ""),
             startTime,
             endTime,
+            day2StartTime,
+            day2EndTime,
             classroom: safeToString(row.classroom, ""),
             durationMinutes,
             academicHours,
+            day2DurationMinutes,
+            day2AcademicHours,
             active: typeof row.active === "boolean" ? row.active : true,
           };
         });
@@ -1015,30 +1016,32 @@ export function DashboardView() {
     teachingLoads
       .filter((row) => row.active)
       .forEach((row) => {
-        const weekdayIndexes = getRowWeekdayIndexes(row);
-        if (!weekdayIndexes.size) return;
         const rowStart = parseLocalDate(row.startDate);
         const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
         if (!rowStart || !rowEnd) return;
-        const startMinutes = minutesFromTimeLoose(row.startTime);
-        const endMinutes = minutesFromTimeLoose(row.endTime);
-        if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return;
+        const sessions = getTeachingLoadSessions(row);
+        if (!sessions.length) return;
 
         weekDays.forEach((day) => {
           const dateKey = isoDate(day);
           if (holidayByDateKey.has(dateKey)) return;
-          if (!weekdayIndexes.has(day.getDay())) return;
           if (!isSameOrAfterDay(day, rowStart) || !isSameOrBeforeDay(day, rowEnd)) return;
-          const clampedStart = Math.max(startMinutes, workWindow.startMinutes);
-          const clampedEnd = Math.min(endMinutes, workWindow.endMinutes);
-          if (clampedEnd <= clampedStart) return;
-          const dayIndex = day.getDay();
-          const current = occupiedIntervalsByDay.get(dayIndex) ?? [];
-          current.push([clampedStart, clampedEnd]);
-          occupiedIntervalsByDay.set(dayIndex, current);
-          scheduledHoursByDay.set(dayIndex, (scheduledHoursByDay.get(dayIndex) ?? 0) + row.academicHours);
-          if (row.driveWorkspaceId) driveWorkspaceIds.add(row.driveWorkspaceId);
-          totalOccurrences += 1;
+          sessions.forEach((session) => {
+            if (session.weekdayIndex !== day.getDay()) return;
+            const startMinutes = minutesFromTimeLoose(session.startTime);
+            const endMinutes = minutesFromTimeLoose(session.endTime);
+            if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return;
+            const clampedStart = Math.max(startMinutes, workWindow.startMinutes);
+            const clampedEnd = Math.min(endMinutes, workWindow.endMinutes);
+            if (clampedEnd <= clampedStart) return;
+            const dayIndex = day.getDay();
+            const current = occupiedIntervalsByDay.get(dayIndex) ?? [];
+            current.push([clampedStart, clampedEnd]);
+            occupiedIntervalsByDay.set(dayIndex, current);
+            scheduledHoursByDay.set(dayIndex, (scheduledHoursByDay.get(dayIndex) ?? 0) + session.academicHours);
+            if (row.driveWorkspaceId) driveWorkspaceIds.add(row.driveWorkspaceId);
+            totalOccurrences += 1;
+          });
         });
       });
 
@@ -1133,34 +1136,36 @@ export function DashboardView() {
     teachingLoads
       .filter((row) => row.active)
       .forEach((row) => {
-        const weekdayIndexes = getRowWeekdayIndexes(row);
-        if (!weekdayIndexes.size) return;
         const rowStart = parseLocalDate(row.startDate);
         const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
         if (!rowStart || !rowEnd) return;
-        const startMinutes = minutesFromTimeLoose(row.startTime);
-        const endMinutes = minutesFromTimeLoose(row.endTime);
-        if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return;
+        const sessions = getTeachingLoadSessions(row);
+        if (!sessions.length) return;
 
         weekDays.forEach((day) => {
           const dateKey = isoDate(day);
           if (holidayByDateKey.has(dateKey)) return;
-          if (!weekdayIndexes.has(day.getDay())) return;
           if (!isSameOrAfterDay(day, rowStart) || !isSameOrBeforeDay(day, rowEnd)) return;
-          const bucket = itemsByDate.get(dateKey) ?? [];
-          bucket.push({
-            id: `${row.id}-${dateKey}`,
-            startMinutes,
-            endMinutes,
-            timeLabel: `${formatTimeMinutes(startMinutes)} - ${formatTimeMinutes(endMinutes)}`,
-            subjectName: row.subjectName,
-            audienceName: row.audienceName,
-            institution: row.institution,
-            siteName: row.siteName,
-            shiftName: row.shiftName,
-            classroom: row.classroom,
+          sessions.forEach((session) => {
+            if (session.weekdayIndex !== day.getDay()) return;
+            const startMinutes = minutesFromTimeLoose(session.startTime);
+            const endMinutes = minutesFromTimeLoose(session.endTime);
+            if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return;
+            const bucket = itemsByDate.get(dateKey) ?? [];
+            bucket.push({
+              id: `${row.id}-${session.slot}-${dateKey}`,
+              startMinutes,
+              endMinutes,
+              timeLabel: `${formatTimeMinutes(startMinutes)} - ${formatTimeMinutes(endMinutes)}`,
+              subjectName: row.subjectName,
+              audienceName: row.audienceName,
+              institution: row.institution,
+              siteName: row.siteName,
+              shiftName: row.shiftName,
+              classroom: row.classroom,
+            });
+            itemsByDate.set(dateKey, bucket);
           });
-          itemsByDate.set(dateKey, bucket);
         });
       });
 
@@ -1180,6 +1185,71 @@ export function DashboardView() {
       };
     });
   }, [holidayByDateKey, teachingLoads, weekDays]);
+
+  const todaySchedule = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayKey = isoDate(today);
+    const holidayName = getColombiaHolidayName(today) ?? null;
+    const items: Array<{
+      id: string;
+      startMinutes: number;
+      endMinutes: number;
+      timeLabel: string;
+      subjectName: string;
+      audienceName: string;
+      institution: string;
+      siteName: string;
+      shiftName: string;
+      classroom: string;
+    }> = [];
+
+    if (!holidayName) {
+      teachingLoads
+        .filter((row) => row.active)
+        .forEach((row) => {
+          const rowStart = parseLocalDate(row.startDate);
+          const rowEnd = parseLocalDate(row.endDate) ?? rowStart;
+          if (!rowStart || !rowEnd) return;
+          if (!isSameOrAfterDay(today, rowStart) || !isSameOrBeforeDay(today, rowEnd)) return;
+          getTeachingLoadSessions(row).forEach((session) => {
+            if (session.weekdayIndex !== today.getDay()) return;
+            const startMinutes = minutesFromTimeLoose(session.startTime);
+            const endMinutes = minutesFromTimeLoose(session.endTime);
+            if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return;
+            items.push({
+              id: `${row.id}-${session.slot}-${todayKey}`,
+              startMinutes,
+              endMinutes,
+              timeLabel: `${formatTimeMinutes(startMinutes)} - ${formatTimeMinutes(endMinutes)}`,
+              subjectName: row.subjectName,
+              audienceName: row.audienceName,
+              institution: row.institution,
+              siteName: row.siteName,
+              shiftName: row.shiftName,
+              classroom: row.classroom,
+            });
+          });
+        });
+    }
+
+    items.sort((a, b) => {
+      if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+      return a.subjectName.localeCompare(b.subjectName, "es");
+    });
+
+    return {
+      dateKey: todayKey,
+      weekdayLabel: formatWeekdayShort(today),
+      dayLabel: new Intl.DateTimeFormat("es-CO", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+      }).format(today),
+      holidayName,
+      items,
+    };
+  }, [teachingLoads]);
 
   const driveSummary = useMemo(() => {
     const totalWeeks = driveWorkspaces.reduce((acc, ws) => acc + (Number.isFinite(ws.weekCount) ? ws.weekCount : 0), 0);
@@ -1523,6 +1593,60 @@ export function DashboardView() {
             </div>
           )}
         </article>
+      </section>
+
+      <section className="zs-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">Hoy en agenda</h2>
+            <p className="text-sm text-foreground/55">
+              {todaySchedule.dayLabel.charAt(0).toUpperCase() + todaySchedule.dayLabel.slice(1)} · orden cronológico del día actual.
+            </p>
+          </div>
+          <span className="inline-flex rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground/70">
+            {todaySchedule.items.length} materia(s)
+          </span>
+        </div>
+
+        {todaySchedule.holidayName ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900/85">
+            Hoy es festivo: {todaySchedule.holidayName}
+          </div>
+        ) : todaySchedule.items.length ? (
+          <div className="mt-4 space-y-3">
+            {todaySchedule.items.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          item.institution.toUpperCase() === "SENA"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-fuchsia-100 text-fuchsia-800"
+                        }`}
+                      >
+                        {item.institution}
+                      </span>
+                      <p className="truncate text-sm font-semibold text-foreground">{item.subjectName}</p>
+                    </div>
+                    <p className="mt-1 text-xs text-foreground/60">
+                      {item.audienceName} · {item.siteName || "Sin sede"} · {item.shiftName || "Sin jornada"}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold text-foreground">{item.timeLabel}</p>
+                    <p className="mt-0.5 text-xs text-foreground/55">{item.classroom || "Sin salón"}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-foreground/55">
+            No tienes materias programadas para hoy.
+          </div>
+        )}
       </section>
 
       <section className="zs-card p-5">
