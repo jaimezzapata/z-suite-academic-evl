@@ -18,6 +18,11 @@ type AppsScriptStructurePayload = {
   publicFolderId: string;
 };
 
+type AppsScriptDeletePayload = {
+  groupFolderId?: string;
+  publicFolderId?: string;
+};
+
 type AppsScriptFolder = {
   folderId: string;
   folderUrl: string;
@@ -46,6 +51,11 @@ type AppsScriptStructureResponse = AppsScriptBaseResponse & {
   publicFolder?: AppsScriptFolder;
   privateFolder?: AppsScriptFolder | null;
   weeks?: AppsScriptWeek[];
+};
+
+type AppsScriptDeleteResponse = AppsScriptBaseResponse & {
+  trashedFolderId?: string;
+  trashedFolderName?: string;
 };
 
 function requiredEnv(name: string) {
@@ -130,5 +140,18 @@ export async function getAppsScriptDriveStructure(data: AppsScriptStructurePaylo
     privateFolder: response.privateFolder ?? null,
     weeks: response.weeks,
     message: typeof response.message === "string" ? response.message : "",
+  };
+}
+
+export async function trashAppsScriptDriveStructure(data: AppsScriptDeletePayload) {
+  const response = await callAppsScript<AppsScriptDeleteResponse>({
+    action: "deleteStructure",
+    data,
+  });
+
+  return {
+    trashedFolderId: typeof response.trashedFolderId === "string" ? response.trashedFolderId : "",
+    trashedFolderName: typeof response.trashedFolderName === "string" ? response.trashedFolderName : "",
+    message: typeof response.message === "string" ? response.message : "Estructura enviada a la papelera.",
   };
 }

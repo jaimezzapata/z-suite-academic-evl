@@ -12,7 +12,12 @@ function doPost(e) {
     const body = contents ? JSON.parse(contents) : {};
     const data = body && typeof body === "object" && "data" in body ? body.data : body;
     const action = body && typeof body === "object" && "action" in body ? String(body.action ?? "") : "";
-    const result = action === "getStructure" ? obtenerEstructuraDrive(data) : crearEstructuraDrive(data);
+    const result =
+      action === "getStructure"
+        ? obtenerEstructuraDrive(data)
+        : action === "deleteStructure"
+          ? enviarEstructuraDriveAPapelera(data)
+          : crearEstructuraDrive(data);
     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
@@ -63,6 +68,36 @@ function obtenerEstructuraDrive(data) {
         ? { folderId: privateFolder.getId(), folderUrl: privateFolder.getUrl(), folderName: privateFolder.getName() }
         : null,
       weeks: weeks,
+    };
+  } catch (error) {
+    return { status: "error", message: error.toString() };
+  }
+}
+
+function enviarEstructuraDriveAPapelera(data) {
+  try {
+    var groupFolderId = safeString(data.groupFolderId);
+    var publicFolderId = safeString(data.publicFolderId);
+    var targetFolder = null;
+
+    if (groupFolderId) {
+      targetFolder = DriveApp.getFolderById(groupFolderId);
+    } else if (publicFolderId) {
+      var publicFolder = DriveApp.getFolderById(publicFolderId);
+      var parentIterator = publicFolder.getParents();
+      targetFolder = parentIterator.hasNext() ? parentIterator.next() : null;
+    }
+
+    if (!targetFolder) {
+      throw new Error("No fue posible resolver la carpeta del grupo para enviarla a la papelera.");
+    }
+
+    targetFolder.setTrashed(true);
+    return {
+      status: "success",
+      trashedFolderId: targetFolder.getId(),
+      trashedFolderName: targetFolder.getName(),
+      message: "La estructura fue enviada a la papelera correctamente.",
     };
   } catch (error) {
     return { status: "error", message: error.toString() };

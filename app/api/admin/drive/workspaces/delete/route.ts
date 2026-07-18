@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { deleteWorkspaceCascade } from "@/lib/firebase/admin-cascade-delete";
+import { trashAppsScriptDriveStructure } from "@/lib/google/apps-script-drive";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -55,11 +56,27 @@ export async function POST(req: Request) {
   const workspaceId = toString(body?.workspaceId, "").trim();
   if (!workspaceId) return NextResponse.json({ error: "Debes indicar workspaceId." }, { status: 400 });
 
-  const result = await deleteWorkspaceCascade(adminDb, workspaceId);
-  if (!result.deletedWorkspace) {
+  const workspaceSnap = await adminDb.collection("driveWorkspaces").doc(workspaceId).get();
+  if (!workspaceSnap.exists) {
     return NextResponse.json({ error: "Workspace no encontrado." }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true, ...result }, { status: 200 });
+  const workspace = workspaceSnap.data() as Record<string, unknown>;
+  const driveInfo = (workspace.drive as Record<string, unknown> | undefined) ?? {};
+  const groupFolderId = toString(driveInfo.groupFolderId, "").trim();
+  const publicFolderId = toString(driveInfo.publicFolderId, "").trim();
+
+  let driveResult: { trashedFolderId: string; trashedFolderName: string; message: string } | null = null;
+  if (groupFolderId || publicFolderId) {
+    try {
+      driveResult = await trashAppsScriptDriveStructure({ groupFolderId, publicFolderId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "No fue posible enviar la estructura a la papelera de Drive.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  const result = await deleteWorkspaceCascade(adminDb, workspaceId);
+  return NextResponse.json({ ok: true, driveTrashed: Boolean(driveResult), drive: driveResult, ...result }, { status: 200 });
 }
 

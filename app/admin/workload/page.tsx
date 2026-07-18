@@ -2394,7 +2394,7 @@ export default function AdminWorkloadPage() {
     const confirmed = await feedback.confirm({
       title: "Eliminar carga horaria",
       description: row.driveWorkspaceId
-        ? `Se eliminará ${row.subjectName} en ${row.siteName} para ${row.audienceName} y también se quitará su vínculo del panel de Drive.`
+        ? `Se eliminará ${row.subjectName} en ${row.siteName} para ${row.audienceName}, se retirará del panel y su estructura en Drive se enviará a la papelera.`
         : `Se eliminará ${row.subjectName} en ${row.siteName} para ${row.audienceName}.`,
       confirmLabel: "Eliminar carga",
       cancelLabel: "Cancelar",
@@ -2432,7 +2432,7 @@ export default function AdminWorkloadPage() {
 
       const deletedWorkspace = data?.deletedWorkspace === true;
       const successMessage = deletedWorkspace
-        ? "Carga horaria eliminada y estructura de Drive retirada del panel."
+        ? "Carga horaria eliminada y estructura de Drive enviada a la papelera."
         : "Carga horaria eliminada.";
       setSuccess(successMessage);
       feedback.success(successMessage);

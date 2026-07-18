@@ -705,8 +705,8 @@ export function DriveDashboard() {
           }
           feedback.success(
             data?.deletedTeachingLoad === true
-              ? "Estructura eliminada y carga horaria retirada del calendario."
-              : "Estructura eliminada del panel.",
+              ? "Estructura enviada a la papelera de Drive y carga horaria retirada del calendario."
+              : "Estructura enviada a la papelera de Drive y eliminada del panel.",
           );
         } catch (err) {
           setOptimisticDeletedWorkspaceIds((current) => current.filter((id) => id !== ws.id));

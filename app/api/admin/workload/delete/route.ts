@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { deleteTeachingLoadCascade } from "@/lib/firebase/admin-cascade-delete";
+import { trashAppsScriptDriveStructure } from "@/lib/google/apps-script-drive";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -49,6 +50,7 @@ async function assertAdmin(req: Request) {
 export async function POST(req: Request) {
   const admin = await assertAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
+  const adminDb = admin.adminDb;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const teachingLoadId = toString(body?.teachingLoadId, "").trim();
@@ -56,10 +58,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Debes indicar teachingLoadId." }, { status: 400 });
   }
 
-  const result = await deleteTeachingLoadCascade(admin.adminDb, teachingLoadId);
+  const teachingLoadSnap = await adminDb.collection("teachingLoads").doc(teachingLoadId).get();
+  if (!teachingLoadSnap.exists) {
+    return NextResponse.json({ error: "Carga horaria no encontrada." }, { status: 404 });
+  }
+
+  const teachingLoad = teachingLoadSnap.data() as Record<string, unknown>;
+  const workspaceId = toString(teachingLoad.driveWorkspaceId, "").trim();
+  let driveResult: { trashedFolderId: string; trashedFolderName: string; message: string } | null = null;
+
+  if (workspaceId) {
+    const workspaceSnap = await adminDb.collection("driveWorkspaces").doc(workspaceId).get();
+    if (workspaceSnap.exists) {
+      const workspace = workspaceSnap.data() as Record<string, unknown>;
+      const driveInfo = (workspace.drive as Record<string, unknown> | undefined) ?? {};
+      const groupFolderId = toString(driveInfo.groupFolderId, "").trim();
+      const publicFolderId = toString(driveInfo.publicFolderId, "").trim();
+      if (groupFolderId || publicFolderId) {
+        try {
+          driveResult = await trashAppsScriptDriveStructure({ groupFolderId, publicFolderId });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "No fue posible enviar la estructura a la papelera de Drive.";
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+    }
+  }
+
+  const result = await deleteTeachingLoadCascade(adminDb, teachingLoadId);
   if (!result.deletedTeachingLoad) {
     return NextResponse.json({ error: "Carga horaria no encontrada." }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true, ...result }, { status: 200 });
+  return NextResponse.json({ ok: true, driveTrashed: Boolean(driveResult), drive: driveResult, ...result }, { status: 200 });
 }
