@@ -51,7 +51,8 @@ function obtenerEstructuraDrive(data) {
       if (a.weekNumber === null && b.weekNumber === null) return 0;
       if (a.weekNumber === null) return 1;
       if (b.weekNumber === null) return -1;
-      return a.weekNumber - b.weekNumber;
+      if (a.weekNumber !== b.weekNumber) return a.weekNumber - b.weekNumber;
+      return String(a.folderName || "").localeCompare(String(b.folderName || ""));
     });
 
     return {
@@ -73,23 +74,33 @@ function crearEstructuraDrive(data) {
   try {
     lock.waitLock(30000);
     
-    const rootFolderId = data.rootFolderId.trim();
-    const institution = data.institution.toUpperCase();
+    const rootFolderId = safeString(data.rootFolderId);
+    const institution = safeString(data.institution).toUpperCase();
     const year = parseInt(data.year);
-    const periodCode = data.periodCode.toUpperCase();
-    const subjectName = data.subjectName.trim();
-    const cohortCode = data.cohortCode.trim();
-    const cesdeGroupType = normalizarTipoGrupoCesde(data.cesdeGroupType);
-    const day1 = data.dayOfWeek1.trim();
-    const day2 = data.dayOfWeek2.trim(); 
-    const jornada = data.jornada.trim();
-    const sede = data.sede.trim();
-    const startDateStr = data.startDate;
+    const periodCode = safeString(data.periodCode).toUpperCase();
+    const subjectName = safeString(data.subjectName);
+    const cohortCode = safeString(data.cohortCode);
+    const cesdeGroupTypeRaw = safeString(
+      data.cesdeGroupType || data.groupType || data.group_type || data.modalidad || data.tipoGrupo
+    );
+    const cesdeGroupType = normalizarTipoGrupoCesde(cesdeGroupTypeRaw);
+    const day1 = safeString(data.dayOfWeek1);
+    const day2 = safeString(data.dayOfWeek2); 
+    const jornada = safeString(data.jornada);
+    const sede = safeString(data.sede);
+    const startDateStr = safeString(data.startDate);
     const endDateStr = String(data.endDate ?? "").trim();
 
     const totalWeeks = (institution === "CESDE") ? 18 : 11;
     const daysText = day2 ? `${day1} y ${day2}` : day1;
-    const isCesdeEmpresarial = institution === "CESDE" && cesdeGroupType === "EMPRESARIAL";
+    const isCesdeEmpresarial = institution === "CESDE" && esGrupoCesdeEmpresarial(cesdeGroupTypeRaw);
+
+    if (!rootFolderId) throw new Error("Falta rootFolderId.");
+    if (!institution) throw new Error("Falta institution.");
+    if (!subjectName) throw new Error("Falta subjectName.");
+    if (!cohortCode) throw new Error("Falta cohortCode.");
+    if (!day1) throw new Error("Falta dayOfWeek1.");
+    if (!startDateStr) throw new Error("Falta startDate.");
 
     let rootFolder;
     try {
@@ -157,10 +168,19 @@ function crearEstructuraDrive(data) {
           else if (i === 9) milestoneText = " - Entregable 3";
         }
 
-        let weekFolderName = `Semana ${i < 10 ? '0' + i : i}${milestoneText} (${dateFormatted})`;
-        publicFolder.createFolder(weekFolderName);
-        
-        weeksLog.push({ weekNumber: i, folderName: weekFolderName });
+        const weeklySessions = obtenerSesionesSemanales(currentDate, day1, day2);
+        for (let sessionIndex = 0; sessionIndex < weeklySessions.length; sessionIndex++) {
+          const sessionDate = weeklySessions[sessionIndex];
+          dateFormatted = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
+          const weekLabel = `Semana ${i < 10 ? '0' + i : i}${milestoneText}`;
+          const sessionDayLabel = capitalizarDiaSemana(nombreDiaSemanaDesdeFecha(sessionDate));
+          const weekFolderName = day2
+            ? `${weekLabel} - ${sessionDayLabel} (${dateFormatted})`
+            : `${weekLabel} (${dateFormatted})`;
+
+          publicFolder.createFolder(weekFolderName);
+          weeksLog.push({ weekNumber: i, folderName: weekFolderName });
+        }
 
         currentDate.setDate(currentDate.getDate() + 7);
       }
@@ -190,8 +210,17 @@ function getOrCreateSubFolder(parentFolder, folderName) {
   return parentFolder.createFolder(folderName);
 }
 
+function safeString(value) {
+  return String(value || "").trim();
+}
+
 function normalizarTipoGrupoCesde(value) {
-  return String(value || "").trim().toUpperCase() === "EMPRESARIAL" ? "EMPRESARIAL" : "REGULAR";
+  return esGrupoCesdeEmpresarial(value) ? "EMPRESARIAL" : "REGULAR";
+}
+
+function esGrupoCesdeEmpresarial(value) {
+  const normalized = normalizarDiaSemana(value);
+  return normalized.indexOf("empresarial") !== -1;
 }
 
 function parseIsoDate(value) {
@@ -256,6 +285,48 @@ function obtenerFechasEmpresariales(startDateStr, endDateStr, day1, day2) {
   }
 
   return sessions;
+}
+
+function obtenerSesionesSemanales(anchorDate, day1, day2) {
+  const start = new Date(anchorDate.getTime());
+  start.setHours(0, 0, 0, 0);
+
+  const allowedDays = {};
+  const day1Number = diaSemanaToNumero(day1);
+  if (day1Number === null) throw new Error("El primer día de clase no es válido.");
+  allowedDays[day1Number] = true;
+
+  if (day2) {
+    const day2Number = diaSemanaToNumero(day2);
+    if (day2Number === null) throw new Error("El segundo día de clase no es válido.");
+    allowedDays[day2Number] = true;
+  }
+
+  const sessions = [];
+  for (let offset = 0; offset < 7; offset++) {
+    const current = new Date(start.getTime());
+    current.setDate(start.getDate() + offset);
+    if (allowedDays[current.getDay()]) {
+      sessions.push(current);
+    }
+  }
+
+  if (!sessions.length) {
+    sessions.push(new Date(start.getTime()));
+  }
+
+  return sessions;
+}
+
+function nombreDiaSemanaDesdeFecha(date) {
+  const labels = ["Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"];
+  return labels[date.getDay()] || "Dia";
+}
+
+function capitalizarDiaSemana(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Dia";
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 
 

@@ -19,6 +19,16 @@ function pad2(value: number) {
   return value < 10 ? `0${value}` : `${value}`;
 }
 
+function countLogicalWeeks(weeks: Array<{ weekNumber: number | null }>) {
+  const uniqueWeekNumbers = new Set<number>();
+  weeks.forEach((week) => {
+    if (typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber)) {
+      uniqueWeekNumbers.add(week.weekNumber);
+    }
+  });
+  return uniqueWeekNumbers.size || weeks.length;
+}
+
 async function assertAdmin(req: Request) {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
@@ -90,9 +100,10 @@ export async function POST(req: Request) {
   try {
     const structure = await getAppsScriptDriveStructure({ publicFolderId });
     const now = new Date();
+    const logicalWeekCount = countLogicalWeeks(structure.weeks);
     await wsRef.set(
       {
-        weekCount: structure.weeks.length,
+        weekCount: logicalWeekCount,
         drive: {
           groupFolderId: structure.classFolder.folderId,
           groupFolderUrl: structure.classFolder.folderUrl,
@@ -144,19 +155,24 @@ export async function POST(req: Request) {
         driveFolderId: structure.publicFolder.folderId,
         driveFolderUrl: structure.publicFolder.folderUrl,
       },
-      ...structure.weeks.map((week, index) => {
+      ...(() => {
+        const weekPathCounters = new Map<number, number>();
+        return structure.weeks.map((week, index) => {
         const weekNumber =
           typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber) ? week.weekNumber : index + 1;
+          const weekOccurrence = (weekPathCounters.get(weekNumber) ?? 0) + 1;
+          weekPathCounters.set(weekNumber, weekOccurrence);
         return {
-          pathKey: `publica/S${pad2(weekNumber)}`,
-          name: week.folderName,
-          kind: "week",
-          parentPathKey: "publica",
-          driveFolderId: week.folderId,
-          driveFolderUrl: week.folderUrl,
-          meta: { week: weekNumber },
-        };
-      }),
+            pathKey: `publica/S${pad2(weekNumber)}${weekOccurrence > 1 ? `__${pad2(weekOccurrence)}` : ""}`,
+            name: week.folderName,
+            kind: "week",
+            parentPathKey: "publica",
+            driveFolderId: week.folderId,
+            driveFolderUrl: week.folderUrl,
+            meta: { week: weekNumber, occurrence: weekOccurrence },
+          };
+        });
+      })(),
     ];
 
     nodes.forEach((node) => {
@@ -168,7 +184,7 @@ export async function POST(req: Request) {
     });
     await batch.commit();
 
-    return NextResponse.json({ ok: true, broken: false, issues: [], weekCount: structure.weeks.length }, { status: 200 });
+    return NextResponse.json({ ok: true, broken: false, issues: [], weekCount: logicalWeekCount }, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "No fue posible consultar la estructura en Apps Script.";
     const now = new Date();

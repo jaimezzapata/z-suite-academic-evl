@@ -131,6 +131,16 @@ function nodeIdFromPath(pathKey: string) {
   return pathKey.replace(/\//g, "__").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 250);
 }
 
+function countLogicalWeeks(weeks: Array<{ weekNumber: number | null }>) {
+  const uniqueWeekNumbers = new Set<number>();
+  weeks.forEach((week) => {
+    if (typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber)) {
+      uniqueWeekNumbers.add(week.weekNumber);
+    }
+  });
+  return uniqueWeekNumbers.size || weeks.length;
+}
+
 type WorkspaceNode = {
   pathKey: string;
   name: string;
@@ -394,6 +404,7 @@ export async function POST(req: Request) {
     });
 
     const now = new Date();
+    const logicalWeekCount = countLogicalWeeks(driveStructure.weeks);
     await workspaceRef.set(
       {
         id: workspaceId,
@@ -414,7 +425,7 @@ export async function POST(req: Request) {
         endTime,
         day2StartTime: resolvedDayOfWeek2 ? resolvedDay2StartTime : "",
         day2EndTime: resolvedDayOfWeek2 ? resolvedDay2EndTime : "",
-        weekCount: driveStructure.weeks.length || weekCount,
+        weekCount: logicalWeekCount || weekCount,
         startDate: startDateRaw,
         endDate: endDateRaw,
         drive: {
@@ -476,16 +487,19 @@ export async function POST(req: Request) {
       driveFolderUrl: driveStructure.publicFolder.folderUrl,
     });
     
+    const weekPathCounters = new Map<number, number>();
     driveStructure.weeks.forEach((week, index) => {
       const weekNumber = typeof week.weekNumber === "number" && Number.isFinite(week.weekNumber) ? week.weekNumber : index + 1;
+      const weekOccurrence = (weekPathCounters.get(weekNumber) ?? 0) + 1;
+      weekPathCounters.set(weekNumber, weekOccurrence);
       pushNode({
-        pathKey: `publica/S${pad2(weekNumber)}`,
+        pathKey: `publica/S${pad2(weekNumber)}${weekOccurrence > 1 ? `__${pad2(weekOccurrence)}` : ""}`,
         name: week.folderName,
         kind: "week",
         parentPathKey: "publica",
         driveFolderId: week.folderId,
         driveFolderUrl: week.folderUrl,
-        meta: { week: weekNumber },
+        meta: { week: weekNumber, occurrence: weekOccurrence },
       });
     });
 
@@ -588,7 +602,7 @@ export async function POST(req: Request) {
           publicFolderUrl: driveStructure.publicFolder.folderUrl,
         },
         teachingLoadId: linkedTeachingLoadId,
-        weekCount: driveStructure.weeks.length || weekCount,
+        weekCount: logicalWeekCount || weekCount,
         message: createdStructure.message,
       },
       { status: 200 },
