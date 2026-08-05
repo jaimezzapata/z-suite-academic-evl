@@ -36,6 +36,15 @@ type AttemptRow = {
   documentId: string;
   adminMessage: string | null;
   annulReason: string | null;
+  createdAtMs: number | null;
+  updatedAtMs: number | null;
+  questionCount: number;
+  currentQuestionIndex: number;
+  answers: Record<string, unknown>;
+  fraudTabSwitches: number;
+  fraudClipboardAttempts: number;
+  fraudPenalty0to5: number;
+  fraudForcedFail: boolean;
 };
 
 function toString(value: unknown, fallback: string) {
@@ -44,6 +53,45 @@ function toString(value: unknown, fallback: string) {
 
 function toNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function toMillis(value: unknown): number | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const toMillisFn = (v as { toMillis?: unknown }).toMillis;
+  if (typeof toMillisFn === "function") {
+    try {
+      return (toMillisFn as () => number)();
+    } catch {
+      return null;
+    }
+  }
+  const seconds = typeof v.seconds === "number" ? v.seconds : null;
+  if (seconds === null) return null;
+  const nanos = typeof v.nanoseconds === "number" ? v.nanoseconds : 0;
+  return seconds * 1000 + Math.floor(nanos / 1_000_000);
+}
+
+function countAnswered(value: unknown): number {
+  if (!value || typeof value !== "object") return 0;
+  const record = value as Record<string, unknown>;
+  let count = 0;
+  Object.values(record).forEach((item) => {
+    if (item === null || item === undefined) return;
+    if (typeof item === "string" && !item.trim()) return;
+    count += 1;
+  });
+  return count;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatPercent(value: number) {
+  const next = clampNumber(value, 0, 100);
+  return `${Math.round(next)}%`;
 }
 
 export function LiveManager() {
@@ -271,15 +319,15 @@ export function LiveManager() {
     const q = query(
       collection(firestore, "attempts"),
       where("publishedExamId", "==", attemptsExam.id),
-      orderBy("createdAt", "desc"),
       limit(200),
     );
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setAttempts(
-          snap.docs.map((d) => {
+        const next = snap.docs
+          .map((d) => {
             const row = d.data() as Record<string, unknown>;
+            const answers = (row.answers && typeof row.answers === "object" ? (row.answers as Record<string, unknown>) : {}) ?? {};
             return {
               id: d.id,
               status: toString(row.status, "in_progress"),
@@ -288,9 +336,19 @@ export function LiveManager() {
               documentId: toString(row.documentId, ""),
               adminMessage: toString(row.adminMessage, "") || null,
               annulReason: toString(row.annulReason, "") || null,
+              createdAtMs: toMillis(row.createdAt),
+              updatedAtMs: toMillis(row.updatedAt),
+              questionCount: toNumber(row.questionCount, attemptsExam.questionCount),
+              currentQuestionIndex: toNumber(row.currentQuestionIndex, 0),
+              answers,
+              fraudTabSwitches: toNumber(row.fraudTabSwitches, 0),
+              fraudClipboardAttempts: toNumber(row.fraudClipboardAttempts, 0),
+              fraudPenalty0to5: toNumber(row.fraudPenalty0to5, 0),
+              fraudForcedFail: Boolean(row.fraudForcedFail),
             };
-          }),
-        );
+          })
+          .sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0));
+        setAttempts(next);
         setAttemptsLoading(false);
       },
       () => {
@@ -300,6 +358,71 @@ export function LiveManager() {
     );
     return () => unsub();
   }, [attemptsOpen, attemptsExam]);
+
+  const attemptMetrics = useMemo(() => {
+    const perAttempt = attempts.map((a) => {
+      const total = Math.max(0, a.questionCount);
+      const answered = countAnswered(a.answers);
+      const progressPct = total ? (answered / total) * 100 : 0;
+      const fraudEvents = Math.max(0, a.fraudTabSwitches) + Math.max(0, a.fraudClipboardAttempts);
+      const isSubmitted = a.status.startsWith("submitted");
+      const isInProgress = a.status === "in_progress";
+      const isAnnulled = a.status === "annulled";
+      const isFraudStatus = a.status === "submitted_fraud";
+      return {
+        attempt: a,
+        total,
+        answered,
+        progressPct,
+        fraudEvents,
+        isSubmitted,
+        isInProgress,
+        isAnnulled,
+        isFraudStatus,
+      };
+    });
+
+    const totals = perAttempt.reduce(
+      (acc, item) => {
+        acc.total += 1;
+        if (item.isInProgress) acc.inProgress += 1;
+        if (item.isSubmitted) acc.submitted += 1;
+        if (item.isAnnulled) acc.annulled += 1;
+        if (item.isFraudStatus || item.attempt.fraudForcedFail || item.fraudEvents >= 6) acc.suspicious += 1;
+        if (item.isInProgress) {
+          acc.inProgressProgressSum += item.progressPct;
+          acc.inProgressCount += 1;
+        }
+        acc.fraudEventsSum += item.fraudEvents;
+        return acc;
+      },
+      {
+        total: 0,
+        inProgress: 0,
+        submitted: 0,
+        annulled: 0,
+        suspicious: 0,
+        fraudEventsSum: 0,
+        inProgressProgressSum: 0,
+        inProgressCount: 0,
+      },
+    );
+
+    const avgProgressInProgress = totals.inProgressCount ? totals.inProgressProgressSum / totals.inProgressCount : 0;
+    const avgFraudEvents = totals.total ? totals.fraudEventsSum / totals.total : 0;
+    const suspiciousTop = perAttempt
+      .filter((item) => item.fraudEvents > 0 || item.attempt.fraudForcedFail || item.isFraudStatus)
+      .sort((a, b) => b.fraudEvents - a.fraudEvents)
+      .slice(0, 6);
+
+    return {
+      perAttempt,
+      totals,
+      avgProgressInProgress,
+      avgFraudEvents,
+      suspiciousTop,
+    };
+  }, [attempts]);
 
   const filteredAttempts = useMemo(() => {
     const q = attemptSearch.trim().toLowerCase();
@@ -714,6 +837,26 @@ export function LiveManager() {
                 <p className="mt-1 text-sm text-zinc-600">
                   Mensajes unidireccionales (docente → estudiante) y anulacion por estudiante.
                 </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-200">
+                    Intentos {attemptMetrics.totals.total}
+                  </div>
+                  <div className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200">
+                    En progreso {attemptMetrics.totals.inProgress}
+                  </div>
+                  <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                    Finalizados {attemptMetrics.totals.submitted}
+                  </div>
+                  <div className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
+                    Anulados {attemptMetrics.totals.annulled}
+                  </div>
+                  <div className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+                    Sospechosos {attemptMetrics.totals.suspicious}
+                  </div>
+                  <div className="rounded-full bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-200">
+                    Progreso prom. {formatPercent(attemptMetrics.avgProgressInProgress)}
+                  </div>
+                </div>
               </div>
               <IconButton
                 onClick={() => setAttemptsOpen(false)}
@@ -754,6 +897,11 @@ export function LiveManager() {
                     filteredAttempts.map((a) => {
                       const active = a.id === selectedAttemptId;
                       const annulled = a.status === "annulled";
+                      const answered = countAnswered(a.answers);
+                      const total = Math.max(0, a.questionCount);
+                      const progressPct = total ? (answered / total) * 100 : 0;
+                      const fraudEvents = Math.max(0, a.fraudTabSwitches) + Math.max(0, a.fraudClipboardAttempts);
+                      const suspicious = a.status === "submitted_fraud" || a.fraudForcedFail || fraudEvents >= 6;
                       return (
                         <button
                           key={a.id}
@@ -767,6 +915,9 @@ export function LiveManager() {
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-zinc-950">{a.studentFullName}</p>
                               <p className="mt-1 truncate text-xs text-zinc-600">{a.email}</p>
+                              <p className="mt-1 truncate text-[11px] text-zinc-500">
+                                {formatPercent(progressPct)} • {answered}/{total || 0} respuestas
+                              </p>
                             </div>
                             <span
                               className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
@@ -778,6 +929,18 @@ export function LiveManager() {
                               {annulled ? "Anulado" : a.status}
                             </span>
                           </div>
+                          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+                            <div
+                              className="h-full rounded-full bg-indigo-500"
+                              style={{ width: `${clampNumber(progressPct, 0, 100)}%` }}
+                            />
+                          </div>
+                          {suspicious ? (
+                            <div className="mt-2 flex items-center gap-2 text-[11px] font-semibold text-amber-700">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              Eventos {fraudEvents}
+                            </div>
+                          ) : null}
                           <p className="mt-1 truncate text-[11px] text-zinc-500">{a.documentId}</p>
                         </button>
                       );
@@ -805,6 +968,83 @@ export function LiveManager() {
                         </span>
                       </div>
                     </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Progreso</p>
+                        <p className="mt-2 text-sm font-semibold text-zinc-900">
+                          {(() => {
+                            const answered = countAnswered(selectedAttempt.answers);
+                            const total = Math.max(0, selectedAttempt.questionCount);
+                            const pct = total ? (answered / total) * 100 : 0;
+                            return `${formatPercent(pct)} • ${answered}/${total || 0}`;
+                          })()}
+                        </p>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+                          <div
+                            className="h-full rounded-full bg-indigo-600"
+                            style={{
+                              width: `${(() => {
+                                const answered = countAnswered(selectedAttempt.answers);
+                                const total = Math.max(0, selectedAttempt.questionCount);
+                                const pct = total ? (answered / total) * 100 : 0;
+                                return clampNumber(pct, 0, 100);
+                              })()}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="mt-2 text-xs text-zinc-600">
+                          Pregunta actual: {Math.max(0, selectedAttempt.currentQuestionIndex) + 1} /{" "}
+                          {Math.max(0, selectedAttempt.questionCount)}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Fraude</p>
+                        <p className="mt-2 text-sm font-semibold text-zinc-900">
+                          Eventos{" "}
+                          {Math.max(0, selectedAttempt.fraudTabSwitches) + Math.max(0, selectedAttempt.fraudClipboardAttempts)}
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-600">
+                          Pestañas {Math.max(0, selectedAttempt.fraudTabSwitches)} • Portapapeles{" "}
+                          {Math.max(0, selectedAttempt.fraudClipboardAttempts)}
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-600">
+                          Penalización {selectedAttempt.fraudPenalty0to5.toFixed(1)} / 5
+                          {selectedAttempt.fraudForcedFail ? " • Forzar 0" : ""}
+                        </p>
+                        <p className="mt-2 text-xs text-zinc-500">
+                          Última actividad:{" "}
+                          {selectedAttempt.updatedAtMs ? new Date(selectedAttempt.updatedAtMs).toLocaleString() : "—"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {attemptMetrics.suspiciousTop.length ? (
+                      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                          Sospechosos (top)
+                        </p>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {attemptMetrics.suspiciousTop.map((item) => (
+                            <button
+                              key={item.attempt.id}
+                              type="button"
+                              onClick={() => setSelectedAttemptId(item.attempt.id)}
+                              className="flex items-start justify-between gap-2 rounded-xl bg-white/70 px-3 py-2 text-left ring-1 ring-amber-200 hover:bg-white"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{item.attempt.studentFullName}</p>
+                                <p className="mt-1 text-xs text-amber-900/80">
+                                  Eventos {item.fraudEvents} • {formatPercent(item.progressPct)}
+                                </p>
+                              </div>
+                              <AlertTriangle className="h-4 w-4 text-amber-800" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     {selectedAttempt.adminMessage ? (
                       <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
