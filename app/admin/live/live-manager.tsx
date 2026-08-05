@@ -319,7 +319,7 @@ export function LiveManager() {
     const q = query(
       collection(firestore, "attempts"),
       where("publishedExamId", "==", attemptsExam.id),
-      limit(200),
+      limit(120),
     );
     const unsub = onSnapshot(
       q,
@@ -508,34 +508,6 @@ export function LiveManager() {
     }
   }
 
-  const [attemptsById, setAttemptsById] = useState<Record<string, number>>({});
-  useEffect(() => {
-    const targets = rows.slice(0, 30).map((r) => r.id);
-    setAttemptsById((prev) => {
-      const next: Record<string, number> = {};
-      targets.forEach((id) => {
-        next[id] = prev[id] ?? 0;
-      });
-      return next;
-    });
-
-    const unsubs = targets.map((id) => {
-      const q = query(collection(firestore, "attempts"), where("publishedExamId", "==", id));
-      return onSnapshot(
-        q,
-        (snap) => {
-          setAttemptsById((p) => ({ ...p, [id]: snap.size }));
-        },
-        () => {
-          setAttemptsById((p) => ({ ...p, [id]: p[id] ?? 0 }));
-        },
-      );
-    });
-    return () => {
-      unsubs.forEach((u) => u());
-    };
-  }, [rows]);
-
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -696,9 +668,7 @@ export function LiveManager() {
                         {row.questionCount} preguntas • {row.timeLimitMinutes} min
                       </p>
                     </div>
-                    <div className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
-                      Intentos {attemptsById[row.id] ?? 0}
-                    </div>
+                    <div className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">Intentos</div>
                   </div>
 
                   <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
@@ -777,7 +747,7 @@ export function LiveManager() {
                     <p className="mt-1 text-xs text-zinc-500">{row.questionCount} preguntas</p>
                   </div>
                   <div className="text-sm font-semibold tracking-[0.25em] text-zinc-900">{row.accessCode}</div>
-                  <div className="text-sm font-semibold text-zinc-900">{attemptsById[row.id] ?? 0}</div>
+                  <div className="text-sm font-semibold text-zinc-900">—</div>
                   <div className="text-sm text-zinc-700">{row.timeLimitMinutes} min</div>
                   <div className="flex items-center justify-end gap-2">
                     <IconButton

@@ -119,15 +119,24 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
 export const MarkdownViewer = memo(function MarkdownViewer({
   markdown,
   idPrefix,
+  className,
 }: {
   markdown: string;
   idPrefix?: string;
+  className?: string;
 }) {
   const prefix = useMemo(() => (idPrefix ? idPrefix.trim() : ""), [idPrefix]);
   const withPrefix = (id: string) => (prefix ? `${prefix}-${id}` : id);
 
   return (
-    <div className="docs-markdown space-y-6 text-[14px] leading-relaxed text-zinc-800 antialiased sm:text-[15px]">
+    <div
+      className={[
+        "docs-markdown space-y-6 text-[14px] leading-relaxed text-zinc-800 antialiased sm:text-[15px]",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

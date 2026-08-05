@@ -12,6 +12,7 @@ import { firestore } from "@/lib/firebase/client";
 import { normalizeFullName, normalizePersonNamePart } from "@/lib/text/normalize";
 import { IconButton } from "@/app/admin/ui/icon-button";
 import { DocumentationDrawer } from "@/app/ui/documentation-drawer";
+import { MarkdownViewer } from "@/app/ui/markdown-viewer";
 import {
   ArrowLeft,
   ArrowRight,
@@ -64,6 +65,14 @@ const FRAUD_PENALTY_PER_EVENT_0TO5 = 0.2;
 const FRAUD_FAIL_TOTAL_EVENTS = 11;
 const RESUME_KEY = "zse:examResume";
 const ATTEMPT_STATE_PREFIX = "zse:attemptState:";
+
+function normalizeStatementMarkdown(statement: string) {
+  const raw = typeof statement === "string" ? statement : "";
+  if (!raw.includes("```")) return raw;
+  return raw
+    .replace(/```(\w+)[ \t]+/g, "```$1\n")
+    .replace(/([^\n])```/g, "$1\n```");
+}
 
 function randomInt(maxExclusive: number) {
   if (maxExclusive <= 0) return 0;
@@ -248,6 +257,7 @@ export default function ExamPublicPage() {
     submittedFraudFail: false,
   });
   const autosaveTimerRef = useRef<number | null>(null);
+  const lastAutosaveKeyRef = useRef<string>("");
   const autoResumeRef = useRef(false);
 
   useEffect(() => {
@@ -669,103 +679,57 @@ export default function ExamPublicPage() {
 
   useEffect(() => {
     if (!exam) return;
-    const snapshotExam = exam;
-    const publishedExamId = snapshotExam.id;
-    const accessCode = snapshotExam.accessCode;
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const res = await fetch("/api/exam/state", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ publishedExamId, accessCode }),
-        });
-        const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-        if (!res.ok) return;
-
-        const examRow = (data?.exam ?? null) as Record<string, unknown> | null;
-        if (!examRow || cancelled) return;
+    const publishedExamId = exam.id;
+    const unsub = onSnapshot(
+      doc(firestore, "publishedExams", publishedExamId),
+      (snap) => {
+        if (!snap.exists()) return;
+        const examRow = snap.data() as Record<string, unknown>;
 
         const status = toString(examRow.status, "published");
-        const timeLimitMinutes = toNumber(examRow.timeLimitMinutes, snapshotExam.timeLimitMinutes);
-        const documentationMarkdown = toString(examRow.documentationMarkdown, snapshotExam.documentationMarkdown);
-        const fraudEnabled = toBoolean(examRow.fraudEnabled, snapshotExam.fraudEnabled);
-        const questionCount = Math.max(1, toNumber(examRow.questionCount, snapshotExam.questionCount));
+        const timeLimitMinutes = toNumber(examRow.timeLimitMinutes, exam.timeLimitMinutes);
+        const documentationMarkdown = toString(examRow.documentationMarkdown, exam.documentationMarkdown);
+        const fraudEnabled = toBoolean(examRow.fraudEnabled, exam.fraudEnabled);
+        const questionCount = Math.max(1, toNumber(examRow.questionCount, exam.questionCount));
 
-        if (timeLimitMinutes !== snapshotExam.timeLimitMinutes) {
-          setExam((prev) => (prev ? { ...prev, timeLimitMinutes } : prev));
-          if (step === "exam" && !submitted) {
-            const start = attemptStartMs ?? (endAtMs ? endAtMs - snapshotExam.timeLimitMinutes * 60 * 1000 : null);
+        setExam((prev) => {
+          if (!prev) return prev;
+
+          if (timeLimitMinutes !== prev.timeLimitMinutes && step === "exam" && !submitted) {
+            const start = attemptStartMs ?? (endAtMs ? endAtMs - prev.timeLimitMinutes * 60 * 1000 : null);
             if (start) {
               const nextEnd = start + timeLimitMinutes * 60 * 1000;
               setEndAtMs(nextEnd);
               setRemainingMs(nextEnd - Date.now());
             }
           }
-        }
-        if (documentationMarkdown !== snapshotExam.documentationMarkdown) {
-          setExam((prev) => (prev ? { ...prev, documentationMarkdown } : prev));
-        }
-        if (fraudEnabled !== snapshotExam.fraudEnabled) {
-          setExam((prev) => (prev ? { ...prev, fraudEnabled } : prev));
-        }
-        if (questionCount !== snapshotExam.questionCount) {
-          setExam((prev) => (prev ? { ...prev, questionCount } : prev));
-          const nextLimit = Math.max(1, Math.min(questionCount, questions.length || questionCount));
-          setCurrentQuestionIndex((i) => Math.min(i, nextLimit - 1));
-        }
 
-        if (status === "closed") {
-          if (step === "exam" && !submitted && attemptId) {
-            try {
-              const attemptRes = await fetch("/api/exam/attempt/status", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ attemptId, accessCode }),
-              });
-              const attemptData = (await attemptRes.json().catch(() => null)) as Record<string, unknown> | null;
-              if (attemptRes.ok) {
-                const a = (attemptData?.attempt ?? null) as Record<string, unknown> | null;
-                const st = toString(a?.status, "");
-                if (st.toLowerCase().includes("submitted")) {
-                  const score5 = toNumber(a?.grade0to5, 0);
-                  const score50 = toNumber(a?.grade0to50, 0);
-                  setResult({
-                    score5,
-                    score50,
-                    score5Raw: toNumber(a?.grade0to5Raw, score5),
-                    score50Raw: toNumber(a?.grade0to50Raw, score50),
-                    earned: toNumber(a?.earnedPoints, 0),
-                    total: toNumber(a?.totalPoints, 0),
-                    fraudTabSwitches: toNumber(a?.fraudTabSwitches, 0),
-                    fraudClipboardAttempts: toNumber(a?.fraudClipboardAttempts, 0),
-                    fraudPenalty0to5: toNumber(a?.fraudPenalty0to5, 0),
-                    fraudForcedFail: toBoolean(a?.fraudForcedFail, false),
-                  });
-                  setSubmitted(true);
-                  setStep("result");
-                  return;
-                }
-              }
-            } catch {}
+          if (questionCount !== prev.questionCount) {
+            const nextLimit = Math.max(1, Math.min(questionCount, questions.length || questionCount));
+            setCurrentQuestionIndex((i) => Math.min(i, nextLimit - 1));
           }
-          if (step === "rules" || step === "student") {
-            setError("Este examen ya esta cerrado.");
-            setStep("code");
-            setExam(null);
-          }
-        }
-      } catch {}
-    }
 
-    void poll();
-    const interval = window.setInterval(() => void poll(), 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [exam, attemptStartMs, endAtMs, step, submitted, attemptId, questions.length]);
+          return {
+            ...prev,
+            status,
+            timeLimitMinutes,
+            documentationMarkdown,
+            fraudEnabled,
+            questionCount,
+          };
+        });
+
+        if (status === "closed" && (step === "rules" || step === "student")) {
+          setError("Este examen ya esta cerrado.");
+          setStep("code");
+          setExam(null);
+        }
+      },
+      () => {},
+    );
+
+    return () => unsub();
+  }, [attemptStartMs, endAtMs, exam?.id, questions.length, step, submitted]);
 
   useEffect(() => {
     if (!attemptId) return;
@@ -848,86 +812,6 @@ export default function ExamPublicPage() {
   }, [attemptId, step, questions]);
 
   useEffect(() => {
-    if (!attemptId || !exam) return;
-    if (step === "code") return;
-    let cancelled = false;
-    const id = attemptId;
-    const accessCode = exam.accessCode;
-
-    async function pollAttempt() {
-      try {
-        const res = await fetch("/api/exam/attempt/status", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ attemptId: id, accessCode }),
-        });
-        const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-        if (!res.ok || cancelled) return;
-
-        const a = (data?.attempt ?? null) as Record<string, unknown> | null;
-        if (!a) return;
-        const status = toString(a.status, "in_progress");
-        const msg = toString(a.adminMessage, "") || null;
-        const msgAtMs = toNumber(a.adminMessageAtMs, 0) || null;
-        const nextKey = msg ? `${msgAtMs ?? "na"}:${msg}` : null;
-        setAdminMessage(msg);
-        setAdminMessageKey(nextKey);
-
-        if (status === "annulled" && step !== "result") {
-          setAnnulled(true);
-          setAnnulReason(
-            toString(
-              a.annulReason,
-              "Tu intento fue anulado por el docente. Nota asignada: 0.00, sin posibilidad de recuperacion.",
-            ),
-          );
-          setResult({
-            score5: 0,
-            score50: 0,
-            score5Raw: 0,
-            score50Raw: 0,
-            earned: 0,
-            total: toNumber(a.totalPoints, toNumber(a.questionCount, questions.length)),
-            fraudTabSwitches: toNumber(a.fraudTabSwitches, 0),
-            fraudClipboardAttempts: toNumber(a.fraudClipboardAttempts, 0),
-            fraudPenalty0to5: toNumber(a.fraudPenalty0to5, 0),
-            fraudForcedFail: toBoolean(a.fraudForcedFail, false),
-          });
-          setSubmitted(true);
-          setStep("result");
-          return;
-        }
-
-        if (status.toLowerCase().includes("submitted") && step !== "result" && !submitted) {
-          const score5 = toNumber(a.grade0to5, 0);
-          const score50 = toNumber(a.grade0to50, 0);
-          setResult({
-            score5,
-            score50,
-            score5Raw: toNumber(a.grade0to5Raw, score5),
-            score50Raw: toNumber(a.grade0to50Raw, score50),
-            earned: toNumber(a.earnedPoints, 0),
-            total: toNumber(a.totalPoints, questions.length),
-            fraudTabSwitches: toNumber(a.fraudTabSwitches, 0),
-            fraudClipboardAttempts: toNumber(a.fraudClipboardAttempts, 0),
-            fraudPenalty0to5: toNumber(a.fraudPenalty0to5, 0),
-            fraudForcedFail: toBoolean(a.fraudForcedFail, false),
-          });
-          setSubmitted(true);
-          setStep("result");
-        }
-      } catch {}
-    }
-
-    void pollAttempt();
-    const interval = window.setInterval(() => void pollAttempt(), 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [attemptId, exam, step, submitted, questions.length]);
-
-  useEffect(() => {
     if (!attemptId) return;
     try {
       const raw = localStorage.getItem(`zse:adminMsgDismissed:${attemptId}`);
@@ -941,6 +825,17 @@ export default function ExamPublicPage() {
     autosaveTimerRef.current = window.setTimeout(async () => {
       try {
         const saveFraudEnabled = exam?.fraudEnabled !== false;
+        const nextFraudTab = saveFraudEnabled ? fraudTabSwitches : 0;
+        const nextFraudClip = saveFraudEnabled ? fraudClipboardAttempts : 0;
+        const payloadKey = JSON.stringify({
+          answers,
+          currentQuestionIndex,
+          questionOrder,
+          fraudTabSwitches: nextFraudTab,
+          fraudClipboardAttempts: nextFraudClip,
+        });
+        if (payloadKey === lastAutosaveKeyRef.current) return;
+        lastAutosaveKeyRef.current = payloadKey;
         try {
           localStorage.setItem(
             `${ATTEMPT_STATE_PREFIX}${attemptId}`,
@@ -953,8 +848,8 @@ export default function ExamPublicPage() {
               answers,
               currentQuestionIndex,
               questionOrder,
-              fraudTabSwitches: saveFraudEnabled ? fraudTabSwitches : 0,
-              fraudClipboardAttempts: saveFraudEnabled ? fraudClipboardAttempts : 0,
+              fraudTabSwitches: nextFraudTab,
+              fraudClipboardAttempts: nextFraudClip,
               updatedAtMs: Date.now(),
             }),
           );
@@ -963,12 +858,12 @@ export default function ExamPublicPage() {
           answers,
           currentQuestionIndex,
           questionOrder,
-          fraudTabSwitches: saveFraudEnabled ? fraudTabSwitches : 0,
-          fraudClipboardAttempts: saveFraudEnabled ? fraudClipboardAttempts : 0,
+          fraudTabSwitches: nextFraudTab,
+          fraudClipboardAttempts: nextFraudClip,
           updatedAt: serverTimestamp(),
         });
       } catch {}
-    }, 600);
+    }, 3000);
     return () => {
       if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
@@ -2111,9 +2006,13 @@ export default function ExamPublicPage() {
                     </div>
                   </div>
                 </div>
-                <p className="mt-4 text-lg font-semibold leading-snug text-zinc-950 sm:text-2xl">
-                  {currentQuestion.statement}
-                </p>
+                <div className="mt-4">
+                  <MarkdownViewer
+                    markdown={normalizeStatementMarkdown(currentQuestion.statement)}
+                    idPrefix={`exam-q-${currentQuestion.questionId}`}
+                    className="space-y-4 text-[15px] leading-snug text-zinc-950 sm:text-[20px]"
+                  />
+                </div>
 
                 <div className="mt-5">{renderQuestionInput(currentQuestion)}</div>
 

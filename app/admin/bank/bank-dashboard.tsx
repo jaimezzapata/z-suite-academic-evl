@@ -300,6 +300,9 @@ export function BankDashboard() {
   const [previewLoading, setPreviewLoading] = useState(true);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [metricsWarning, setMetricsWarning] = useState<string | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsLoaded, setMetricsLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [previewPage, setPreviewPage] = useState(0);
   const [subjects, setSubjects] = useState<CatalogItem[]>([]);
@@ -344,10 +347,73 @@ export function BankDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    async function loadCatalogs() {
       setLoading(true);
       setError(null);
       try {
+        const settled = await Promise.allSettled([
+          getDocs(query(collection(firestore, "subjects"), orderBy("name"), limit(400))),
+          getDocs(query(collection(firestore, "groups"), orderBy("name"), limit(400))),
+          getDocs(query(collection(firestore, "moments"), orderBy("name"), limit(200))),
+        ]);
+        if (cancelled) return;
+
+        const subjectsSnap = settled[0].status === "fulfilled" ? (settled[0].value as any) : null;
+        const groupsSnap = settled[1].status === "fulfilled" ? (settled[1].value as any) : null;
+        const momentsSnap = settled[2].status === "fulfilled" ? (settled[2].value as any) : null;
+
+        if (subjectsSnap?.docs) setSubjects(subjectsSnap.docs.map((d: any) => toCatalogItem(d.id, d.data?.() ?? {})));
+        if (groupsSnap?.docs) setGroups(groupsSnap.docs.map((d: any) => toCatalogItem(d.id, d.data?.() ?? {})));
+        if (momentsSnap?.docs) setMoments(momentsSnap.docs.map((d: any) => toCatalogItem(d.id, d.data?.() ?? {})));
+      } catch {
+        if (!cancelled) setMetricsWarning("No fue posible cargar catálogos del banco en este momento.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadCatalogs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (view !== "summary") return;
+    if (metricsLoading) return;
+    if (metricsLoaded) return;
+
+    let cancelled = false;
+    const CACHE_KEY = "zse:bankMetricsCache:v1";
+    const CACHE_TTL_MS = 10 * 60 * 1000;
+
+    async function loadMetrics() {
+      setMetricsLoading(true);
+      setMetricsWarning(null);
+      try {
+        try {
+          const raw = localStorage.getItem(CACHE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as Record<string, unknown>;
+            const at = typeof parsed.at === "number" ? parsed.at : 0;
+            if (Date.now() - at < CACHE_TTL_MS) {
+              const cachedCounts = (parsed.counts ?? null) as any;
+              const cachedByType = (parsed.byType ?? null) as any;
+              const cachedByDifficulty = (parsed.byDifficulty ?? null) as any;
+              if (cachedCounts && cachedByType && cachedByDifficulty) {
+                setData((prev) => ({
+                  ...prev,
+                  counts: cachedCounts,
+                  byType: cachedByType,
+                  byDifficulty: cachedByDifficulty,
+                }));
+                setMetricsLoaded(true);
+                return;
+              }
+            }
+          }
+        } catch {}
+
         const types = [
           "single_choice",
           "multiple_choice",
@@ -358,91 +424,79 @@ export function BankDashboard() {
         ] as const;
         const difficulties = ["easy", "medium", "hard"] as const;
 
-        const [
-          totalSnap,
-          publishedSnap,
-          draftSnap,
-          archivedSnap,
-          ...rest
-        ] = await Promise.all([
+        const settled = await Promise.allSettled([
           getCountFromServer(collection(firestore, "questions")),
           getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "published"))),
           getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "draft"))),
           getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "archived"))),
-          ...types.map((t) =>
-            getCountFromServer(query(collection(firestore, "questions"), where("type", "==", t))),
-          ),
+          ...types.map((t) => getCountFromServer(query(collection(firestore, "questions"), where("type", "==", t)))),
           ...difficulties.map((d) =>
             getCountFromServer(query(collection(firestore, "questions"), where("difficulty", "==", d))),
           ),
-          getDocs(query(collection(firestore, "subjects"), orderBy("name"), limit(400))),
-          getDocs(query(collection(firestore, "groups"), orderBy("name"), limit(400))),
-          getDocs(query(collection(firestore, "moments"), orderBy("name"), limit(200))),
         ]);
 
-        const typeSnaps = rest.slice(0, types.length);
-        const difficultySnaps = rest.slice(types.length, types.length + difficulties.length);
-        const subjectsSnap = rest[types.length + difficulties.length] as any;
-        const groupsSnap = rest[types.length + difficulties.length + 1] as any;
-        const momentsSnap = rest[types.length + difficulties.length + 2] as any;
+        const failures = settled.filter((s) => s.status === "rejected").length;
+        if (failures) {
+          setMetricsWarning("Algunas métricas no pudieron cargarse. El listado de preguntas sigue disponible.");
+        }
 
-        const subjectNameById = new Map<string, string>(
-          (subjectsSnap?.docs ?? []).map((d: any) => [d.id, safeToString(d.data()?.name, d.id)]),
-        );
-        const groupNameById = new Map<string, string>(
-          (groupsSnap?.docs ?? []).map((d: any) => [d.id, safeToString(d.data()?.name, d.id)]),
-        );
-        const momentNameById = new Map<string, string>(
-          (momentsSnap?.docs ?? []).map((d: any) => [d.id, safeToString(d.data()?.name, d.id)]),
-        );
+        const getSettled = <T,>(idx: number): T | null => {
+          const s = settled[idx];
+          return s && s.status === "fulfilled" ? (s.value as T) : null;
+        };
+
+        const totalSnap = getSettled<any>(0);
+        const publishedSnap = getSettled<any>(1);
+        const draftSnap = getSettled<any>(2);
+        const archivedSnap = getSettled<any>(3);
+
+        const baseOffset = 4;
+        const typeSnaps = types.map((_, idx) => getSettled<any>(baseOffset + idx));
+        const diffOffset = baseOffset + types.length;
+        const difficultySnaps = difficulties.map((_, idx) => getSettled<any>(diffOffset + idx));
 
         const byType = types.map((t, idx) => ({
           label: typeLabel(t),
-          value: (typeSnaps[idx] as any).data?.()?.count ?? 0,
+          value: (typeSnaps[idx] as any)?.data?.()?.count ?? 0,
         }));
 
         const byDifficulty = difficulties.map((d, idx) => ({
           label: difficultyLabel(d),
-          value: (difficultySnaps[idx] as any).data?.()?.count ?? 0,
+          value: (difficultySnaps[idx] as any)?.data?.()?.count ?? 0,
         }));
 
-        const next: BankData = {
-          counts: {
-            total: totalSnap.data().count,
-            published: publishedSnap.data().count,
-            draft: draftSnap.data().count,
-            archived: archivedSnap.data().count,
-          },
-          byType,
-          byDifficulty,
-          topSubjects: [],
-          topGroups: [],
-          topMoments: [],
-          quality: { missingStatus: 0, missingPoints: 0, missingGroups: 0, missingMoments: 0 },
-          preview: [],
+        const counts = {
+          total: totalSnap?.data?.()?.count ?? 0,
+          published: publishedSnap?.data?.()?.count ?? 0,
+          draft: draftSnap?.data?.()?.count ?? 0,
+          archived: archivedSnap?.data?.()?.count ?? 0,
         };
 
         if (cancelled) return;
-        setSubjects((subjectsSnap?.docs ?? []).map((d: any) => toCatalogItem(d.id, d.data?.() ?? {})));
-        setGroups((groupsSnap?.docs ?? []).map((d: any) => toCatalogItem(d.id, d.data?.() ?? {})));
-        setMoments((momentsSnap?.docs ?? []).map((d: any) => toCatalogItem(d.id, d.data?.() ?? {})));
         setData((prev) => ({
           ...prev,
-          counts: next.counts,
-          byType: next.byType,
-          byDifficulty: next.byDifficulty,
+          counts,
+          byType,
+          byDifficulty,
         }));
+        setMetricsLoaded(true);
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), counts, byType, byDifficulty }));
+        } catch {}
       } catch {
-        if (!cancelled) setError("No fue posible leer datos de Firestore para el banco de preguntas.");
+        if (!cancelled) {
+          setMetricsWarning("No fue posible cargar métricas del banco en este momento. El listado de preguntas sigue disponible.");
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setMetricsLoading(false);
       }
     }
-    void load();
+
+    void loadMetrics();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [metricsLoaded, metricsLoading, view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1029,7 +1083,7 @@ export function BankDashboard() {
                   Total
                 </p>
                 <p className="text-xl font-semibold tracking-tight text-zinc-950">
-                  {loading ? "..." : formatCompactNumber(data.counts.total)}
+                  {metricsLoading ? "..." : metricsLoaded ? formatCompactNumber(data.counts.total) : "-"}
                 </p>
               </div>
               <MiniSparkline values={statusSpark} />
@@ -1044,6 +1098,12 @@ export function BankDashboard() {
         </div>
       ) : null}
 
+      {metricsWarning ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {metricsWarning}
+        </div>
+      ) : null}
+
       {view === "summary" ? (
         <>
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -1052,7 +1112,7 @@ export function BankDashboard() {
             <div className="min-w-0">
               <p className="text-sm text-zinc-500">Publicadas</p>
               <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">
-                {loading ? "-" : formatCompactNumber(data.counts.published)}
+                {metricsLoading ? "-" : metricsLoaded ? formatCompactNumber(data.counts.published) : "-"}
               </p>
               <p className="mt-1 text-xs text-zinc-500">Listas para aplicar</p>
             </div>
@@ -1066,7 +1126,7 @@ export function BankDashboard() {
             <div className="min-w-0">
               <p className="text-sm text-zinc-500">Borrador</p>
               <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">
-                {loading ? "-" : formatCompactNumber(data.counts.draft)}
+                {metricsLoading ? "-" : metricsLoaded ? formatCompactNumber(data.counts.draft) : "-"}
               </p>
               <p className="mt-1 text-xs text-zinc-500">Pendientes de revisión</p>
             </div>
@@ -1080,7 +1140,7 @@ export function BankDashboard() {
             <div className="min-w-0">
               <p className="text-sm text-zinc-500">Archivadas</p>
               <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">
-                {loading ? "-" : formatCompactNumber(data.counts.archived)}
+                {metricsLoading ? "-" : metricsLoaded ? formatCompactNumber(data.counts.archived) : "-"}
               </p>
               <p className="mt-1 text-xs text-zinc-500">Fuera de uso</p>
             </div>
@@ -1095,25 +1155,25 @@ export function BankDashboard() {
             <div className="rounded-xl bg-zinc-50 px-3 py-2">
               Sin puntos:{" "}
               <span className="font-semibold text-zinc-900">
-                {loading ? "-" : data.quality.missingPoints}
+                {metricsLoading ? "-" : metricsLoaded ? data.quality.missingPoints : "-"}
               </span>
             </div>
             <div className="rounded-xl bg-zinc-50 px-3 py-2">
               Sin estado:{" "}
               <span className="font-semibold text-zinc-900">
-                {loading ? "-" : data.quality.missingStatus}
+                {metricsLoading ? "-" : metricsLoaded ? data.quality.missingStatus : "-"}
               </span>
             </div>
             <div className="rounded-xl bg-zinc-50 px-3 py-2">
               Sin grupos:{" "}
               <span className="font-semibold text-zinc-900">
-                {loading ? "-" : data.quality.missingGroups}
+                {metricsLoading ? "-" : metricsLoaded ? data.quality.missingGroups : "-"}
               </span>
             </div>
             <div className="rounded-xl bg-zinc-50 px-3 py-2">
               Sin momentos:{" "}
               <span className="font-semibold text-zinc-900">
-                {loading ? "-" : data.quality.missingMoments}
+                {metricsLoading ? "-" : metricsLoaded ? data.quality.missingMoments : "-"}
               </span>
             </div>
           </div>
