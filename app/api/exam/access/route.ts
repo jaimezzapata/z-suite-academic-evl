@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       statement: toString(row.statement, ""),
       points: toNumber(row.points, 1),
       options: Array.isArray(row.options) ? row.options : undefined,
-      partialCredit: Boolean(row.partialCredit),
+      partialCredit: Boolean(row.partialCredit ?? type === "multiple_choice"),
       answerRules: (row.answerRules as Record<string, unknown> | undefined) ?? undefined,
       puzzle: (row.puzzle as Record<string, unknown> | undefined) ?? undefined,
     };

@@ -29,6 +29,14 @@ import {
   Timer,
   XCircle,
 } from "lucide-react";
+import {
+  calculateGradeSnapshot,
+  evaluateQuestion as evaluateQuestionShared,
+  getMultipleChoiceBreakdown,
+  isQuestionFullyCorrect as isQuestionFullyCorrectShared,
+  type GradingQuestion,
+  type MultipleChoiceBreakdown,
+} from "@/lib/exam-grading";
 
 type PublishedExam = {
   id: string;
@@ -61,8 +69,6 @@ type SnapshotQuestion = {
 
 type Step = "code" | "student" | "rules" | "exam" | "result";
 
-const FRAUD_PENALTY_PER_EVENT_0TO5 = 0.2;
-const FRAUD_FAIL_TOTAL_EVENTS = 11;
 const RESUME_KEY = "zse:examResume";
 const ATTEMPT_STATE_PREFIX = "zse:attemptState:";
 
@@ -215,6 +221,7 @@ export default function ExamPublicPage() {
 
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const answersRef = useRef<Record<string, unknown>>({});
+  const displayQuestionsRef = useRef<SnapshotQuestion[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
@@ -225,18 +232,30 @@ export default function ExamPublicPage() {
   const [showQuestionMap, setShowQuestionMap] = useState(false);
   const [docOpen, setDocOpen] = useState(false);
   const [finalSubmitAccepted, setFinalSubmitAccepted] = useState(false);
-  const [result, setResult] = useState<{
-    score5: number;
-    score50: number;
-    score5Raw: number;
-    score50Raw: number;
-    earned: number;
-    total: number;
-    fraudTabSwitches: number;
-    fraudClipboardAttempts: number;
-    fraudPenalty0to5: number;
-    fraudForcedFail: boolean;
-  } | null>(null);
+  const [result, setResult] = useState<
+    | {
+        score5: number;
+        score50: number;
+        score5Raw: number;
+        score50Raw: number;
+        earned: number;
+        total: number;
+        fraudTabSwitches: number;
+        fraudClipboardAttempts: number;
+        fraudPenalty0to5: number;
+        fraudForcedFail: boolean;
+        perQuestion?: Array<{
+          questionId: string;
+          earned: number;
+          points: number;
+          fullyCorrect: boolean;
+          ratio: number;
+          multipleChoice?: MultipleChoiceBreakdown | null;
+        }>;
+      }
+    | null
+  >(null);
+  const [resultOpenQuestionIds, setResultOpenQuestionIds] = useState<Set<string>>(new Set());
   const [annulled, setAnnulled] = useState(false);
   const [annulReason, setAnnulReason] = useState<string | null>(null);
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
@@ -281,6 +300,10 @@ export default function ExamPublicPage() {
     }
     return ordered.slice(0, limitCount);
   }, [questions, questionOrder, exam?.questionCount]);
+
+  useEffect(() => {
+    displayQuestionsRef.current = displayQuestions;
+  }, [displayQuestions]);
 
   useEffect(() => {
     if (step !== "code") return;
@@ -360,7 +383,7 @@ export default function ExamPublicPage() {
           statement: toString(row.statement, ""),
           points: toNumber(row.points, 1),
           options: Array.isArray(row.options) ? (row.options as SnapshotQuestion["options"]) : undefined,
-          partialCredit: Boolean(row.partialCredit),
+          partialCredit: Boolean(row.partialCredit ?? true),
           answerRules: (row.answerRules as SnapshotQuestion["answerRules"]) ?? undefined,
           puzzle: (row.puzzle as Record<string, unknown>) ?? undefined,
         };
@@ -1073,81 +1096,43 @@ export default function ExamPublicPage() {
   }
 
   function evaluateQuestion(q: SnapshotQuestion, answer: unknown) {
-    if (q.type === "single_choice") {
-      const correct = q.options?.find((o) => o.isCorrect)?.id;
-      return answer === correct ? q.points : 0;
-    }
+    const gq: GradingQuestion = {
+      questionId: q.questionId,
+      type: q.type,
+      points: q.points,
+      options: q.options,
+      partialCredit: Boolean(q.partialCredit ?? true),
+      answerRules: q.answerRules,
+      puzzle: q.puzzle,
+    };
+    return evaluateQuestionShared(gq, answer);
+  }
 
-    if (q.type === "multiple_choice") {
-      const selected = Array.isArray(answer) ? (answer as string[]) : [];
-      const correct = (q.options ?? []).filter((o) => o.isCorrect).map((o) => o.id);
-      const same = selected.length === correct.length && selected.every((x) => correct.includes(x));
-      if (same) return q.points;
-
-      if (!q.partialCredit) return 0;
-      const correctSet = new Set(correct);
-      const selectedSet = new Set(selected);
-      const correctCount = correct.length || 1;
-      let correctSelected = 0;
-      let wrongSelected = 0;
-      selectedSet.forEach((id) => {
-        if (correctSet.has(id)) correctSelected += 1;
-        else wrongSelected += 1;
-      });
-      const ratio = Math.max(0, (correctSelected - wrongSelected) / correctCount);
-      return q.points * Math.min(1, ratio);
-    }
-
-    if (q.type === "open_concept") {
-      const text = toString(answer, "").toLowerCase();
-      const keywords = q.answerRules?.keywords ?? [];
-      const maxWords = q.answerRules?.maxWords ?? 120;
-      const words = text.split(/\s+/).filter(Boolean);
-      if (words.length > maxWords) return 0;
-      const totalWeight = keywords.reduce((acc, x) => acc + (x.weight || 0), 0);
-      if (!totalWeight) return 0;
-      let scoreWeight = 0;
-      keywords.forEach((k) => {
-        if (text.includes(k.term.toLowerCase())) scoreWeight += k.weight;
-      });
-      const ratio = Math.min(1, scoreWeight / totalWeight);
-      const threshold = typeof q.answerRules?.passThreshold === "number" ? q.answerRules.passThreshold : 0;
-      if (ratio < threshold) return 0;
-      return q.points * ratio;
-    }
-
-    if (q.type === "puzzle_order") {
-      const positions = (answer as Record<string, number>) || {};
-      const items = ((q.puzzle?.items as Array<Record<string, unknown>>) ?? []);
-      if (!items.length) return 0;
-      const ok = items.every((it) => positions[toString(it.id)] === toNumber(it.correctPosition, -1));
-      return ok ? q.points : 0;
-    }
-
-    if (q.type === "puzzle_match") {
-      const pairs = ((q.puzzle?.pairs as Array<Record<string, unknown>>) ?? []);
-      const ans = (answer as Record<string, string>) || {};
-      if (!pairs.length) return 0;
-      const ok = pairs.every((p) => ans[toString(p.leftId)] === toString(p.rightId));
-      return ok ? q.points : 0;
-    }
-
-    if (q.type === "puzzle_cloze") {
-      const slots = ((q.puzzle?.slots as Array<Record<string, unknown>>) ?? []);
-      const ans = (answer as Record<string, string>) || {};
-      if (!slots.length) return 0;
-      const ok = slots.every((s) => ans[toString(s.slotId)] === toString(s.correctOptionId));
-      return ok ? q.points : 0;
-    }
-
-    return 0;
+  function getMultipleChoiceBreakdownFor(q: SnapshotQuestion, answer: unknown): MultipleChoiceBreakdown | null {
+    if (q.type !== "multiple_choice") return null;
+    const gq: GradingQuestion = {
+      questionId: q.questionId,
+      type: q.type,
+      points: q.points,
+      options: q.options,
+      partialCredit: Boolean(q.partialCredit ?? true),
+      answerRules: q.answerRules,
+      puzzle: q.puzzle,
+    };
+    return getMultipleChoiceBreakdown(gq, answer);
   }
 
   function isQuestionFullyCorrect(q: SnapshotQuestion) {
-    const earned = evaluateQuestion(q, answersRef.current[q.questionId]);
-    if (!Number.isFinite(earned)) return false;
-    if (q.type === "open_concept") return earned > 0;
-    return earned >= q.points && q.points > 0;
+    const gq: GradingQuestion = {
+      questionId: q.questionId,
+      type: q.type,
+      points: q.points,
+      options: q.options,
+      partialCredit: Boolean(q.partialCredit ?? true),
+      answerRules: q.answerRules,
+      puzzle: q.puzzle,
+    };
+    return isQuestionFullyCorrectShared(gq, answersRef.current);
   }
 
   async function submitAttempt(
@@ -1210,6 +1195,44 @@ export default function ExamPublicPage() {
         localStorage.removeItem(RESUME_KEY);
       } catch {}
 
+      const serverPerQuestion = (r as Record<string, unknown>)?.perQuestion as
+        | Array<Record<string, unknown>>
+        | undefined;
+      let fallbackPerQuestion:
+        | Array<{
+            questionId: string;
+            earned: number;
+            points: number;
+            fullyCorrect: boolean;
+            ratio: number;
+            multipleChoice?: MultipleChoiceBreakdown | null;
+          }>
+        | undefined;
+      if (!serverPerQuestion || !serverPerQuestion.length) {
+        const display = displayQuestionsRef.current;
+        const ans = answersRef.current;
+        if (display && display.length) {
+          const gqs: GradingQuestion[] = display.map((q) => ({
+            questionId: q.questionId,
+            type: q.type,
+            points: q.points,
+            options: q.options,
+            partialCredit: Boolean(q.partialCredit ?? true),
+            answerRules: q.answerRules,
+            puzzle: q.puzzle,
+          }));
+          const snapshot = calculateGradeSnapshot({
+            displayQuestions: gqs,
+            answers: ans,
+            fraudEnabled: exam?.fraudEnabled !== false,
+            fraudTabSwitches: exam?.fraudEnabled !== false ? fraudCountsRef.current.tab : 0,
+            fraudClipboardAttempts: exam?.fraudEnabled !== false ? fraudCountsRef.current.clip : 0,
+            forceZero: Boolean(opts?.forceZero),
+          });
+          fallbackPerQuestion = snapshot.perQuestion;
+        }
+      }
+
       setResult({
         score5: toNumber(r.score5, 0),
         score50: toNumber(r.score50, 0),
@@ -1221,6 +1244,16 @@ export default function ExamPublicPage() {
         fraudClipboardAttempts: toNumber(r.fraudClipboardAttempts, 0),
         fraudPenalty0to5: toNumber(r.fraudPenalty0to5, 0),
         fraudForcedFail: toBoolean(r.fraudForcedFail, false),
+        perQuestion: serverPerQuestion?.length
+          ? (serverPerQuestion as Array<{
+              questionId: string;
+              earned: number;
+              points: number;
+              fullyCorrect: boolean;
+              ratio: number;
+              multipleChoice?: MultipleChoiceBreakdown | null;
+            }>)
+          : fallbackPerQuestion,
       });
       setSubmitted(true);
       setStep("result");
@@ -2247,6 +2280,189 @@ export default function ExamPublicPage() {
                   </div>
                 </div>
               )}
+
+              {(() => {
+                const byQ = new Map<string, { earned: number; points: number; ratio: number; fullyCorrect: boolean; multipleChoice?: MultipleChoiceBreakdown | null }>();
+                (result.perQuestion ?? []).forEach((p) => byQ.set(p.questionId, p));
+                const orderedQids = questionOrder.length ? questionOrder : displayQuestionsRef.current.map((q) => q.questionId);
+                const visibleQuestions: SnapshotQuestion[] = orderedQids.length
+                  ? orderedQids
+                      .map((id) => displayQuestionsRef.current.find((q) => q.questionId === id))
+                      .filter((q): q is SnapshotQuestion => Boolean(q))
+                  : displayQuestionsRef.current;
+                if (!visibleQuestions.length) return null;
+                function toggle(id: string) {
+                  setResultOpenQuestionIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                }
+                return (
+                  <div className="rounded-3xl border border-zinc-200 bg-white">
+                    <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Detalle por pregunta</p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Abre cada pregunta para ver las opciones y el impacto proporcional en el puntaje.
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setResultOpenQuestionIds(new Set(visibleQuestions.map((q) => q.questionId)))}
+                          className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                        >
+                          Abrir todas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setResultOpenQuestionIds(new Set())}
+                          className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                        >
+                          Cerrar todas
+                        </button>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-zinc-100">
+                      {visibleQuestions.map((q, idx) => {
+                        const detail = byQ.get(q.questionId);
+                        const open = resultOpenQuestionIds.has(q.questionId);
+                        const earned = detail?.earned ?? 0;
+                        const points = detail?.points ?? q.points;
+                        const ratio = detail?.ratio ?? 0;
+                        const pct = Math.round(ratio * 100);
+                        const barColor = ratio >= 1 ? "bg-emerald-500" : ratio > 0 ? "bg-amber-500" : "bg-rose-500";
+                        const pillBadge = ratio >= 1
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          : ratio > 0
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : "border-rose-200 bg-rose-50 text-rose-800";
+                        return (
+                          <div key={q.questionId}>
+                            <button
+                              type="button"
+                              onClick={() => toggle(q.questionId)}
+                              className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-zinc-50/60"
+                            >
+                              <div className={`mt-0.5 rounded-xl border px-2 py-0.5 text-[11px] font-semibold ${pillBadge}`}>
+                                P{idx + 1}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-zinc-900 line-clamp-2">{q.statement}</p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-semibold uppercase tracking-wide text-zinc-700">{q.type}</span>
+                                      <span>
+                                        Puntaje:{" "}
+                                        <strong className="text-zinc-800">
+                                          {earned.toFixed(2)} / {points.toFixed(2)}
+                                        </strong>
+                                      </span>
+                                      <span>
+                                        Porcentaje: <strong className="text-zinc-800">{pct}%</strong>
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 text-zinc-400">{open ? "−" : "+"}</div>
+                                </div>
+                                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+                                  <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                            </button>
+                            {open ? (
+                              <div className="space-y-3 border-t border-zinc-100 bg-zinc-50/40 px-5 py-4">
+                                <MarkdownViewer content={q.statement} className="prose-sm max-w-none text-zinc-800" />
+                                {(q.type === "single_choice" || q.type === "multiple_choice") && Array.isArray(q.options) && q.options.length
+                                  ? (() => {
+                                      const breakdown = q.type === "multiple_choice" ? detail?.multipleChoice : null;
+                                      const impactsByOptId = new Map<string, number>();
+                                      if (breakdown?.options) breakdown.options.forEach((o) => impactsByOptId.set(o.optionId, o.impact));
+                                      const studentAns = answersRef.current[q.questionId];
+                                      const selectedSingle = typeof studentAns === "string" ? studentAns : "";
+                                      const selectedMulti = Array.isArray(studentAns) ? new Set(studentAns.map(String)) : null;
+                                      return (
+                                        <ul className="space-y-2">
+                                          {q.options.map((o) => {
+                                            const wasSelected = selectedMulti
+                                              ? selectedMulti.has(o.id)
+                                              : q.type === "single_choice"
+                                                ? selectedSingle === o.id
+                                                : false;
+                                            const impact = impactsByOptId.get(o.id) ?? 0;
+                                            const isCorrect = Boolean(o.isCorrect);
+                                            let badge = "border-zinc-200 bg-white text-zinc-700";
+                                            if (wasSelected && isCorrect) badge = "border-emerald-300 bg-emerald-50 text-emerald-900";
+                                            else if (wasSelected && !isCorrect) badge = "border-rose-300 bg-rose-50 text-rose-900";
+                                            else if (!wasSelected && isCorrect) badge = "border-sky-300 bg-sky-50 text-sky-900";
+                                            const impactLabel = impact !== 0
+                                              ? `${impact > 0 ? "+" : ""}${(impact * 100).toFixed(0)}% / +${(impact * points).toFixed(2)}`
+                                              : "";
+                                            return (
+                                              <li key={o.id} className={`rounded-2xl border ${badge} px-4 py-3`}>
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div className="min-w-0 flex-1">
+                                                    <p className="text-sm">{o.text}</p>
+                                                  </div>
+                                                  <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]">
+                                                    <div className="flex gap-1">
+                                                      {isCorrect ? (
+                                                        <span className="rounded-full border border-emerald-300 bg-white px-2 py-0.5 font-semibold text-emerald-800">Correcta</span>
+                                                      ) : null}
+                                                      {wasSelected ? (
+                                                        <span className="rounded-full border border-indigo-300 bg-white px-2 py-0.5 font-semibold text-indigo-800">Tu opción</span>
+                                                      ) : null}
+                                                    </div>
+                                                    {impactLabel && q.type === "multiple_choice" ? (
+                                                      <span className={`rounded-full px-2 py-0.5 font-semibold ${impact > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                                        {impactLabel}
+                                                      </span>
+                                                    ) : null}
+                                                  </div>
+                                                </div>
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                      );
+                                    })()
+                                  : null}
+                                {q.type === "multiple_choice" && detail?.multipleChoice
+                                  ? (() => {
+                                      const b = detail.multipleChoice;
+                                      const rows: Array<{ label: string; value: string; tone: string }> = [];
+                                      rows.push({ label: "Correctas encontradas", value: `${b.correctSelected}/${b.totalCorrect}`, tone: "text-emerald-800" });
+                                      rows.push({ label: "Incorrectas marcadas", value: `${b.wrongSelected}/${b.totalIncorrect}`, tone: "text-rose-800" });
+                                      rows.push({ label: "Ganancia parcial", value: `+${(b.gainRatio * 100).toFixed(0)}%`, tone: "text-emerald-800" });
+                                      rows.push({ label: "Pérdida por error", value: `${b.lossRatio > 0 ? "-" : ""}${(b.lossRatio * 100).toFixed(0)}%`, tone: "text-rose-800" });
+                                      rows.push({ label: "Ratio final", value: `${(b.finalRatio * 100).toFixed(0)}%`, tone: b.finalRatio >= 1 ? "text-emerald-900" : b.finalRatio > 0 ? "text-amber-800" : "text-rose-900" });
+                                      return (
+                                        <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Cálculo proporcional</p>
+                                          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                            {rows.map((r) => (
+                                              <div key={r.label} className="rounded-xl bg-zinc-50 px-3 py-2">
+                                                <p className="text-[11px] text-zinc-500">{r.label}</p>
+                                                <p className={`mt-0.5 text-sm font-semibold ${r.tone}`}>{r.value}</p>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()
+                                  : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-2xl border border-zinc-200 bg-white p-4">

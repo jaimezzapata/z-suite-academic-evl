@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import {
+  calculateGradeSnapshot,
+  type GradingQuestion,
+} from "@/lib/exam-grading";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -60,88 +64,6 @@ type SnapshotQuestion = {
   puzzle?: Record<string, unknown>;
 };
 
-const FRAUD_PENALTY_PER_EVENT_0TO5 = 0.2;
-const FRAUD_FAIL_TOTAL_EVENTS = 11;
-
-function evaluateQuestion(q: SnapshotQuestion, answer: unknown) {
-  if (q.type === "single_choice") {
-    const correct = q.options?.find((o) => o.isCorrect)?.id;
-    return answer === correct ? q.points : 0;
-  }
-
-  if (q.type === "multiple_choice") {
-    const selected = Array.isArray(answer) ? (answer as string[]) : [];
-    const correct = (q.options ?? []).filter((o) => o.isCorrect).map((o) => o.id);
-    const same = selected.length === correct.length && selected.every((x) => correct.includes(x));
-    if (same) return q.points;
-
-    if (!q.partialCredit) return 0;
-    const correctSet = new Set(correct);
-    const selectedSet = new Set(selected);
-    const correctCount = correct.length || 1;
-    let correctSelected = 0;
-    let wrongSelected = 0;
-    selectedSet.forEach((id) => {
-      if (correctSet.has(id)) correctSelected += 1;
-      else wrongSelected += 1;
-    });
-    const ratio = Math.max(0, (correctSelected - wrongSelected) / correctCount);
-    return q.points * Math.min(1, ratio);
-  }
-
-  if (q.type === "open_concept") {
-    const text = toString(answer, "").toLowerCase();
-    const rules = q.answerRules ?? {};
-    const keywords = rules.keywords ?? [];
-    const maxWords = typeof rules.maxWords === "number" ? rules.maxWords : 120;
-    const words = text.split(/\s+/).filter(Boolean);
-    if (words.length > maxWords) return 0;
-    const totalWeight = keywords.reduce((acc, x) => acc + (x.weight || 0), 0);
-    if (!totalWeight) return 0;
-    let scoreWeight = 0;
-    keywords.forEach((k) => {
-      if (text.includes(String(k.term || "").toLowerCase())) scoreWeight += k.weight || 0;
-    });
-    const ratio = Math.min(1, scoreWeight / totalWeight);
-    const threshold = typeof rules.passThreshold === "number" ? rules.passThreshold : 0;
-    if (ratio < threshold) return 0;
-    return q.points * ratio;
-  }
-
-  if (q.type === "puzzle_order") {
-    const positions = (answer as Record<string, number>) || {};
-    const items = ((q.puzzle?.items as Array<Record<string, unknown>>) ?? []);
-    if (!items.length) return 0;
-    const ok = items.every((it) => positions[toString(it.id)] === toNumber(it.correctPosition, -1));
-    return ok ? q.points : 0;
-  }
-
-  if (q.type === "puzzle_match") {
-    const pairs = ((q.puzzle?.pairs as Array<Record<string, unknown>>) ?? []);
-    const ans = (answer as Record<string, string>) || {};
-    if (!pairs.length) return 0;
-    const ok = pairs.every((p) => ans[toString(p.leftId)] === toString(p.rightId));
-    return ok ? q.points : 0;
-  }
-
-  if (q.type === "puzzle_cloze") {
-    const slots = ((q.puzzle?.slots as Array<Record<string, unknown>>) ?? []);
-    const ans = (answer as Record<string, string>) || {};
-    if (!slots.length) return 0;
-    const ok = slots.every((s) => ans[toString(s.slotId)] === toString(s.correctOptionId));
-    return ok ? q.points : 0;
-  }
-
-  return 0;
-}
-
-function isQuestionFullyCorrect(q: SnapshotQuestion, answersById: Record<string, unknown>) {
-  const earned = evaluateQuestion(q, answersById[q.questionId]);
-  if (!Number.isFinite(earned)) return false;
-  if (q.type === "open_concept") return earned > 0;
-  return earned >= q.points && q.points > 0;
-}
-
 function orderQuestions(questions: SnapshotQuestion[], questionOrder: string[], limitCount: number) {
   const byId = new Map<string, SnapshotQuestion>();
   questions.forEach((q) => byId.set(q.questionId, q));
@@ -185,7 +107,7 @@ export async function POST(req: Request) {
       type: toString(row.type, "single_choice"),
       points: toNumber(row.points, 1),
       options: Array.isArray(row.options) ? (row.options as SnapshotQuestion["options"]) : undefined,
-      partialCredit: Boolean(row.partialCredit),
+      partialCredit: Boolean(row.partialCredit ?? true),
       answerRules: (row.answerRules as SnapshotQuestion["answerRules"]) ?? undefined,
       puzzle: (row.puzzle as Record<string, unknown>) ?? undefined,
     } satisfies SnapshotQuestion;
@@ -212,24 +134,32 @@ export async function POST(req: Request) {
       ? (attempt.questionOrder as unknown[]).map((x) => (typeof x === "string" ? x : "")).filter(Boolean)
       : [];
     const display = orderQuestions(questions, ord, Math.min(questionCount, questions.length || questionCount));
-
-    const totalQuestionsLocal = display.length;
-    const correctCount = display.reduce((acc, q) => acc + (isQuestionFullyCorrect(q, answers) ? 1 : 0), 0);
-    const valuePerQuestion0to5 = totalQuestionsLocal > 0 ? 5 / totalQuestionsLocal : 0;
-    const valuePerQuestion0to50 = totalQuestionsLocal > 0 ? 50 / totalQuestionsLocal : 0;
-    const score5Raw = correctCount * valuePerQuestion0to5;
-    const score50Raw = correctCount * valuePerQuestion0to50;
+    const displayForGrade: GradingQuestion[] = display.map((q) => ({
+      questionId: q.questionId,
+      type: q.type,
+      points: q.points,
+      options: q.options,
+      partialCredit: q.partialCredit,
+      answerRules: q.answerRules,
+      puzzle: q.puzzle,
+    }));
 
     const fraudTab = fraudEnabled ? toNumber(attempt.fraudTabSwitches, 0) : 0;
     const fraudClip = fraudEnabled ? toNumber(attempt.fraudClipboardAttempts, 0) : 0;
-    const fraudTotal = fraudTab + fraudClip;
-    const fraudPenalty0to5 = fraudEnabled ? Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)) : 0;
+    const grade = calculateGradeSnapshot({
+      displayQuestions: displayForGrade,
+      answers,
+      fraudEnabled,
+      fraudTabSwitches: fraudTab,
+      fraudClipboardAttempts: fraudClip,
+      forceZero: false,
+    });
 
-    const forceZero = fraudEnabled && fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS;
-    const adjusted5 = forceZero ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
-    const adjusted50 = forceZero ? 0 : (adjusted5 / 5) * 50;
-    const score5 = Number(adjusted5.toFixed(2));
-    const score50 = Number(adjusted50.toFixed(2));
+    const forceZero = grade.fraudForcedFail;
+    const totalQuestionsLocal = grade.totalQuestions;
+    const correctCount = grade.correctCount;
+    const score5 = grade.grade0to5;
+    const score50 = grade.grade0to50;
 
     batch.update(d.ref, {
       status: forceZero ? "submitted_fraud" : "submitted_closed",
@@ -237,19 +167,20 @@ export async function POST(req: Request) {
       correctCount,
       questionCount: totalQuestionsLocal,
       questionOrder: ord,
-      questionValue0to5: Number(valuePerQuestion0to5.toFixed(4)),
-      questionValue0to50: Number(valuePerQuestion0to50.toFixed(4)),
-      earnedPoints: Number(correctCount),
-      totalPoints: Number(totalQuestionsLocal),
-      grade0to5Raw: Number(score5Raw.toFixed(2)),
-      grade0to50Raw: Number(score50Raw.toFixed(2)),
+      questionValue0to5: grade.questionValue0to5,
+      questionValue0to50: grade.questionValue0to50,
+      earnedPoints: grade.earnedPoints,
+      totalPoints: grade.totalPoints,
+      grade0to5Raw: grade.grade0to5Raw,
+      grade0to50Raw: grade.grade0to50Raw,
       grade0to5: score5,
       grade0to50: score50,
       fraudTabSwitches: fraudTab,
       fraudClipboardAttempts: fraudClip,
-      fraudPenalty0to5,
+      fraudPenalty0to5: grade.fraudPenalty0to5,
       fraudForcedFail: forceZero,
       gradeMethod: "per_question_equal",
+      perQuestionBreakdown: grade.perQuestion,
       submittedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });

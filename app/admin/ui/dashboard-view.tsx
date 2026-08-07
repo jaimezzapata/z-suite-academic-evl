@@ -500,10 +500,41 @@ function KpiCard({
   );
 }
 
+const DASHBOARD_CACHE_KEY = "zsuite:dashboard:counts-cache:v1";
+const DASHBOARD_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type DashboardCountsCache = {
+  ts: number;
+  counts: DashboardData["counts"];
+};
+
+function readDashboardCountsCache(): DashboardCountsCache | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(DASHBOARD_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as DashboardCountsCache;
+    if (!parsed || !parsed.ts || !parsed.counts) return null;
+    if (Date.now() - parsed.ts > DASHBOARD_CACHE_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardCountsCache(counts: DashboardData["counts"]) {
+  try {
+    if (typeof window === "undefined") return;
+    const payload: DashboardCountsCache = { ts: Date.now(), counts };
+    window.localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(payload));
+  } catch {}
+}
+
 export function DashboardView() {
   const { loading: authLoading, isAdmin, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [teachingLoads, setTeachingLoads] = useState<TeachingLoadRow[]>([]);
@@ -558,7 +589,12 @@ export function DashboardView() {
       }
       setLoading(true);
       setError(null);
+      setWarning(null);
       let issuesHint: string | null = null;
+      const cachedCounts = readDashboardCountsCache();
+      if (cachedCounts) {
+        setData((prev) => ({ ...prev, counts: cachedCounts.counts }));
+      }
       try {
         const debug =
           process.env.NODE_ENV !== "production" ||
@@ -655,14 +691,6 @@ export function DashboardView() {
           getDocs(query(collection(firestore, "attempts"), orderBy("submittedAt", "desc"), limit(500))),
         );
 
-        const [questionsTotalSnap, questionsPublishedSnap, questionsDraftSnap, questionsArchivedSnap] =
-          await Promise.all([
-            getCountFromServer(collection(firestore, "questions")),
-            getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "published"))),
-            getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "draft"))),
-            getCountFromServer(query(collection(firestore, "questions"), where("status", "==", "archived"))),
-          ]);
-
         const entries = Object.entries(fetches);
         const settled = await Promise.allSettled(entries.map(([, p]) => p));
         const issues: string[] = [];
@@ -675,7 +703,7 @@ export function DashboardView() {
 
         if (issues.length) {
           issuesHint = `Sin permisos o reglas bloqueando lecturas en: \n${issues.map((i) => `- ${i}`).join("\n")}`;
-          setError(issuesHint);
+          setWarning(issuesHint);
         }
         if (debug) {
           console.log("[dashboard] settled", {
@@ -929,10 +957,10 @@ export function DashboardView() {
           templatesActive: countFromAggregateSnap(out.templatesActive),
           publishedActive: countFromAggregateSnap(out.publishedActive),
           publishedClosed: countFromAggregateSnap(out.publishedClosed),
-          questionsTotal: questionsTotalSnap.data().count,
-          questionsPublished: questionsPublishedSnap.data().count,
-          questionsDraft: questionsDraftSnap.data().count,
-          questionsArchived: questionsArchivedSnap.data().count,
+          questionsTotal: countFromAggregateSnap(out.questionsTotal),
+          questionsPublished: countFromAggregateSnap(out.questionsPublished),
+          questionsDraft: countFromAggregateSnap(out.questionsDraft),
+          questionsArchived: countFromAggregateSnap(out.questionsArchived),
           subjectsTotal: countFromAggregateSnap(out.subjectsTotal),
           groupsTotal: countFromAggregateSnap(out.groupsTotal),
           fichasTotal: countFromAggregateSnap(out.fichasTotal),
@@ -952,6 +980,10 @@ export function DashboardView() {
           attemptsFraudSubmitted: countFromAggregateSnap(out.attemptsFraudSubmitted),
           attemptsAnnulled: countFromAggregateSnap(out.attemptsAnnulled),
         };
+
+        if (!issues.length) {
+          writeDashboardCountsCache(counts);
+        }
 
         if (!cancelled) {
           setTeachingLoads(teachingLoadRows);
@@ -1293,6 +1325,15 @@ export function DashboardView() {
       {error ? (
         <div className="whitespace-pre-line rounded-2xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
+        </div>
+      ) : null}
+      {warning ? (
+        <div className="whitespace-pre-line rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">Algunas métricas no se pudieron cargar:</div>
+          <div className="mt-1">{warning}</div>
+          <div className="mt-2 text-xs text-amber-800/85">
+            Las métricas mostradas podrían estar parcialmente cacheadas o en 0. Haz clic en Actualizar para reintentar.
+          </div>
         </div>
       ) : null}
 

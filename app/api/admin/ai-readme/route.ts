@@ -126,9 +126,19 @@ function buildPrompts({
           "7) ## Errores comunes y cómo evitarlos",
           "8) ## Resumen (tabla o bullets)",
           "9) ## Referencias (3–6 recursos)",
+          "10) ## Glosario (OBLIGATORIO, aunque haya pocos términos)",
           "No incluyas tabla de contenidos global.",
           "Evita relleno: cada párrafo debe aportar valor didáctico.",
           "Incluye de forma obligatoria el bloque de metadatos del JSON exactamente como se indica, sin cambiar IDs ni cantidades.",
+          "",
+          "INSTRUCCIÓN ESPECIAL PARA EL GLOSARIO:",
+          "- Enumera TODOS los términos técnicos, acrónimos, nombres de funciones, variables, métodos, clases, patrones, protocolos, formatos de archivo, comandos y conceptos específicos del tema que aparezcan en CUALQUIER parte del capítulo (títulos, párrafos, código, tablas, ejemplos, errores comunes, resumen).",
+          "- Si un término se repite varias veces, inclúyelo UNA SOLA VEZ en el glosario.",
+          "- Cada entrada debe ser una fila de tabla con 3 columnas: Término, Categoría, Definición.",
+          "- Categorías sugeridas: Concepto / Función-Método / Sintaxis / Acrónimo / Patrón / Comando / Tipo-dato / Estructura / Propiedad / Error / Archivo-formato / Convención / Otro.",
+          "- La definición debe ser breve (1–2 líneas), precisa y basada SÓLO en cómo se usó ese término dentro del capítulo.",
+          "- Si un término tiene múltiples sentidos en la industria, usa ÚNICAMENTE la acepción que se empleó en el documento.",
+          "- No inventes términos que no aparecen. No omitas términos que sí aparecen.",
         ].join("\n")
       : [
           "Eres un generador experto de README académico (documento estructurado).",
@@ -138,6 +148,15 @@ function buildPrompts({
           "Incluye tabla de contenidos y secciones numeradas si la plantilla lo exige.",
           "No agregues secciones extra fuera de la plantilla.",
           "Incluye de forma obligatoria el bloque de metadatos del JSON exactamente como se indica, sin cambiar IDs ni cantidades.",
+          "",
+          "INSTRUCCIÓN ESPECIAL PARA EL GLOSARIO (la plantilla ya lo incluye, REFUERZO):",
+          "- Enumera TODOS los términos técnicos, acrónimos, nombres de funciones, variables, métodos, clases, patrones, protocolos, formatos de archivo, comandos y conceptos específicos del tema que aparezcan en CUALQUIER parte del documento (títulos, párrafos, código, tablas, ejemplos, errores comunes, resumen, referencias).",
+          "- Si un término se repite varias veces, inclúyelo UNA SOLA VEZ en el glosario.",
+          "- Cada entrada debe ser una fila de tabla con 3 columnas: Término, Categoría, Definición.",
+          "- Categorías sugeridas: Concepto / Función-Método / Sintaxis / Acrónimo / Patrón / Comando / Tipo-dato / Estructura / Propiedad / Error / Archivo-formato / Convención / Otro.",
+          "- La definición debe ser breve (1–2 líneas), precisa y basada SÓLO en cómo se usó ese término dentro del documento.",
+          "- Si un término tiene múltiples sentidos en la industria, usa ÚNICAMENTE la acepción que se empleó en el documento.",
+          "- No inventes términos que no aparecen. No omitas términos que sí aparecen. El glosario debe ser exhaustivo.",
         ].join("\n");
 
   const userPrompt = [

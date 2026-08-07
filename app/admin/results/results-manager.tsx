@@ -5,6 +5,11 @@ import { collection, deleteDoc, doc, getDoc, getDocs, limit, query } from "fireb
 import { Eye, Trash2, Download, FileDown, FileSpreadsheet, Loader2, ArrowUpDown, Printer, FileArchive } from "lucide-react";
 import { firestore } from "@/lib/firebase/client";
 import { MinimalPagination } from "@/app/admin/ui/minimal-pagination";
+import {
+  evaluateQuestion as evaluateQuestionShared,
+  isQuestionFullyCorrect as isQuestionFullyCorrectShared,
+  type GradingQuestion,
+} from "@/lib/exam-grading";
 
 type SnapshotQuestion = {
   id: string;
@@ -168,9 +173,20 @@ function answerPreview(q: SnapshotQuestion, answer: unknown) {
 function reasonWrong(q: SnapshotQuestion, answer: unknown) {
   if (q.type === "single_choice") return "Opción seleccionada no corresponde a la correcta.";
   if (q.type === "multiple_choice") {
-    return q.partialCredit
-      ? "Combinación incompleta o incluye opciones incorrectas."
-      : "Combinación no coincide exactamente con las respuestas correctas.";
+    const selected = Array.isArray(answer) ? (answer as string[]) : [];
+    const correctIds = (q.options ?? []).filter((o) => Boolean(o.isCorrect)).map((o) => o.id);
+    const wrongIds = (q.options ?? []).filter((o) => !Boolean(o.isCorrect)).map((o) => o.id);
+    const correctSet = new Set(correctIds);
+    const wrongSet = new Set(wrongIds);
+    const okSelected = selected.filter((id) => correctSet.has(id)).length;
+    const badSelected = selected.filter((id) => wrongSet.has(id)).length;
+    const missing = correctIds.length - okSelected;
+    const hasExtra = badSelected > 0;
+    const parts: string[] = [];
+    if (missing > 0) parts.push(`faltan ${missing} correcta${missing > 1 ? "s" : ""}`);
+    if (hasExtra) parts.push(`${badSelected} opción${badSelected > 1 ? "es" : ""} incorrecta${badSelected > 1 ? "s" : ""} marcada${badSelected > 1 ? "s" : ""}`);
+    if (!parts.length) return "Combinación no coincide con las respuestas correctas.";
+    return `Calificación parcial: ${parts.join(", ")}.`;
   }
   if (q.type === "open_concept") {
     const text = toString(answer, "").toLowerCase();
@@ -261,82 +277,24 @@ function openConceptFeedback(q: SnapshotQuestion, answer: unknown) {
   return [matchedHint, missingHint].filter(Boolean).join(" ");
 }
 
+function gradingQuestionFrom(q: SnapshotQuestion): GradingQuestion {
+  return {
+    questionId: q.questionId,
+    type: q.type,
+    points: q.points,
+    options: q.options,
+    partialCredit: Boolean(q.partialCredit ?? true),
+    answerRules: q.answerRules,
+    puzzle: q.puzzle,
+  };
+}
+
 function evaluateQuestion(q: SnapshotQuestion, answer: unknown) {
-  if (q.type === "single_choice") {
-    const correct = q.options?.find((o) => o.isCorrect)?.id;
-    return answer === correct ? q.points : 0;
-  }
-
-  if (q.type === "multiple_choice") {
-    const selected = Array.isArray(answer) ? (answer as string[]) : [];
-    const correct = (q.options ?? []).filter((o) => o.isCorrect).map((o) => o.id);
-    const same = selected.length === correct.length && selected.every((x) => correct.includes(x));
-    if (same) return q.points;
-
-    if (!q.partialCredit) return 0;
-    const correctSet = new Set(correct);
-    const selectedSet = new Set(selected);
-    const correctCount = correct.length || 1;
-    let correctSelected = 0;
-    let wrongSelected = 0;
-    selectedSet.forEach((id) => {
-      if (correctSet.has(id)) correctSelected += 1;
-      else wrongSelected += 1;
-    });
-    const ratio = Math.max(0, (correctSelected - wrongSelected) / correctCount);
-    return q.points * Math.min(1, ratio);
-  }
-
-  if (q.type === "open_concept") {
-    const text = toString(answer, "").toLowerCase();
-    const keywords = q.answerRules?.keywords ?? [];
-    const maxWords = q.answerRules?.maxWords ?? 120;
-    const words = text.split(/\s+/).filter(Boolean);
-    if (words.length > maxWords) return 0;
-    const totalWeight = keywords.reduce((acc, x) => acc + (x.weight || 0), 0);
-    if (!totalWeight) return 0;
-    let scoreWeight = 0;
-    keywords.forEach((k) => {
-      if (text.includes(k.term.toLowerCase())) scoreWeight += k.weight;
-    });
-    const ratio = Math.min(1, scoreWeight / totalWeight);
-    const threshold = typeof q.answerRules?.passThreshold === "number" ? q.answerRules.passThreshold : 0;
-    if (ratio < threshold) return 0;
-    return q.points * ratio;
-  }
-
-  if (q.type === "puzzle_order") {
-    const positions = (answer as Record<string, number>) || {};
-    const items = ((q.puzzle?.items as Array<Record<string, unknown>>) ?? []);
-    if (!items.length) return 0;
-    const ok = items.every((it) => positions[toString(it.id)] === toNumber(it.correctPosition, -1));
-    return ok ? q.points : 0;
-  }
-
-  if (q.type === "puzzle_match") {
-    const pairs = ((q.puzzle?.pairs as Array<Record<string, unknown>>) ?? []);
-    const ans = (answer as Record<string, string>) || {};
-    if (!pairs.length) return 0;
-    const ok = pairs.every((p) => ans[toString(p.leftId)] === toString(p.rightId));
-    return ok ? q.points : 0;
-  }
-
-  if (q.type === "puzzle_cloze") {
-    const slots = ((q.puzzle?.slots as Array<Record<string, unknown>>) ?? []);
-    const ans = (answer as Record<string, string>) || {};
-    if (!slots.length) return 0;
-    const ok = slots.every((s) => ans[toString(s.slotId)] === toString(s.correctOptionId));
-    return ok ? q.points : 0;
-  }
-
-  return 0;
+  return evaluateQuestionShared(gradingQuestionFrom(q), answer);
 }
 
 function isFullyCorrect(q: SnapshotQuestion, answer: unknown) {
-  const earned = evaluateQuestion(q, answer);
-  if (!Number.isFinite(earned)) return false;
-  if (q.type === "open_concept") return earned > 0;
-  return earned >= q.points && q.points > 0;
+  return isQuestionFullyCorrectShared(gradingQuestionFrom(q), { [q.questionId]: answer });
 }
 
 export function ResultsManager() {
@@ -411,7 +369,7 @@ export function ResultsManager() {
                   statement: toString(row.statement, ""),
                   points: toNumber(row.points, 1),
                   options: Array.isArray(row.options) ? (row.options as SnapshotQuestion["options"]) : undefined,
-                  partialCredit: Boolean(row.partialCredit),
+                  partialCredit: Boolean(row.partialCredit ?? true),
                   answerRules: (row.answerRules as SnapshotQuestion["answerRules"]) ?? undefined,
                   puzzle: (row.puzzle as Record<string, unknown>) ?? undefined,
                 } satisfies SnapshotQuestion;

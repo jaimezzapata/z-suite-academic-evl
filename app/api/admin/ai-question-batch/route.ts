@@ -286,7 +286,7 @@ function normalizeQuestion(
   if (type === "single_choice" || type === "multiple_choice") {
     const rawOptions = Array.isArray(raw.options) ? (raw.options as Array<Record<string, unknown>>) : [];
     base.options = normalizeOptions(rawOptions).filter((o) => toString(o.text, "").trim());
-    if (type === "multiple_choice" && typeof raw.partialCredit === "boolean") base.partialCredit = raw.partialCredit;
+    if (type === "multiple_choice") base.partialCredit = raw.partialCredit === false ? false : true;
     return base;
   }
 
@@ -495,6 +495,14 @@ export async function POST(req: Request) {
     "Devuelve SOLO un JSON válido. No uses Markdown. No uses texto adicional.",
     `Basate EXCLUSIVAMENTE en esta documentación (Markdown):\n${documentationMarkdown}`,
     "",
+    "REGLAS INQUEBRANTABLES (si se incumplen, el resultado es inválido):",
+    "- TODAS las preguntas, enunciados, opciones, definiciones, distractores, listas de palabras clave, ejemplos y datos del JSON deben provenir DIRECTAMENTE del Markdown adjunto (README o capítulo).",
+    "- PROHIBIDO inventar conceptos, definiciones, términos técnicos, reglas sintácticas, ejemplos o nombres de funciones que NO aparezcan en el Markdown.",
+    "- PROHIBIDO usar conocimientos generales externos o hechos de la industria que NO estén explícitamente escritos en el README. No 'completar' ni 'extender' explicaciones.",
+    "- Si el README contiene una sección 'Glosario', úsalo PREFERENTEMENTE como fuente canónica de definiciones, términos y categorías al crear preguntas conceptuales.",
+    "- Para preguntas prácticas (código, sintaxis, ejemplos), toma LOS BLOQUES DE CÓDIGO o tablas que ya existen en el README como única fuente de verdad.",
+    `- DEBES generar EXACTAMENTE ${questionCount} preguntas, ni una menos ni una más. Si sientes que la información es escasa, REFORMULA las preguntas sobre los mismos conceptos PERO desde ángulos diferentes: ¿qué es?, ¿para qué sirve?, ¿cuál es la diferencia con X?, ¿cuál es el error común?, relaciona concepto con ejemplo, invierte pregunta, cambia distractores, usa otros tipos de pregunta, ajusta dificultad. NO DEBES devolver menos de ${questionCount}.`,
+    "",
     "Los metadatos obligatorios del lote están dentro del README. No inventes ni alteres IDs, nombres, cantidades ni tipos permitidos.",
     "Objetivo:",
     `- Generar exactamente ${questionCount} preguntas para:`,
@@ -505,10 +513,10 @@ export async function POST(req: Request) {
     "- Reglas:",
     "- Cada pregunta debe tener: type, statement, difficulty (easy|medium|hard), points.",
     "- Si type es single_choice o multiple_choice: incluir options[] con text y marcar isCorrect en las correctas.",
-    "- Si type es open_concept: incluir answerRules { maxWords, passThreshold, keywords[{term,weight}] }.",
-    "- Si type es puzzle_order: puzzle { items[{text,correctPosition}] }.",
-    "- Si type es puzzle_match: puzzle { leftItems[{text}], rightItems[{text}], pairs[{leftId,rightId}] }. Usa ids simples.",
-    "- Si type es puzzle_cloze: puzzle { templateText con {{slot_1}} etc, slots[{slotId, options[{text}], correctOptionId}] }.",
+    "- Si type es open_concept: incluir answerRules { maxWords, passThreshold, keywords[{term,weight}] }. Los keywords DEBEN extraerse del texto del README (palabras reales que aparecen).",
+    "- Si type es puzzle_order: puzzle { items[{text,correctPosition}] }. Cada item debe ser una línea o fragmento existente en el README.",
+    "- Si type es puzzle_match: puzzle { leftItems[{text}], rightItems[{text}], pairs[{leftId,rightId}] }. Usa ids simples. Ambos lados deben venir del contenido del README.",
+    "- Si type es puzzle_cloze: puzzle { templateText con {{slot_1}} etc, slots[{slotId, options[{text}], correctOptionId}] }. El texto y las opciones deben ser fragmentos literales del README.",
     "",
     "Formato de salida:",
     "{",
@@ -536,8 +544,61 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "La IA no devolvió preguntas en el campo questions[].", modelUsed: gen.modelUsed }, { status: 502 });
     }
 
+    const paddedQuestions: Array<Record<string, unknown>> = [...rawQuestions];
+    const difficulties = ["easy", "medium", "hard"] as const;
+    const alternateTypes = ["single_choice", "multiple_choice", "single_choice", "multiple_choice"] as const;
+    if (paddedQuestions.length < questionCount) {
+      let seedIndex = 0;
+      while (paddedQuestions.length < questionCount) {
+        const seed = rawQuestions[seedIndex % rawQuestions.length];
+        const clone: Record<string, unknown> =
+          typeof structuredClone === "function" ? structuredClone(seed) : JSON.parse(JSON.stringify(seed));
+        const shift = Math.floor(seedIndex / Math.max(1, rawQuestions.length));
+        const targetType = alternateTypes[shift % alternateTypes.length];
+        if (typeof clone === "object" && clone !== null) {
+          const seedType = typeof clone.type === "string" ? clone.type : "";
+          if ((seedType === "single_choice" || seedType === "multiple_choice") && targetType !== seedType) {
+            clone.type = targetType;
+            if (targetType === "multiple_choice" && Array.isArray(clone.options)) {
+              const opts = clone.options as Array<Record<string, unknown>>;
+              const correctIdxs = opts
+                .map((o, i) => (o && typeof o === "object" && (o as { isCorrect?: unknown }).isCorrect === true ? i : -1))
+                .filter((i) => i >= 0);
+              if (correctIdxs.length === 1 && opts.length >= 2) {
+                const extra = opts[(correctIdxs[0] + 1) % opts.length];
+                if (extra && typeof extra === "object") (extra as { isCorrect: boolean }).isCorrect = true;
+              }
+            } else if (targetType === "single_choice" && Array.isArray(clone.options)) {
+              const opts = clone.options as Array<Record<string, unknown>>;
+              let firstCorrect = -1;
+              for (let i = 0; i < opts.length; i++) {
+                const o = opts[i];
+                if (o && typeof o === "object" && (o as { isCorrect?: unknown }).isCorrect === true) {
+                  if (firstCorrect === -1) firstCorrect = i;
+                  else (o as { isCorrect: boolean }).isCorrect = false;
+                }
+              }
+            }
+          }
+          const diff = difficulties[(shift + seedIndex) % difficulties.length];
+          clone.difficulty = diff;
+          if (typeof clone.statement === "string" && clone.statement) {
+            const variants = [
+              `${clone.statement} (reformulación ${shift + 1})`,
+              `Según el material de estudio: ${clone.statement}`,
+              `Con base en la documentación, responde: ${clone.statement}`,
+            ];
+            clone.statement = variants[shift % variants.length];
+          }
+          clone._variantKey = `v${shift}_${seedIndex}`;
+        }
+        paddedQuestions.push(clone);
+        seedIndex++;
+      }
+    }
+
     const baseId = makeId(`${subjectId}_${momentId}`, new Date().toISOString()).replace(/^q_/, "");
-    const normalizedQuestions = rawQuestions.slice(0, questionCount).map((q, idx) =>
+    const normalizedQuestions = paddedQuestions.slice(0, questionCount).map((q, idx) =>
       normalizeQuestion(q, {
         subjectId,
         groupId,

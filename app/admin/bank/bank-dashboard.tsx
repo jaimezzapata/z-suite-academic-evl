@@ -662,7 +662,7 @@ export function BankDashboard() {
         momentIds: momentIds as string[],
         tags: tags as string[],
         options: normalizedOptions,
-        partialCredit: row.partialCredit === true,
+        partialCredit: row.partialCredit === false ? false : type === "multiple_choice" ? true : row.partialCredit === true,
         answerRules,
         puzzleText,
       };
@@ -930,7 +930,7 @@ export function BankDashboard() {
       momentIds: selectedMomentId ? [selectedMomentId] : defaultMoment,
       tags: [],
       options: defaultOptions,
-      partialCredit: false,
+      partialCredit: type === "multiple_choice",
       answerRules: { maxWords: 120, passThreshold: 0, keywords: [{ term: "", weight: 1 }] },
       puzzleText: "{}",
     };
