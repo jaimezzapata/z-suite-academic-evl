@@ -48,6 +48,115 @@ function isQuotaExceededError(message: string) {
   return msg.includes("quota exceeded") || msg.includes("exceeded your current quota") || msg.includes("rate limit");
 }
 
+function normalizeForGrounding(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`~\-|!\\\[\](){}]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenize(text: string, minLen = 3) {
+  const norm = normalizeForGrounding(text);
+  const stop = new Set([
+    "que","los","las","del","una","unos","unas","por","para","pero","sino","como","este","esta","estos","estas",
+    "esto","aquel","aquella","aquellos","aquellas","hace","hacia","tambien","tampoco","entre","durante","sobre",
+    "todo","todos","toda","todas","cual","cuales","donde","cuando","cuanto","cuanta","otros","otra","ante",
+    "desde","hasta","contra","sin","mientras","despues","antes","aunque","entonces","luego","ahora","mismo",
+    "misma","ellos","ellas","nosotros","vosotros","usted","tienen","tiene","hayan","hayas","ser","estar",
+    "esta","estas","este","estos","sido","siendo","tambien","aqui","alli","cerca","lejos","parte","sido",
+    "sido","muy","mas","menos","poco","mucho","tan","casi","solo","todo","nada","algo","nunca","siempre",
+  ]);
+  return new Set(
+    norm
+      .split(/\s+/)
+      .filter((w) => w.length >= minLen && !stop.has(w)),
+  );
+}
+
+type ReadmeGroundingIndex = {
+  normalizedFull: string;
+  tokenSet: Set<string>;
+};
+
+function buildReadmeGroundingIndex(markdown: string): ReadmeGroundingIndex {
+  const normalized = normalizeForGrounding(markdown);
+  return { normalizedFull: normalized, tokenSet: tokenize(markdown, 3) };
+}
+
+function overlapRatio(text: string, index: ReadmeGroundingIndex): number {
+  const tokens = tokenize(text, 3);
+  if (tokens.size === 0) return 0;
+  let matched = 0;
+  tokens.forEach((t) => {
+    if (index.tokenSet.has(t) || index.normalizedFull.includes(` ${t} `) || index.normalizedFull.startsWith(t + " ") || index.normalizedFull.endsWith(" " + t)) {
+      matched += 1;
+    }
+  });
+  return matched / tokens.size;
+}
+
+function validateQuestionGrounding(q: Record<string, unknown>, index: ReadmeGroundingIndex): { ok: boolean; reason?: string } {
+  const type = toString(q.type, "");
+  const statement = toString(q.statement, "");
+  if (!statement) return { ok: false, reason: "statement vacío" };
+
+  const quote = toString(q.sourceQuote, "");
+  const quoteOk = quote.length >= 10 && index.normalizedFull.includes(normalizeForGrounding(quote));
+
+  const statementTokens = tokenize(statement, 3);
+  const statementOverlap = overlapRatio(statement, index);
+  const significantHits = [...statementTokens].filter((t) => index.tokenSet.has(t) || index.normalizedFull.includes(` ${t} `)).length;
+
+  if (significantHits < 3) {
+    return { ok: false, reason: `statement tiene solo ${significantHits} términos del README (>=3 requeridos)` };
+  }
+  if (statementOverlap < 0.45) {
+    return { ok: false, reason: `statement coincide solo en ${Math.round(statementOverlap * 100)}% del vocabulario` };
+  }
+
+  if (type === "single_choice" || type === "multiple_choice") {
+    const opts = Array.isArray(q.options) ? (q.options as Array<Record<string, unknown>>) : [];
+    if (!opts.length) return { ok: false, reason: "sin opciones" };
+    for (const o of opts) {
+      const text = toString(o?.text, "");
+      if (!text) continue;
+      const ratio = overlapRatio(text, index);
+      const tokenHits = [...tokenize(text, 3)].filter((t) => index.tokenSet.has(t)).length;
+      if (text.length > 15 && tokenHits < 2 && ratio < 0.25) {
+        return { ok: false, reason: `opción "${text.slice(0, 60)}" no está sustentada en README` };
+      }
+    }
+    const correctOptions = opts.filter((o) => o && typeof o === "object" && (o as { isCorrect?: unknown }).isCorrect === true);
+    for (const o of correctOptions) {
+      const ratio = overlapRatio(toString(o.text, ""), index);
+      if (ratio < 0.35) return { ok: false, reason: "opción correcta no coincide con el README" };
+    }
+  }
+
+  if (type === "open_concept") {
+    const rules = (q.answerRules as Record<string, unknown> | undefined) ?? {};
+    const kws = Array.isArray(rules.keywords) ? (rules.keywords as Array<Record<string, unknown>>) : [];
+    for (const kw of kws) {
+      const term = toString(kw?.term, "").trim();
+      if (!term) continue;
+      if (!index.normalizedFull.includes(normalizeForGrounding(term))) {
+        return { ok: false, reason: `keyword "${term}" no aparece en el README` };
+      }
+    }
+  }
+
+  if (quote && !quoteOk) {
+    return { ok: false, reason: "sourceQuote no es substring del README" };
+  }
+
+  return { ok: true };
+}
+
 async function listGeminiModels(apiKey: string, baseUrl: string) {
   const res = await fetch(`${baseUrl}/models`, {
     method: "GET",
@@ -287,6 +396,7 @@ function normalizeQuestion(
     const rawOptions = Array.isArray(raw.options) ? (raw.options as Array<Record<string, unknown>>) : [];
     base.options = normalizeOptions(rawOptions).filter((o) => toString(o.text, "").trim());
     if (type === "multiple_choice") base.partialCredit = raw.partialCredit === false ? false : true;
+    delete (raw as Record<string, unknown>).sourceQuote;
     return base;
   }
 
@@ -375,7 +485,7 @@ async function generateWithGemini(params: {
       headers: { "content-type": "application/json", "x-goog-api-key": params.apiKey },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: params.prompt }] }],
-        generationConfig: { temperature: 0.2 },
+        generationConfig: { temperature: 0.12, topP: 0.9, topK: 40, maxOutputTokens: 32000 },
       }),
     });
   }
@@ -496,12 +606,18 @@ export async function POST(req: Request) {
     `Basate EXCLUSIVAMENTE en esta documentación (Markdown):\n${documentationMarkdown}`,
     "",
     "REGLAS INQUEBRANTABLES (si se incumplen, el resultado es inválido):",
-    "- TODAS las preguntas, enunciados, opciones, definiciones, distractores, listas de palabras clave, ejemplos y datos del JSON deben provenir DIRECTAMENTE del Markdown adjunto (README o capítulo).",
-    "- PROHIBIDO inventar conceptos, definiciones, términos técnicos, reglas sintácticas, ejemplos o nombres de funciones que NO aparezcan en el Markdown.",
-    "- PROHIBIDO usar conocimientos generales externos o hechos de la industria que NO estén explícitamente escritos en el README. No 'completar' ni 'extender' explicaciones.",
+    "- PRINCIPIO DE NO INVENCIÓN (estricto): No puedes inventar NADA. NINGÚN concepto, término, definición, ejemplo, comando, nombre de archivo, versión, regla, persona ni hecho puede aparecer a menos que aparezca LITERALMENTE (o como derivado directo de un párrafo) en el Markdown adjunto.",
+    "- PRINCIPIO DE CITA OBLIGATORIA: TODA pregunta DEBE estar anclada a un fragmento concreto del README. Incluye en cada pregunta un campo EXTRA temporal llamado 'sourceQuote' que sea una cadena LITERAL (copia + pega, sin reescribir) de al menos 15 y máximo 120 caracteres EXTRAÍDA DIRECTAMENTE del README y que justifique la respuesta correcta. Si no existe ese fragmento en el README, NO CREES la pregunta.",
+    "- PROHIBIDO usar conocimientos generales, cultura general o hechos de la industria NO explícitos en el README. Si el README no menciona 'HEAD' en Git, no puedes preguntar por HEAD aunque tú lo sepas.",
     "- Si el README contiene una sección 'Glosario', úsalo PREFERENTEMENTE como fuente canónica de definiciones, términos y categorías al crear preguntas conceptuales.",
-    "- Para preguntas prácticas (código, sintaxis, ejemplos), toma LOS BLOQUES DE CÓDIGO o tablas que ya existen en el README como única fuente de verdad.",
-    `- DEBES generar EXACTAMENTE ${questionCount} preguntas, ni una menos ni una más. Si sientes que la información es escasa, REFORMULA las preguntas sobre los mismos conceptos PERO desde ángulos diferentes: ¿qué es?, ¿para qué sirve?, ¿cuál es la diferencia con X?, ¿cuál es el error común?, relaciona concepto con ejemplo, invierte pregunta, cambia distractores, usa otros tipos de pregunta, ajusta dificultad. NO DEBES devolver menos de ${questionCount}.`,
+    "- Para preguntas prácticas (código, sintaxis, ejemplos), toma LOS BLOQUES DE CÓDIGO o tablas que ya existen en el README como única fuente de verdad. No inventes comandos ni sintaxis.",
+    "- VERIFICACIÓN ANTES DE ESCRIBIR CADA PREGUNTA (mental check):",
+    "  1) ¿Aparece literalmente en el README el término/concepto central del enunciado? Si NO → descártala.",
+    "  2) ¿La respuesta correcta está explícita o se sigue estrictamente de un párrafo? Si NO → descártala.",
+    "  3) ¿Tengo un fragmento >= 15 chars del README que lo demuestre? Si NO → descártala.",
+    "  4) ¿Los distractores (opciones incorrectas) tampoco inventan conceptos nuevos? Si inventan → descártala.",
+    "",
+    `- DEBES generar EXACTAMENTE ${questionCount} preguntas, ni una menos ni una más. Si sientes que la información es escasa, REFORMULA las preguntas sobre los MISMOS conceptos QUE SÍ ESTÁN en el README PERO desde ángulos diferentes: ¿qué es?, ¿para qué sirve?, ¿cuál es la diferencia con X? (si X está en el README), ¿cuál es el error común?, relaciona concepto con ejemplo (del README), invierte pregunta, cambia distractores (siempre del README), usa otros tipos de pregunta, ajusta dificultad. NO DEBES devolver menos de ${questionCount}.`,
     "",
     "Los metadatos obligatorios del lote están dentro del README. No inventes ni alteres IDs, nombres, cantidades ni tipos permitidos.",
     "Objetivo:",
@@ -511,16 +627,16 @@ export async function POST(req: Request) {
     `  - Momento: ${momentName}`,
     `- Tipos permitidos: ${allowedQuestionTypes.join(", ")}`,
     "- Reglas:",
-    "- Cada pregunta debe tener: type, statement, difficulty (easy|medium|hard), points.",
-    "- Si type es single_choice o multiple_choice: incluir options[] con text y marcar isCorrect en las correctas.",
-    "- Si type es open_concept: incluir answerRules { maxWords, passThreshold, keywords[{term,weight}] }. Los keywords DEBEN extraerse del texto del README (palabras reales que aparecen).",
+    "- Cada pregunta debe tener: type, statement, difficulty (easy|medium|hard), points, y SOLO en esta generación el campo EXTRA 'sourceQuote' (después se elimina automáticamente).",
+    "- Si type es single_choice o multiple_choice: incluir options[] con text y marcar isCorrect en las correctas. CADA opción (tanto correcta como incorrecta) debe provenir de textos del README.",
+    "- Si type es open_concept: incluir answerRules { maxWords, passThreshold, keywords[{term,weight}] }. Los keywords DEBEN ser palabras reales que aparezcan en el README.",
     "- Si type es puzzle_order: puzzle { items[{text,correctPosition}] }. Cada item debe ser una línea o fragmento existente en el README.",
     "- Si type es puzzle_match: puzzle { leftItems[{text}], rightItems[{text}], pairs[{leftId,rightId}] }. Usa ids simples. Ambos lados deben venir del contenido del README.",
     "- Si type es puzzle_cloze: puzzle { templateText con {{slot_1}} etc, slots[{slotId, options[{text}], correctOptionId}] }. El texto y las opciones deben ser fragmentos literales del README.",
     "",
     "Formato de salida:",
     "{",
-    '  "questions": [ ... ]',
+    '  "questions": [ { "type": "...", "statement": "...", "difficulty": "...", "points": 1, "sourceQuote": "frase literal de al menos 15 chars del README", ... }, ... ]',
     "}",
   ].join("\n");
 
@@ -544,16 +660,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "La IA no devolvió preguntas en el campo questions[].", modelUsed: gen.modelUsed }, { status: 502 });
     }
 
-    const paddedQuestions: Array<Record<string, unknown>> = [...rawQuestions];
+    const readmeIndex = buildReadmeGroundingIndex(documentationMarkdown);
+    const groundedChecks = rawQuestions.map((q) => ({ q, check: validateQuestionGrounding(q, readmeIndex) }));
+    const groundedQuestions = groundedChecks.filter((x) => x.check.ok).map((x) => x.q);
+    const droppedReasons = groundedChecks.filter((x) => !x.check.ok).map((x, i) => `Q${i + 1}: ${x.check.reason ?? "sin justificación"}`);
+
+    let paddedQuestions: Array<Record<string, unknown>> = [...groundedQuestions];
     const difficulties = ["easy", "medium", "hard"] as const;
     const alternateTypes = ["single_choice", "multiple_choice", "single_choice", "multiple_choice"] as const;
+    const seedQuestions = groundedQuestions.length > 0 ? groundedQuestions : rawQuestions;
+
     if (paddedQuestions.length < questionCount) {
       let seedIndex = 0;
       while (paddedQuestions.length < questionCount) {
-        const seed = rawQuestions[seedIndex % rawQuestions.length];
+        const seed = seedQuestions[seedIndex % seedQuestions.length];
         const clone: Record<string, unknown> =
           typeof structuredClone === "function" ? structuredClone(seed) : JSON.parse(JSON.stringify(seed));
-        const shift = Math.floor(seedIndex / Math.max(1, rawQuestions.length));
+        const shift = Math.floor(seedIndex / Math.max(1, seedQuestions.length));
         const targetType = alternateTypes[shift % alternateTypes.length];
         if (typeof clone === "object" && clone !== null) {
           const seedType = typeof clone.type === "string" ? clone.type : "";
@@ -642,7 +765,18 @@ export async function POST(req: Request) {
       ],
     };
 
-    return NextResponse.json({ ok: true, provider: "gemini", modelUsed: gen.modelUsed, payload }, { status: 200 });
+    return NextResponse.json({
+      ok: true,
+      provider: "gemini",
+      modelUsed: gen.modelUsed,
+      groundingStats: {
+        generated: rawQuestions.length,
+        grounded: groundedQuestions.length,
+        dropped: rawQuestions.length - groundedQuestions.length,
+        droppedReasons: droppedReasons.slice(0, 12),
+      },
+      payload,
+    }, { status: 200 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "No fue posible generar el JSON de preguntas.";
     return NextResponse.json({ error: msg }, { status: 500 });

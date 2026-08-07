@@ -57,11 +57,12 @@ export async function POST(req: Request) {
 
   const questions = qSnap.docs.map((d) => {
     const row = d.data() as Record<string, unknown>;
+    const type = toString(row.type, "single_choice");
     return {
       id: d.id,
       questionId: toString(row.questionId, d.id),
       order: toNumber(row.order, 0),
-      type: toString(row.type, "single_choice"),
+      type,
       statement: toString(row.statement, ""),
       points: toNumber(row.points, 1),
       options: Array.isArray(row.options) ? row.options : undefined,
