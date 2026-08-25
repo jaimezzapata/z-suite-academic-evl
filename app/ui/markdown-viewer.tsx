@@ -273,8 +273,8 @@ export const MarkdownViewer = memo(function MarkdownViewer({
       return;
     }
 
-    let rafId: ReturnType<typeof requestAnimationFrame> | 0 = 0;
-    let toId: ReturnType<typeof window.setTimeout> | 0 = 0;
+    let rafId: number = 0;
+    let toId: number = 0;
     const run = () => {
       if (!rootRef.current) return;
       unwrapMarks(rootRef.current);
@@ -282,7 +282,7 @@ export const MarkdownViewer = memo(function MarkdownViewer({
       lastHighlightQueryRef.current = stable;
     };
     rafId = window.requestAnimationFrame(() => {
-      toId = window.setTimeout(run, 30);
+      toId = Number(window.setTimeout(run, 30));
     });
     return () => {
       if (rafId) window.cancelAnimationFrame(rafId);
