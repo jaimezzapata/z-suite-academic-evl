@@ -2485,7 +2485,7 @@ export default function ExamPublicPage() {
                             </button>
                             {open ? (
                               <div className="space-y-3 border-t border-zinc-100 bg-zinc-50/40 px-5 py-4">
-                                <MarkdownViewer content={q.statement} className="prose-sm max-w-none text-zinc-800" />
+                                <MarkdownViewer markdown={q.statement} className="prose-sm max-w-none text-zinc-800" />
                                 {(q.type === "single_choice" || q.type === "multiple_choice") && Array.isArray(q.options) && q.options.length
                                   ? (() => {
                                       const breakdown = q.type === "multiple_choice" ? detail?.multipleChoice : null;
