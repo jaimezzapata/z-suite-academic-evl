@@ -273,9 +273,8 @@ export const MarkdownViewer = memo(function MarkdownViewer({
       return;
     }
 
-    // Dar un frame para que React haya terminado de pintar SyntaxHighlighter/MD
-    let rafId = 0;
-    let toId: ReturnType<typeof setTimeout> | null = null;
+    let rafId: ReturnType<typeof requestAnimationFrame> | 0 = 0;
+    let toId: ReturnType<typeof window.setTimeout> | 0 = 0;
     const run = () => {
       if (!rootRef.current) return;
       unwrapMarks(rootRef.current);
@@ -286,7 +285,7 @@ export const MarkdownViewer = memo(function MarkdownViewer({
       toId = window.setTimeout(run, 30);
     });
     return () => {
-      window.cancelAnimationFrame(rafId);
+      if (rafId) window.cancelAnimationFrame(rafId);
       if (toId) window.clearTimeout(toId);
     };
   }, [highlightQuery, markdown]);
