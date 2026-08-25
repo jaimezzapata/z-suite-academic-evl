@@ -192,7 +192,12 @@ export type GradeSnapshotInput = {
 };
 
 export const FRAUD_PENALTY_PER_EVENT_0TO5 = 0.2;
+export const FRAUD_GRACE_EVENTS = 2;
 export const FRAUD_FAIL_TOTAL_EVENTS = 11;
+
+export function countPenalizableFraudEvents(total: number, grace = FRAUD_GRACE_EVENTS): number {
+  return Math.max(0, Number(total || 0) - Math.max(0, grace));
+}
 
 export type GradeSnapshotResult = {
   correctCount: number;
@@ -207,6 +212,8 @@ export type GradeSnapshotResult = {
   grade0to50: number;
   fraudTabSwitches: number;
   fraudClipboardAttempts: number;
+  fraudPenalizableEvents: number;
+  fraudGraceRemaining: number;
   fraudPenalty0to5: number;
   fraudForcedFail: boolean;
   perQuestion: Array<{
@@ -253,7 +260,9 @@ export function calculateGradeSnapshot(input: GradeSnapshotInput): GradeSnapshot
   const totalPoints = Number(totalQuestions);
 
   const fraudTotal = fraudTabSwitches + fraudClipboardAttempts;
-  const fraudPenalty0to5 = fraudEnabled ? Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)) : 0;
+  const fraudPenalizableEvents = fraudEnabled ? countPenalizableFraudEvents(fraudTotal, FRAUD_GRACE_EVENTS) : 0;
+  const fraudGraceRemaining = fraudEnabled ? Math.max(0, FRAUD_GRACE_EVENTS - fraudTotal) : FRAUD_GRACE_EVENTS;
+  const fraudPenalty0to5 = fraudEnabled ? Number((fraudPenalizableEvents * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)) : 0;
   const forcedFail = fraudEnabled ? Boolean(forceZero) || fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS : false;
 
   const adjusted5 = forcedFail ? 0 : Math.max(0, score5Raw - fraudPenalty0to5);
@@ -272,6 +281,8 @@ export function calculateGradeSnapshot(input: GradeSnapshotInput): GradeSnapshot
     grade0to50: Number(adjusted50.toFixed(2)),
     fraudTabSwitches,
     fraudClipboardAttempts,
+    fraudPenalizableEvents,
+    fraudGraceRemaining,
     fraudPenalty0to5,
     fraudForcedFail: forcedFail,
     perQuestion,

@@ -5,8 +5,134 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Info, Copy, Check } from "lucide-react";
-import { isValidElement, memo, useMemo, useState } from "react";
+import { isValidElement, memo, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+
+function normalizeText(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseHighlightTerms(query: string): string[] {
+  return Array.from(
+    new Set(
+      normalizeText(query)
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .filter((t) => t.length >= 2),
+    ),
+  );
+}
+
+function unwrapMarks(root: HTMLElement) {
+  const marks = Array.from(root.querySelectorAll("mark[data-docs-highlight]"));
+  for (const mark of marks) {
+    const parent = mark.parentNode;
+    if (!parent) continue;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+  }
+  root.normalize();
+}
+
+function highlightTermsInRoot(root: HTMLElement, terms: string[]) {
+  if (!terms.length) return 0;
+  const combined = terms.map(escapeRegExp).join("|");
+  const regex = new RegExp(combined, "gi");
+  const treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      const tag = parent.tagName.toLowerCase();
+      if (tag === "script" || tag === "style" || tag === "mark") return NodeFilter.FILTER_REJECT;
+      if (parent.closest("mark[data-docs-highlight]")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const targets: Text[] = [];
+  let current: Node | null = treeWalker.nextNode();
+  while (current) {
+    targets.push(current as Text);
+    current = treeWalker.nextNode();
+  }
+
+  let totalMatches = 0;
+  for (const textNode of targets) {
+    const original = textNode.nodeValue ?? "";
+    const normalized = normalizeText(original);
+    if (!normalized) continue;
+
+    const { result, matches } = highlightText(original, normalized, regex);
+    if (!matches) continue;
+    totalMatches += matches;
+
+    const fragment = document.createDocumentFragment();
+    for (const chunk of result) {
+      if (typeof chunk === "string") {
+        fragment.appendChild(document.createTextNode(chunk));
+      } else {
+        const mark = document.createElement("mark");
+        mark.setAttribute("data-docs-highlight", "true");
+        mark.className =
+          "bg-amber-200/80 text-amber-950 rounded-[3px] px-[2px] py-[1px] shadow-[0_0_0_1px_rgba(180,83,9,0.15)] decoration-none transition-colors";
+        mark.appendChild(document.createTextNode(chunk.text));
+        fragment.appendChild(mark);
+      }
+    }
+    textNode.parentNode?.replaceChild(fragment, textNode);
+  }
+  return totalMatches;
+}
+
+type HighlightChunk =
+  | string
+  | { type: "mark"; text: string };
+
+function highlightText(original: string, normalized: string, regex: RegExp): { result: HighlightChunk[]; matches: number } {
+  const lowerNorm = normalized;
+  const positions: { start: number; end: number; text: string }[] = [];
+  {
+    const re = new RegExp(regex.source, "gi");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(lowerNorm)) !== null) {
+      if (m.index === re.lastIndex) re.lastIndex++;
+      const len = m[0].length;
+      positions.push({ start: m.index, end: m.index + len, text: original.slice(m.index, m.index + len) });
+    }
+  }
+  if (!positions.length) return { result: [original], matches: 0 };
+
+  positions.sort((a, b) => a.start - b.start);
+  const merged: typeof positions = [];
+  for (const p of positions) {
+    const last = merged[merged.length - 1];
+    if (last && p.start <= last.end) {
+      last.end = Math.max(last.end, p.end);
+      last.text = original.slice(last.start, last.end);
+    } else {
+      merged.push({ ...p });
+    }
+  }
+
+  const out: HighlightChunk[] = [];
+  let cursor = 0;
+  for (const seg of merged) {
+    if (seg.start > cursor) out.push(original.slice(cursor, seg.start));
+    out.push({ type: "mark", text: seg.text });
+    cursor = seg.end;
+  }
+  if (cursor < original.length) out.push(original.slice(cursor));
+  return { result: out, matches: merged.length };
+}
 
 function toPlainText(children: unknown): string {
   if (typeof children === "string") return children;
@@ -120,16 +246,63 @@ export const MarkdownViewer = memo(function MarkdownViewer({
   markdown,
   idPrefix,
   className,
+  highlightQuery,
 }: {
   markdown: string;
   idPrefix?: string;
   className?: string;
+  highlightQuery?: string;
 }) {
   const prefix = useMemo(() => (idPrefix ? idPrefix.trim() : ""), [idPrefix]);
   const withPrefix = (id: string) => (prefix ? `${prefix}-${id}` : id);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const lastHighlightQueryRef = useRef<string>("");
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const rawQuery = typeof highlightQuery === "string" ? highlightQuery : "";
+    const stable = rawQuery.trim();
+    const terms = parseHighlightTerms(stable);
+
+    // Siempre quitar marcas antiguas para evitar re-renderizados con queries distintas
+    unwrapMarks(root);
+
+    if (!terms.length) {
+      lastHighlightQueryRef.current = stable;
+      return;
+    }
+
+    // Dar un frame para que React haya terminado de pintar SyntaxHighlighter/MD
+    let rafId = 0;
+    let toId: ReturnType<typeof setTimeout> | null = null;
+    const run = () => {
+      if (!rootRef.current) return;
+      unwrapMarks(rootRef.current);
+      highlightTermsInRoot(rootRef.current, terms);
+      lastHighlightQueryRef.current = stable;
+    };
+    rafId = window.requestAnimationFrame(() => {
+      toId = window.setTimeout(run, 30);
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (toId) window.clearTimeout(toId);
+    };
+  }, [highlightQuery, markdown]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    return () => {
+      // Limpiar al desmontar para no dejar marcas que persistan si el viewer se reutiliza
+      unwrapMarks(root);
+    };
+  }, []);
 
   return (
     <div
+      ref={rootRef}
       className={[
         "docs-markdown space-y-6 text-[14px] leading-relaxed text-zinc-800 antialiased sm:text-[15px]",
         className,

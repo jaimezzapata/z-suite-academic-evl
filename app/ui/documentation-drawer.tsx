@@ -175,12 +175,38 @@ function findInContent(query: string, attempt: number): boolean {
   return false;
 }
 
+function getMarkElements(root: HTMLElement | Document = document): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>("mark[data-docs-highlight]"));
+}
+
+function indexMarks(root: HTMLElement | Document = document) {
+  const marks = getMarkElements(root);
+  marks.forEach((m, i) => m.setAttribute("data-docs-highlight-index", String(i)));
+  return marks;
+}
+
+function scrollToNthHighlight(n: number, root: HTMLElement | Document = document): HTMLElement | null {
+  const marks = indexMarks(root);
+  const safe = Math.max(0, Math.min(marks.length - 1, n));
+  const target = marks[safe];
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Quitar cualquier "active" anterior
+    marks.forEach((m) => m.classList.remove("ring-2", "ring-amber-500"));
+    target.classList.add("ring-2", "ring-amber-500");
+  }
+  return target ?? null;
+}
+
 function scrollToMatch(match: SearchMatch, query: string, matchIndex: number) {
   if (match.sectionId) {
     const el = document.getElementById(match.sectionId);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   window.setTimeout(() => {
+    const scrolled = scrollToNthHighlight(matchIndex);
+    if (scrolled) return;
+    // Fallback: usar window.find si aún no hay marcas renderizadas
     const finder = (window as Window & { find?: (...args: unknown[]) => boolean }).find;
     if (typeof finder !== "function") return;
     void findInContent(query, matchIndex);
@@ -339,7 +365,7 @@ export function DocumentationDrawer({
 
           <main className="overflow-y-auto px-4 py-5 lg:px-8">
             <div className="w-full rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm lg:p-8">
-              <MarkdownViewer markdown={markdown} />
+              <MarkdownViewer markdown={markdown} highlightQuery={search} />
             </div>
           </main>
         </div>

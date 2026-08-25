@@ -31,7 +31,11 @@ import {
 } from "lucide-react";
 import {
   calculateGradeSnapshot,
+  countPenalizableFraudEvents,
   evaluateQuestion as evaluateQuestionShared,
+  FRAUD_FAIL_TOTAL_EVENTS,
+  FRAUD_GRACE_EVENTS,
+  FRAUD_PENALTY_PER_EVENT_0TO5,
   getMultipleChoiceBreakdown,
   isQuestionFullyCorrect as isQuestionFullyCorrectShared,
   type GradingQuestion,
@@ -267,6 +271,8 @@ export default function ExamPublicPage() {
 
   const [fraudTabSwitches, setFraudTabSwitches] = useState(0);
   const [fraudClipboardAttempts, setFraudClipboardAttempts] = useState(0);
+  const [graceUsedToastVisible, setGraceUsedToastVisible] = useState(false);
+  const [graceDismissedAt, setGraceDismissedAt] = useState<number | null>(null);
   const fraudCountsRef = useRef({ tab: 0, clip: 0 });
   const fraudRuntimeRef = useRef({
     lastSyncAt: 0,
@@ -332,6 +338,28 @@ export default function ExamPublicPage() {
   useEffect(() => {
     fraudCountsRef.current = { tab: fraudTabSwitches, clip: fraudClipboardAttempts };
   }, [fraudTabSwitches, fraudClipboardAttempts]);
+
+  useEffect(() => {
+    if (step !== "exam" || submitted || !exam || exam.fraudEnabled === false) return;
+    const total = fraudTabSwitches + fraudClipboardAttempts;
+    if (total >= FRAUD_GRACE_EVENTS) {
+      const lastDismissed = graceDismissedAt ?? 0;
+      if (!graceUsedToastVisible && Date.now() - lastDismissed > 10_000) {
+        setGraceUsedToastVisible(true);
+      }
+    } else {
+      if (graceUsedToastVisible) setGraceUsedToastVisible(false);
+    }
+  }, [fraudTabSwitches, fraudClipboardAttempts, step, submitted, exam, graceUsedToastVisible, graceDismissedAt]);
+
+  useEffect(() => {
+    if (!graceUsedToastVisible) return;
+    const t = window.setTimeout(() => {
+      setGraceUsedToastVisible(false);
+      setGraceDismissedAt(Date.now());
+    }, 9000);
+    return () => window.clearTimeout(t);
+  }, [graceUsedToastVisible]);
 
   async function loadExamByCode() {
     setLoading(true);
@@ -473,7 +501,7 @@ export default function ExamPublicPage() {
                 const score50Raw = correctCount * valuePerQuestion0to50;
                 const fraudTotal = nextExam.fraudEnabled ? fraudTab + fraudClip : 0;
                 const fraudPenalty0to5 = nextExam.fraudEnabled
-                  ? Number((fraudTotal * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2))
+                  ? Number((countPenalizableFraudEvents(fraudTotal, FRAUD_GRACE_EVENTS) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2))
                   : 0;
 
                 if ((nextExam.fraudEnabled && fraudTotal >= FRAUD_FAIL_TOTAL_EVENTS) || Date.now() >= ends) {
@@ -787,7 +815,7 @@ export default function ExamPublicPage() {
           const fraudClip = toNumber(row.fraudClipboardAttempts, 0);
           const fraudPenalty0to5 = toNumber(
             row.fraudPenalty0to5,
-            Number(((fraudTab + fraudClip) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)),
+            Number((countPenalizableFraudEvents(fraudTab + fraudClip, FRAUD_GRACE_EVENTS) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2)),
           );
           setResult({
             score5: 0,
@@ -1274,7 +1302,7 @@ export default function ExamPublicPage() {
       if (!force && now - fraudRuntimeRef.current.lastSyncAt < 1500) return;
       fraudRuntimeRef.current.lastSyncAt = now;
       const total = nextTab + nextClip;
-      const penalty = Number((total * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+      const penalty = Number((countPenalizableFraudEvents(total, FRAUD_GRACE_EVENTS) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
       try {
         await updateDoc(doc(firestore, "attempts", id), {
           fraudTabSwitches: nextTab,
@@ -1414,15 +1442,24 @@ export default function ExamPublicPage() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (isTypingTarget(e.target)) return;
-      if (!e.altKey) return;
-      if (e.key === "ArrowLeft") {
-        setCurrentQuestionIndex((i) => Math.max(0, i - 1));
-      }
-      if (e.key === "ArrowRight") {
-        setCurrentQuestionIndex((i) => Math.min(Math.max(0, displayQuestions.length - 1), i + 1));
-      }
-      if (e.key.toLowerCase() === "m") {
-        setShowQuestionMap(true);
+      if (e.altKey) {
+        if (e.key === "ArrowLeft") {
+          setCurrentQuestionIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (e.key === "ArrowRight") {
+          setCurrentQuestionIndex((i) => Math.min(Math.max(0, displayQuestions.length - 1), i + 1));
+          return;
+        }
+        if (e.key.toLowerCase() === "m") {
+          setShowQuestionMap(true);
+          return;
+        }
+        if (e.key.toLowerCase() === "d") {
+          e.preventDefault();
+          setDocOpen((v) => !v);
+          return;
+        }
       }
     }
 
@@ -1439,15 +1476,19 @@ export default function ExamPublicPage() {
   const unansweredCount = Math.max(0, totalQuestions - answeredCount);
   const progressPct = totalQuestions > 0 ? Math.round(((safeQuestionIndex + 1) / totalQuestions) * 100) : 0;
   const fraudTotalEvents = fraudTabSwitches + fraudClipboardAttempts;
-  const fraudPenaltyPreview0to5 = Number((fraudTotalEvents * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
+  const fraudPenalizableEvents = countPenalizableFraudEvents(fraudTotalEvents, FRAUD_GRACE_EVENTS);
+  const fraudGraceRemaining = Math.max(0, FRAUD_GRACE_EVENTS - fraudTotalEvents);
+  const fraudPenaltyPreview0to5 = Number((fraudPenalizableEvents * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
   const fraudTone =
     fraudTotalEvents >= FRAUD_FAIL_TOTAL_EVENTS
       ? "red"
-      : fraudTotalEvents >= 6
+      : fraudPenalizableEvents >= 6
         ? "orange"
-        : fraudTotalEvents >= 3
+        : fraudPenalizableEvents >= 3
           ? "yellow"
-          : "green";
+          : fraudGraceRemaining > 0
+            ? "blue"
+            : "green";
   const fraudPill =
     fraudTone === "red"
       ? "border-rose-200 bg-rose-50 text-rose-800"
@@ -1455,7 +1496,9 @@ export default function ExamPublicPage() {
         ? "border-orange-200 bg-orange-50 text-orange-800"
         : fraudTone === "yellow"
           ? "border-amber-200 bg-amber-50 text-amber-800"
-          : "border-emerald-200 bg-emerald-50 text-emerald-800";
+          : fraudTone === "blue"
+            ? "border-sky-200 bg-sky-50 text-sky-800"
+            : "border-emerald-200 bg-emerald-50 text-emerald-800";
   const resultStatus = !result
     ? null
     : result.fraudForcedFail
@@ -1547,10 +1590,10 @@ export default function ExamPublicPage() {
       <div
         className={`mx-auto w-full ${
           centeredEntryStep
-            ? "relative max-w-3xl min-h-[calc(100vh-3rem)] flex flex-col items-center justify-center gap-4"
+            ? "relative max-w-5xl min-h-[calc(100vh-3rem)] flex flex-col items-center justify-center gap-4"
             : centeredExamStep
-              ? "max-w-6xl min-h-[calc(100vh-3rem)] flex flex-col justify-center gap-4"
-              : "max-w-4xl space-y-4"
+              ? "w-[96%] max-w-[120rem] min-h-[calc(100vh-3rem)] flex flex-col justify-center gap-4 2xl:max-w-[128rem]"
+              : "max-w-6xl space-y-4"
         }`}
       >
         <header
@@ -1664,13 +1707,27 @@ export default function ExamPublicPage() {
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
                   <div className="flex items-center gap-2">
                     <OctagonAlert className="h-5 w-5 text-rose-700" />
-                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Penalizaciones (en rojo)</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                      Penalizaciones y cortesías
+                    </p>
                   </div>
 
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                      <p className="text-xs font-semibold text-sky-900">
+                        {FRAUD_GRACE_EVENTS} cortesías iniciales ✅
+                      </p>
+                      <p className="mt-1 text-[12px] text-sky-800">
+                        Los primeros {FRAUD_GRACE_EVENTS} eventos NO descuentan nada (pueden pasar cosas).
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-sky-800">Penalización: 0.0</p>
+                    </div>
+
                     <div className="rounded-xl border border-rose-200 bg-white px-3 py-2">
                       <p className="text-xs font-semibold text-zinc-900">Copiar / pegar detectado</p>
-                      <p className="mt-1 text-[12px] text-zinc-700">Cada evento descuenta puntos.</p>
+                      <p className="mt-1 text-[12px] text-zinc-700">
+                        Después de las {FRAUD_GRACE_EVENTS} cortesías, cada evento descuenta puntos.
+                      </p>
                       <p className="mt-1 text-sm font-semibold text-rose-700">
                         -{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} (0-5) / -{penaltyPerEvent0to50.toFixed(0)} (0-50)
                       </p>
@@ -1687,7 +1744,8 @@ export default function ExamPublicPage() {
                     <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 sm:col-span-2">
                       <p className="text-xs font-semibold text-zinc-900">Límite de fraude alcanzado</p>
                       <p className="mt-1 text-[12px] text-zinc-700">
-                        Si el total llega a <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong> eventos, el intento se marca como perdido.
+                        Si el total llega a <strong>{FRAUD_FAIL_TOTAL_EVENTS}</strong> eventos (incluso cortesías),
+                        el intento se marca como perdido.
                       </p>
                       <p className="mt-1 text-sm font-semibold text-rose-700">Reducción final: nota 0 (0-5 y 0-50)</p>
                     </div>
@@ -1838,7 +1896,7 @@ export default function ExamPublicPage() {
         ) : null}
 
         {step === "exam" && exam ? (
-          <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-4">
+          <section className="mx-auto flex w-full max-w-[95%] 2xl:max-w-[120rem] flex-1 flex-col justify-center gap-4 lg:max-w-[92%]">
             {error ? (
               <div className="fixed inset-x-4 bottom-4 z-60 mx-auto w-auto max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-lg">
                 <div className="flex items-start justify-between gap-3">
@@ -1853,7 +1911,36 @@ export default function ExamPublicPage() {
                 </div>
               </div>
             ) : null}
-            <div className="rounded-3xl border border-zinc-200 bg-white px-5 py-4 shadow-sm">
+            {graceUsedToastVisible && exam && exam.fraudEnabled !== false ? (
+              <div className="fixed inset-x-4 top-4 z-60 mx-auto w-auto max-w-2xl animate-[fadeIn_.2s_ease-out] rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 shadow-xl ring-1 ring-amber-200">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-500/15 ring-1 ring-amber-400/50">
+                    <OctagonAlert className="h-5 w-5 text-amber-700" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold tracking-tight text-amber-950">
+                      Se agotaron tus {FRAUD_GRACE_EVENTS} cortesías
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+                      A partir de este momento, cada cambio de pestaña o intento de copiar/pegar sí genera penalización
+                      (<span className="font-semibold">-{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} en escala 0-5 por evento</span>).
+                      Si alcanzas los {FRAUD_FAIL_TOTAL_EVENTS} eventos totales, tu examen se anula automáticamente.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGraceUsedToastVisible(false);
+                      setGraceDismissedAt(Date.now());
+                    }}
+                    className="shrink-0 rounded-lg border border-amber-300 bg-white/70 px-2.5 py-1.5 text-xs font-semibold text-amber-900 hover:bg-white"
+                  >
+                    Entendido
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm sm:px-6 sm:py-4">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="min-w-0 truncate text-base font-semibold text-zinc-950 sm:text-lg">{exam.name}</p>
@@ -1864,11 +1951,24 @@ export default function ExamPublicPage() {
                     </div>
                     <div
                       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${fraudPill}`}
-                      title={`Fraude total: ${fraudTotalEvents} (Cambio de pestaña: ${fraudTabSwitches}, Copiar/Pegar: ${fraudClipboardAttempts}). Penalización: ${fraudPenaltyPreview0to5.toFixed(
-                        2,
-                      )} en escala 0-5.`}
+                      title={(() => {
+                        const penal = fraudPenalizableEvents;
+                        const remaining = fraudGraceRemaining;
+                        return (
+                          `Total eventos: ${fraudTotalEvents} (Cambio de pestaña: ${fraudTabSwitches}, Copiar/Pegar: ${fraudClipboardAttempts}). ` +
+                          (remaining > 0
+                            ? `Tienes ${remaining} cortesía${remaining === 1 ? "" : "s"} sin penalización. `
+                            : `Eventos penalizables: ${penal}. `) +
+                          `Penalización actual: ${fraudPenaltyPreview0to5.toFixed(2)} en escala 0-5.`
+                        );
+                      })()}
                     >
-                      Fraude {fraudTotalEvents}/{FRAUD_FAIL_TOTAL_EVENTS}
+                      <span>
+                        {fraudGraceRemaining > 0
+                          ? `Cortesía restante ${fraudGraceRemaining}/${FRAUD_GRACE_EVENTS} • `
+                          : `Penalizables ${fraudPenalizableEvents} • `}
+                        Fraude {fraudTotalEvents}/{FRAUD_FAIL_TOTAL_EVENTS}
+                      </span>
                     </div>
                     <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
                       Pestaña {fraudTabSwitches}
@@ -1893,27 +1993,40 @@ export default function ExamPublicPage() {
                         setShowExamSummary(false);
                         setShowQuestionMap(true);
                       }}
-                      className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+                      className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
                       title="Mapa de preguntas (Alt+M)"
                     >
-                      <LayoutGrid className="h-3.5 w-3.5" />
+                      <LayoutGrid className="h-4 w-4" />
                       Mapa
                     </button>
                     <button
                       type="button"
                       onClick={() => setDocOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-                      title="Documentacion"
+                      className="inline-flex items-center gap-2 rounded-xl border border-indigo-300 bg-gradient-to-r from-indigo-600 to-indigo-700 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm hover:from-indigo-700 hover:to-indigo-800 disabled:from-zinc-400 disabled:to-zinc-500 disabled:border-zinc-300 disabled:opacity-80"
+                      title="Abrir documentación del examen (Alt + D)"
                       disabled={!exam.documentationMarkdown.trim()}
                     >
-                      <BookOpen className="h-3.5 w-3.5" />
-                      Docs
+                      <BookOpen className="h-4 w-4" />
+                      <span>Ver documentación</span>
+                      {exam.documentationMarkdown.trim() ? (
+                        <span className="hidden rounded-md bg-white/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white/90 sm:inline">
+                          Alt + D
+                        </span>
+                      ) : null}
                     </button>
                   </div>
 
                   <p className="text-xs text-zinc-600">
-                    Fraude: pestaña + copiar/pegar (-{FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} c/u). Límite{" "}
-                    {FRAUD_FAIL_TOTAL_EVENTS}.
+                    {(() => {
+                      const cortesia = fraudGraceRemaining;
+                      if (cortesia > 0) {
+                        return `Las primeras ${FRAUD_GRACE_EVENTS} son de cortesía (sin descuento). Disponibles: ${cortesia}. Después se descuentan ${FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} c/u. Límite ${FRAUD_FAIL_TOTAL_EVENTS} para reprobar automáticamente.`;
+                      }
+                      if (fraudTotalEvents >= FRAUD_FAIL_TOTAL_EVENTS) {
+                        return `Se alcanzó el límite (${FRAUD_FAIL_TOTAL_EVENTS}). La nota será 0.0.`;
+                      }
+                      return `Cortesías agotadas. A partir de ahora: pestaña + copiar/pegar descuentan ${FRAUD_PENALTY_PER_EVENT_0TO5.toFixed(1)} c/u. Límite para anulación: ${FRAUD_FAIL_TOTAL_EVENTS} eventos.`;
+                    })()}
                   </p>
                 </div>
 
@@ -1978,7 +2091,7 @@ export default function ExamPublicPage() {
             />
 
             {showQuestionMap ? (
-              <article className="mx-auto flex min-h-[60vh] w-full max-w-4xl flex-col rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <article className="mx-auto flex min-h-[60vh] w-full max-w-[94%] 2xl:max-w-[112rem] flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6 lg:max-w-[90%]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold text-zinc-950">Mapa de preguntas</h3>
@@ -1995,7 +2108,7 @@ export default function ExamPublicPage() {
                   </button>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6 md:grid-cols-8">
+                <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12">
                   {displayQuestions.map((q, idx) => {
                     const answered = hasAnswer(q);
                     const isCurrent = idx === safeQuestionIndex;
@@ -2025,15 +2138,12 @@ export default function ExamPublicPage() {
             ) : null}
 
             {!showExamSummary && !showQuestionMap && currentQuestion ? (
-              <article className="mx-auto flex min-h-[60vh] w-full max-w-4xl flex-col justify-between rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <article className="mx-auto flex min-h-[60vh] w-full max-w-[94%] 2xl:max-w-[112rem] flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6 lg:max-w-[90%]">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs font-semibold text-zinc-500">
                     Pregunta {safeQuestionIndex + 1} de {totalQuestions}
                   </p>
                   <div className="flex items-center gap-2">
-                    <div className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-semibold text-zinc-700">
-                      Puntos {currentQuestion.points}
-                    </div>
                     <div className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-semibold text-zinc-700">
                       Respondidas {answeredCount}/{totalQuestions}
                     </div>
@@ -2097,7 +2207,7 @@ export default function ExamPublicPage() {
             ) : null}
 
             {showExamSummary ? (
-              <article className="mx-auto flex min-h-[60vh] w-full max-w-4xl flex-col rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <article className="mx-auto flex min-h-[60vh] w-full max-w-[94%] 2xl:max-w-[112rem] flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6 lg:max-w-[90%]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold text-zinc-950">Resumen final del intento</h3>
