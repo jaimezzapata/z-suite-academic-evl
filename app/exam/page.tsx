@@ -20,13 +20,17 @@ import {
   BadgeCheck,
   BookOpen,
   CheckCircle2,
+  Clock,
   LayoutGrid,
+  Lock,
   LockKeyhole,
   OctagonAlert,
   Save,
+  ShieldAlert,
   ShieldCheck,
   Smartphone,
   Timer,
+  TriangleAlert,
   XCircle,
 } from "lucide-react";
 import {
@@ -285,6 +289,27 @@ export default function ExamPublicPage() {
   const lastAutosaveKeyRef = useRef<string>("");
   const autoResumeRef = useRef(false);
 
+  // ====== Vista de resultados: 2 min countdown + bloqueo por captura/copiar ======
+  const RESULTS_REVIEW_TOTAL_MS = 120_000; // 2 minutos
+  const [resultsReviewRemainingMs, setResultsReviewRemainingMs] = useState<number>(RESULTS_REVIEW_TOTAL_MS);
+  const [resultsReviewBlocked, setResultsReviewBlocked] = useState<boolean>(false);
+  const [resultsReviewBlockReason, setResultsReviewBlockReason] = useState<string | null>(null);
+  const resultsReviewStartRef = useRef<number | null>(null);
+  const resultsReviewIntervalRef = useRef<number | null>(null);
+  const resultsReviewListenersRef = useRef<{ cleaned: boolean }>({ cleaned: true });
+
+  function formatReviewClock(ms: number) {
+    const totalSeconds = Math.max(0, Math.round(ms / 1000));
+    const mm = Math.floor(totalSeconds / 60);
+    const ss = totalSeconds - mm * 60;
+    return `${mm}:${ss.toString().padStart(2, "0")}`;
+  }
+  function blockResultsView(reason: string) {
+    if (resultsReviewBlocked) return;
+    setResultsReviewBlocked(true);
+    setResultsReviewBlockReason(reason);
+  }
+
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
@@ -360,6 +385,179 @@ export default function ExamPublicPage() {
     }, 9000);
     return () => window.clearTimeout(t);
   }, [graceUsedToastVisible]);
+
+  // ---------------------------------------------------------------------------
+  // Vista de resultados (step === "result"): countdown de 2 minutos
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    // Solo activar cuando estemos realmente en resultados y NO estemos bloqueados
+    if (step !== "result" || !result || submitting || resultsReviewBlocked) {
+      resultsReviewStartRef.current = null;
+      if (resultsReviewIntervalRef.current != null) {
+        window.clearInterval(resultsReviewIntervalRef.current);
+        resultsReviewIntervalRef.current = null;
+      }
+      return;
+    }
+    // Inicializar reloj cuando entramos por primera vez
+    if (resultsReviewStartRef.current == null) {
+      resultsReviewStartRef.current = Date.now();
+      setResultsReviewRemainingMs(RESULTS_REVIEW_TOTAL_MS);
+    }
+    const startAt = resultsReviewStartRef.current;
+    resultsReviewIntervalRef.current = Number(
+      window.setInterval(() => {
+        const elapsed = Date.now() - startAt;
+        const remaining = RESULTS_REVIEW_TOTAL_MS - elapsed;
+        if (remaining <= 0) {
+          setResultsReviewRemainingMs(0);
+          blockResultsView("timeout");
+          if (resultsReviewIntervalRef.current != null) {
+            window.clearInterval(resultsReviewIntervalRef.current);
+            resultsReviewIntervalRef.current = null;
+          }
+        } else {
+          setResultsReviewRemainingMs(remaining);
+        }
+      }, 250),
+    );
+    return () => {
+      if (resultsReviewIntervalRef.current != null) {
+        window.clearInterval(resultsReviewIntervalRef.current);
+        resultsReviewIntervalRef.current = null;
+      }
+    };
+  }, [step, result, submitting, resultsReviewBlocked]);
+
+  // ---------------------------------------------------------------------------
+  // Vista de resultados: listeners de bloqueo
+  // Detecta copiar/pegar, selección, clic derecho, atajos de captura, Ctrl+P,
+  // Ctrl+S y cierra inmediatamente la vista con mensaje al estudiante.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const active = step === "result" && !!result && !submitting && !resultsReviewBlocked;
+    if (!active) {
+      resultsReviewListenersRef.current.cleaned = true;
+      return;
+    }
+    resultsReviewListenersRef.current.cleaned = false;
+
+    function onProtectedCopyCut(e: ClipboardEvent) {
+      if (resultsReviewBlocked) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      blockResultsView("copy");
+    }
+    function onProtectedPaste(e: ClipboardEvent) {
+      if (resultsReviewBlocked) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      blockResultsView("paste");
+    }
+    function onProtectedContextMenu(e: MouseEvent) {
+      if (resultsReviewBlocked) return;
+      e.preventDefault();
+      blockResultsView("contextmenu");
+    }
+    function onProtectedSelectStart(e: Event) {
+      if (resultsReviewBlocked) return;
+      // Permitir selección dentro de inputs (ej: input de código OTP en resumen futuro)
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      e.preventDefault();
+      blockResultsView("select");
+    }
+    function onProtectedDragStart(e: DragEvent) {
+      if (resultsReviewBlocked) return;
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      e.preventDefault();
+      blockResultsView("drag");
+    }
+    function onProtectedBeforePrint() {
+      if (resultsReviewBlocked) return;
+      blockResultsView("print");
+      try {
+        // Cancelar diálogo de impresión
+        window.stop();
+      } catch {}
+    }
+    function onProtectedKeyDown(e: KeyboardEvent) {
+      if (resultsReviewBlocked) return;
+      const isMac = typeof navigator !== "undefined" && /mac|iphone|ipad/i.test(navigator.platform || "");
+      const ctrl = isMac ? e.metaKey : e.ctrlKey;
+      const key = (e.key || "").toString();
+      const code = (e.code || "").toString();
+
+      // Ctrl+P / ⌘+P → Imprimir / guardar como PDF
+      if (ctrl && key.toLowerCase() === "p") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        blockResultsView("print");
+        return;
+      }
+      // Ctrl+S / ⌘+S → Guardar página como HTML
+      if (ctrl && key.toLowerCase() === "s") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        blockResultsView("copy");
+        return;
+      }
+      // Ctrl+Shift+I / Ctrl+Shift+J / Ctrl+Shift+C / F12 → DevTools
+      const devShortcut =
+        (ctrl && e.shiftKey && ["I", "J", "C"].includes(key.toUpperCase())) || key === "F12";
+      if (devShortcut) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        blockResultsView("devtools");
+        return;
+      }
+      // Ctrl+U / ⌘+U → Ver código fuente
+      if (ctrl && key.toLowerCase() === "u") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        blockResultsView("viewsource");
+        return;
+      }
+      // PrintScreen
+      if (key === "PrintScreen" || code === "PrintScreen") {
+        e.preventDefault();
+        blockResultsView("screenshot");
+        return;
+      }
+      // Win + Shift + S (Snipping Tool, Windows) | Cmd+Shift+3/4/5 (macOS capture)
+      const winShiftS = !isMac && (e.metaKey || e.key === "Meta") && e.shiftKey && code === "KeyS";
+      const macCapture = isMac && e.metaKey && e.shiftKey && ["Digit3", "Digit4", "Digit5"].includes(code);
+      if (winShiftS || macCapture) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        blockResultsView("screenshot");
+        return;
+      }
+    }
+
+    document.addEventListener("copy", onProtectedCopyCut, true);
+    document.addEventListener("cut", onProtectedCopyCut, true);
+    document.addEventListener("paste", onProtectedPaste, true);
+    document.addEventListener("contextmenu", onProtectedContextMenu, true);
+    document.addEventListener("selectstart", onProtectedSelectStart, true);
+    document.addEventListener("dragstart", onProtectedDragStart, true);
+    window.addEventListener("beforeprint", onProtectedBeforePrint, true);
+    document.addEventListener("keydown", onProtectedKeyDown, true);
+
+    return () => {
+      if (resultsReviewListenersRef.current.cleaned) return;
+      resultsReviewListenersRef.current.cleaned = true;
+      document.removeEventListener("copy", onProtectedCopyCut, true);
+      document.removeEventListener("cut", onProtectedCopyCut, true);
+      document.removeEventListener("paste", onProtectedPaste, true);
+      document.removeEventListener("contextmenu", onProtectedContextMenu, true);
+      document.removeEventListener("selectstart", onProtectedSelectStart, true);
+      document.removeEventListener("dragstart", onProtectedDragStart, true);
+      window.removeEventListener("beforeprint", onProtectedBeforePrint, true);
+      document.removeEventListener("keydown", onProtectedKeyDown, true);
+    };
+  }, [step, result, submitting, resultsReviewBlocked]);
 
   async function loadExamByCode() {
     setLoading(true);
@@ -2314,7 +2512,135 @@ export default function ExamPublicPage() {
         ) : null}
 
         {step === "result" && result ? (
-          <section className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm">
+          <section className="select-none mx-auto w-full max-w-5xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm">
+            {/* ======= Modal emergente de bloqueo ======= */}
+            {resultsReviewBlocked ? (
+              <div
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="results-block-title"
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+              >
+                <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                  <div className="bg-rose-600 px-6 py-6 text-white">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+                        <ShieldAlert className="h-6 w-6" />
+                      </div>
+                      <div className="min-w-0">
+                        <h2 id="results-block-title" className="text-xl font-semibold tracking-tight">
+                          Vista de respuestas cerrada
+                        </h2>
+                        <p className="mt-1 text-sm text-white/85">
+                          Las respuestas correctas ya no se pueden visualizar.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-4 px-6 py-6 text-sm text-zinc-800">
+                    <div className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+                      <Lock className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-zinc-900">Motivo registrado</p>
+                        <p className="mt-1 text-sm text-zinc-700">
+                          {(() => {
+                            const reason = resultsReviewBlockReason;
+                            switch (reason) {
+                              case "timeout":
+                                return "Agotaste los 2 minutos permitidos para revisar las preguntas.";
+                              case "copy":
+                                return "Detectamos un intento de copiar contenido del examen (Ctrl+C / Ctrl+S / arrastrar selección).";
+                              case "paste":
+                                return "Detectamos una acción de pegar dentro de la vista de resultados.";
+                              case "contextmenu":
+                                return "Detectamos el uso del menú contextual (clic derecho), lo que permite guardar contenido.";
+                              case "select":
+                                return "Detectamos un intento de seleccionar texto para copiarlo.";
+                              case "drag":
+                                return "Detectamos un intento de arrastrar contenido fuera de la página.";
+                              case "print":
+                                return "Detectamos un intento de imprimir o guardar como PDF el resumen.";
+                              case "screenshot":
+                                return "Detectamos un atajo de captura de pantalla (PrintScreen, Win+Shift+S, Cmd+Shift+3/4/5).";
+                              case "devtools":
+                                return "Detectamos un intento de abrir herramientas de desarrollador (F12 o Ctrl+Shift+I).";
+                              case "viewsource":
+                                return "Detectamos un intento de ver el código fuente (Ctrl+U).";
+                              default:
+                                return "La vista fue cerrada automáticamente por el sistema.";
+                            }
+                          })()}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-indigo-900">
+                      <p className="text-sm font-semibold">Tu nota sigue guardada</p>
+                      <p className="mt-1 text-sm text-indigo-800/90">
+                        Esta acción <strong>no cambia tu calificación</strong>. Solo se cerró el acceso visual a las preguntas y respuestas correctas para evitar su difusión.
+                        La nota definitiva (
+                        <strong className="mx-1">{result.score5.toFixed(2)}</strong>
+                        sobre 5.0) ya fue enviada al sistema.
+                      </p>
+                    </div>
+
+                    <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      <TriangleAlert className="mr-1.5 inline-block h-4 w-4 align-[-2px]" />
+                      <strong>Importante:</strong> esta protección aplica solo mientras estás en esta página.
+                      Si necesitas revisar alguna respuesta nuevamente con fines académicos, habla con tu docente para que habilite la revisión oficial.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ======= Barra countdown: solo si no está bloqueado ======= */}
+            {!resultsReviewBlocked ? (
+              <div className={[
+                "border-b transition-colors",
+                resultsReviewRemainingMs <= 30_000
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-indigo-100 bg-indigo-50/70",
+              ].join(" ")}>
+                <div className="flex flex-wrap items-center gap-3 px-5 py-3 sm:px-6">
+                  <div className={[
+                    "flex items-center gap-2 rounded-2xl px-3 py-1.5 text-xs font-semibold",
+                    resultsReviewRemainingMs <= 30_000
+                      ? "bg-rose-600 text-white shadow-sm animate-pulse"
+                      : "bg-white text-indigo-800 border border-indigo-200 shadow-sm",
+                  ].join(" ")}>
+                    <Clock className="h-3.5 w-3.5" />
+                    <span className="tabular-nums tracking-tight">
+                      {formatReviewClock(resultsReviewRemainingMs)}
+                    </span>
+                    <span className="font-normal opacity-80">restantes</span>
+                  </div>
+                  <p className="text-xs text-zinc-600 sm:text-sm">
+                    Tienes <strong className="text-zinc-900">2 minutos</strong> para revisar las respuestas.
+                    Después el detalle se cierra automáticamente.
+                    {resultsReviewRemainingMs <= 30_000
+                      ? (
+                        <span className="ml-1 font-semibold text-rose-700">
+                          ⚡ Quedan menos de 30 segundos.
+                        </span>
+                      )
+                      : null}
+                  </p>
+                </div>
+                <div className="h-1 w-full bg-white/40">
+                  <div
+                    className={[
+                      "h-full transition-[width] duration-300 ease-linear",
+                      resultsReviewRemainingMs <= 30_000 ? "bg-rose-500" : "bg-indigo-500",
+                    ].join(" ")}
+                    style={{
+                      width: `${Math.max(0, Math.min(100, (resultsReviewRemainingMs / RESULTS_REVIEW_TOTAL_MS) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
             <div className="bg-indigo-600 px-6 py-6 text-white">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -2391,188 +2717,245 @@ export default function ExamPublicPage() {
                 </div>
               )}
 
-              {(() => {
-                const byQ = new Map<string, { earned: number; points: number; ratio: number; fullyCorrect: boolean; multipleChoice?: MultipleChoiceBreakdown | null }>();
-                (result.perQuestion ?? []).forEach((p) => byQ.set(p.questionId, p));
-                const orderedQids = questionOrder.length ? questionOrder : displayQuestionsRef.current.map((q) => q.questionId);
-                const visibleQuestions: SnapshotQuestion[] = orderedQids.length
-                  ? orderedQids
-                      .map((id) => displayQuestionsRef.current.find((q) => q.questionId === id))
-                      .filter((q): q is SnapshotQuestion => Boolean(q))
-                  : displayQuestionsRef.current;
-                if (!visibleQuestions.length) return null;
-                function toggle(id: string) {
-                  setResultOpenQuestionIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  });
-                }
-                return (
-                  <div className="rounded-3xl border border-zinc-200 bg-white">
-                    <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Detalle por pregunta</p>
-                        <p className="mt-1 text-xs text-zinc-500">
-                          Abre cada pregunta para ver las opciones y el impacto proporcional en el puntaje.
-                        </p>
+              {/* ======= Detalle por preguntas: SOLO si la vista NO fue bloqueada =======
+                  (si resultsReviewBlocked === true este bloque NO se renderiza,
+                  ni siquiera en el HTML; al inspeccionar no hay nada que copiar) */}
+              {!resultsReviewBlocked ? (
+                (() => {
+                  const byQ = new Map<string, { earned: number; points: number; ratio: number; fullyCorrect: boolean; multipleChoice?: MultipleChoiceBreakdown | null }>();
+                  (result.perQuestion ?? []).forEach((p) => byQ.set(p.questionId, p));
+                  const orderedQids = questionOrder.length ? questionOrder : displayQuestionsRef.current.map((q) => q.questionId);
+                  const visibleQuestions: SnapshotQuestion[] = orderedQids.length
+                    ? orderedQids
+                        .map((id) => displayQuestionsRef.current.find((q) => q.questionId === id))
+                        .filter((q): q is SnapshotQuestion => Boolean(q))
+                    : displayQuestionsRef.current;
+                  if (!visibleQuestions.length) return null;
+                  function toggle(id: string) {
+                    setResultOpenQuestionIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    });
+                  }
+                  return (
+                    <div className="rounded-3xl border border-zinc-200 bg-white">
+                      <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Detalle por pregunta</p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Abre cada pregunta para ver las opciones y el impacto proporcional en el puntaje.
+                            <span className="ml-1 font-semibold text-rose-600">
+                              No intentes copiar, guardar ni tomar captura: la vista se cerrará inmediatamente.
+                            </span>
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setResultOpenQuestionIds(new Set(visibleQuestions.map((q) => q.questionId)))}
+                            className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                          >
+                            Abrir todas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setResultOpenQuestionIds(new Set())}
+                            className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                          >
+                            Cerrar todas
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setResultOpenQuestionIds(new Set(visibleQuestions.map((q) => q.questionId)))}
-                          className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                        >
-                          Abrir todas
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setResultOpenQuestionIds(new Set())}
-                          className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                        >
-                          Cerrar todas
-                        </button>
-                      </div>
-                    </div>
-                    <div className="divide-y divide-zinc-100">
-                      {visibleQuestions.map((q, idx) => {
-                        const detail = byQ.get(q.questionId);
-                        const open = resultOpenQuestionIds.has(q.questionId);
-                        const earned = detail?.earned ?? 0;
-                        const points = detail?.points ?? q.points;
-                        const ratio = detail?.ratio ?? 0;
-                        const pct = Math.round(ratio * 100);
-                        const barColor = ratio >= 1 ? "bg-emerald-500" : ratio > 0 ? "bg-amber-500" : "bg-rose-500";
-                        const pillBadge = ratio >= 1
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                          : ratio > 0
-                            ? "border-amber-200 bg-amber-50 text-amber-800"
-                            : "border-rose-200 bg-rose-50 text-rose-800";
-                        return (
-                          <div key={q.questionId}>
-                            <button
-                              type="button"
-                              onClick={() => toggle(q.questionId)}
-                              className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-zinc-50/60"
-                            >
-                              <div className={`mt-0.5 rounded-xl border px-2 py-0.5 text-[11px] font-semibold ${pillBadge}`}>
-                                P{idx + 1}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-zinc-900 line-clamp-2">{q.statement}</p>
-                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-                                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-semibold uppercase tracking-wide text-zinc-700">{q.type}</span>
-                                      <span>
-                                        Puntaje:{" "}
-                                        <strong className="text-zinc-800">
-                                          {earned.toFixed(2)} / {points.toFixed(2)}
-                                        </strong>
-                                      </span>
-                                      <span>
-                                        Porcentaje: <strong className="text-zinc-800">{pct}%</strong>
-                                      </span>
+                      <div className="divide-y divide-zinc-100">
+                        {visibleQuestions.map((q, idx) => {
+                          const detail = byQ.get(q.questionId);
+                          const open = resultOpenQuestionIds.has(q.questionId);
+                          const earned = detail?.earned ?? 0;
+                          const points = detail?.points ?? q.points;
+                          const ratio = detail?.ratio ?? 0;
+                          const pct = Math.round(ratio * 100);
+                          const barColor = ratio >= 1 ? "bg-emerald-500" : ratio > 0 ? "bg-amber-500" : "bg-rose-500";
+                          const pillBadge = ratio >= 1
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : ratio > 0
+                              ? "border-amber-200 bg-amber-50 text-amber-800"
+                              : "border-rose-200 bg-rose-50 text-rose-800";
+                          return (
+                            <div key={q.questionId}>
+                              <button
+                                type="button"
+                                onClick={() => toggle(q.questionId)}
+                                className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-zinc-50/60"
+                              >
+                                <div className={`mt-0.5 rounded-xl border px-2 py-0.5 text-[11px] font-semibold ${pillBadge}`}>
+                                  P{idx + 1}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-zinc-900 line-clamp-2">{q.statement}</p>
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-semibold uppercase tracking-wide text-zinc-700">{q.type}</span>
+                                        <span>
+                                          Puntaje:{" "}
+                                          <strong className="text-zinc-800">
+                                            {earned.toFixed(2)} / {points.toFixed(2)}
+                                          </strong>
+                                        </span>
+                                        <span>
+                                          Porcentaje: <strong className="text-zinc-800">{pct}%</strong>
+                                        </span>
+                                      </div>
                                     </div>
+                                    <div className="shrink-0 text-zinc-400">{open ? "−" : "+"}</div>
                                   </div>
-                                  <div className="shrink-0 text-zinc-400">{open ? "−" : "+"}</div>
+                                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+                                    <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+                                  </div>
                                 </div>
-                                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
-                                  <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
-                                </div>
-                              </div>
-                            </button>
-                            {open ? (
-                              <div className="space-y-3 border-t border-zinc-100 bg-zinc-50/40 px-5 py-4">
-                                <MarkdownViewer markdown={q.statement} className="prose-sm max-w-none text-zinc-800" />
-                                {(q.type === "single_choice" || q.type === "multiple_choice") && Array.isArray(q.options) && q.options.length
-                                  ? (() => {
-                                      const breakdown = q.type === "multiple_choice" ? detail?.multipleChoice : null;
-                                      const impactsByOptId = new Map<string, number>();
-                                      if (breakdown?.options) breakdown.options.forEach((o) => impactsByOptId.set(o.optionId, o.impact));
-                                      const studentAns = answersRef.current[q.questionId];
-                                      const selectedSingle = typeof studentAns === "string" ? studentAns : "";
-                                      const selectedMulti = Array.isArray(studentAns) ? new Set(studentAns.map(String)) : null;
-                                      return (
-                                        <ul className="space-y-2">
-                                          {q.options.map((o) => {
-                                            const wasSelected = selectedMulti
-                                              ? selectedMulti.has(o.id)
-                                              : q.type === "single_choice"
-                                                ? selectedSingle === o.id
-                                                : false;
-                                            const impact = impactsByOptId.get(o.id) ?? 0;
-                                            const isCorrect = Boolean(o.isCorrect);
-                                            let badge = "border-zinc-200 bg-white text-zinc-700";
-                                            if (wasSelected && isCorrect) badge = "border-emerald-300 bg-emerald-50 text-emerald-900";
-                                            else if (wasSelected && !isCorrect) badge = "border-rose-300 bg-rose-50 text-rose-900";
-                                            else if (!wasSelected && isCorrect) badge = "border-sky-300 bg-sky-50 text-sky-900";
-                                            const impactLabel = impact !== 0
-                                              ? `${impact > 0 ? "+" : ""}${(impact * 100).toFixed(0)}% / +${(impact * points).toFixed(2)}`
-                                              : "";
-                                            return (
-                                              <li key={o.id} className={`rounded-2xl border ${badge} px-4 py-3`}>
-                                                <div className="flex items-start justify-between gap-3">
-                                                  <div className="min-w-0 flex-1">
-                                                    <p className="text-sm">{o.text}</p>
-                                                  </div>
-                                                  <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]">
-                                                    <div className="flex gap-1">
-                                                      {isCorrect ? (
-                                                        <span className="rounded-full border border-emerald-300 bg-white px-2 py-0.5 font-semibold text-emerald-800">Correcta</span>
-                                                      ) : null}
-                                                      {wasSelected ? (
-                                                        <span className="rounded-full border border-indigo-300 bg-white px-2 py-0.5 font-semibold text-indigo-800">Tu opción</span>
+                              </button>
+                              {open ? (
+                                <div className="space-y-3 border-t border-zinc-100 bg-zinc-50/40 px-5 py-4">
+                                  <MarkdownViewer markdown={q.statement} className="prose-sm max-w-none text-zinc-800" />
+                                  {(q.type === "single_choice" || q.type === "multiple_choice") && Array.isArray(q.options) && q.options.length
+                                    ? (() => {
+                                        const breakdown = q.type === "multiple_choice" ? detail?.multipleChoice : null;
+                                        const impactsByOptId = new Map<string, number>();
+                                        if (breakdown?.options) breakdown.options.forEach((o) => impactsByOptId.set(o.optionId, o.impact));
+                                        const studentAns = answersRef.current[q.questionId];
+                                        const selectedSingle = typeof studentAns === "string" ? studentAns : "";
+                                        const selectedMulti = Array.isArray(studentAns) ? new Set(studentAns.map(String)) : null;
+                                        return (
+                                          <ul className="space-y-2">
+                                            {q.options.map((o) => {
+                                              const wasSelected = selectedMulti
+                                                ? selectedMulti.has(o.id)
+                                                : q.type === "single_choice"
+                                                  ? selectedSingle === o.id
+                                                  : false;
+                                              const impact = impactsByOptId.get(o.id) ?? 0;
+                                              const isCorrect = Boolean(o.isCorrect);
+                                              let badge = "border-zinc-200 bg-white text-zinc-700";
+                                              if (wasSelected && isCorrect) badge = "border-emerald-300 bg-emerald-50 text-emerald-900";
+                                              else if (wasSelected && !isCorrect) badge = "border-rose-300 bg-rose-50 text-rose-900";
+                                              else if (!wasSelected && isCorrect) badge = "border-sky-300 bg-sky-50 text-sky-900";
+                                              const impactLabel = impact !== 0
+                                                ? `${impact > 0 ? "+" : ""}${(impact * 100).toFixed(0)}% / ${(impact * points).toFixed(2)}`
+                                                : "";
+                                              return (
+                                                <li key={o.id} className={`rounded-2xl border ${badge} px-4 py-3`}>
+                                                  <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                      <p className="text-sm">{o.text}</p>
+                                                    </div>
+                                                    <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]">
+                                                      <div className="flex gap-1">
+                                                        {isCorrect ? (
+                                                          <span className="rounded-full border border-emerald-300 bg-white px-2 py-0.5 font-semibold text-emerald-800">Correcta</span>
+                                                        ) : null}
+                                                        {wasSelected ? (
+                                                          <span className="rounded-full border border-indigo-300 bg-white px-2 py-0.5 font-semibold text-indigo-800">Tu opción</span>
+                                                        ) : null}
+                                                      </div>
+                                                      {impactLabel && q.type === "multiple_choice" ? (
+                                                        <span className={`rounded-full px-2 py-0.5 font-semibold ${impact > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                                          {impactLabel}
+                                                        </span>
                                                       ) : null}
                                                     </div>
-                                                    {impactLabel && q.type === "multiple_choice" ? (
-                                                      <span className={`rounded-full px-2 py-0.5 font-semibold ${impact > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
-                                                        {impactLabel}
-                                                      </span>
-                                                    ) : null}
                                                   </div>
+                                                </li>
+                                              );
+                                            })}
+                                          </ul>
+                                        );
+                                      })()
+                                    : null}
+                                  {q.type === "multiple_choice" && detail?.multipleChoice
+                                    ? (() => {
+                                        const b = detail.multipleChoice;
+                                        const rows: Array<{ label: string; value: string; tone: string }> = [];
+                                        rows.push({ label: "Correctas encontradas", value: `${b.correctSelected}/${b.totalCorrect}`, tone: "text-emerald-800" });
+                                        rows.push({ label: "Incorrectas marcadas", value: `${b.wrongSelected}/${b.totalIncorrect}`, tone: "text-rose-800" });
+                                        rows.push({ label: "Ganancia parcial", value: `+${(b.gainRatio * 100).toFixed(0)}%`, tone: "text-emerald-800" });
+                                        rows.push({ label: "Pérdida por error", value: `${b.lossRatio > 0 ? "-" : ""}${(b.lossRatio * 100).toFixed(0)}%`, tone: "text-rose-800" });
+                                        rows.push({ label: "Ratio final", value: `${(b.finalRatio * 100).toFixed(0)}%`, tone: b.finalRatio >= 1 ? "text-emerald-900" : b.finalRatio > 0 ? "text-amber-800" : "text-rose-900" });
+                                        return (
+                                          <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Cálculo proporcional</p>
+                                            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                              {rows.map((r) => (
+                                                <div key={r.label} className="rounded-xl bg-zinc-50 px-3 py-2">
+                                                  <p className="text-[11px] text-zinc-500">{r.label}</p>
+                                                  <p className={`mt-0.5 text-sm font-semibold ${r.tone}`}>{r.value}</p>
                                                 </div>
-                                              </li>
-                                            );
-                                          })}
-                                        </ul>
-                                      );
-                                    })()
-                                  : null}
-                                {q.type === "multiple_choice" && detail?.multipleChoice
-                                  ? (() => {
-                                      const b = detail.multipleChoice;
-                                      const rows: Array<{ label: string; value: string; tone: string }> = [];
-                                      rows.push({ label: "Correctas encontradas", value: `${b.correctSelected}/${b.totalCorrect}`, tone: "text-emerald-800" });
-                                      rows.push({ label: "Incorrectas marcadas", value: `${b.wrongSelected}/${b.totalIncorrect}`, tone: "text-rose-800" });
-                                      rows.push({ label: "Ganancia parcial", value: `+${(b.gainRatio * 100).toFixed(0)}%`, tone: "text-emerald-800" });
-                                      rows.push({ label: "Pérdida por error", value: `${b.lossRatio > 0 ? "-" : ""}${(b.lossRatio * 100).toFixed(0)}%`, tone: "text-rose-800" });
-                                      rows.push({ label: "Ratio final", value: `${(b.finalRatio * 100).toFixed(0)}%`, tone: b.finalRatio >= 1 ? "text-emerald-900" : b.finalRatio > 0 ? "text-amber-800" : "text-rose-900" });
-                                      return (
-                                        <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3">
-                                          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Cálculo proporcional</p>
-                                          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                            {rows.map((r) => (
-                                              <div key={r.label} className="rounded-xl bg-zinc-50 px-3 py-2">
-                                                <p className="text-[11px] text-zinc-500">{r.label}</p>
-                                                <p className={`mt-0.5 text-sm font-semibold ${r.tone}`}>{r.value}</p>
-                                              </div>
-                                            ))}
+                                              ))}
+                                            </div>
                                           </div>
-                                        </div>
-                                      );
-                                    })()
-                                  : null}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
+                                        );
+                                      })()
+                                    : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()
+              ) : (
+                /* ===== Panel en vez de preguntas: cuando ya está bloqueada la vista ===== */
+                (() => {
+                  let reasonTitle = "Detalle temporalmente inaccesible";
+                  let reasonDesc = "Por protección contra copia no puedes ver las respuestas aquí.";
+                  switch (resultsReviewBlockReason) {
+                    case "timeout":
+                      reasonTitle = "Tiempo de revisión agotado";
+                      reasonDesc = "Pasaron más de 2 minutos desde que terminaste el examen. El detalle por preguntas (y sus respuestas correctas) se cierra automáticamente para evitar difusión no autorizada del banco de preguntas.";
+                      break;
+                    case "screenshot":
+                      reasonTitle = "Se detectó una captura de pantalla";
+                      reasonDesc = "Para evitar que se distribuyan las respuestas, el sistema cerró el detalle de preguntas en cuanto detectó un atajo de captura (PrintScreen, Win+Shift+S u otro). Tu nota no se ve afectada; solo el acceso a este resumen.";
+                      break;
+                    case "copy":
+                    case "paste":
+                    case "select":
+                    case "drag":
+                    case "contextmenu":
+                      reasonTitle = "Se detectó un intento de copiar contenido";
+                      reasonDesc = "Cualquier intento de seleccionar, copiar, cortar, pegar, arrastrar o usar el menú derecho sobre las respuestas cierra inmediatamente esta vista. Habla con tu docente si necesitas una revisión oficial.";
+                      break;
+                    case "print":
+                      reasonTitle = "Intento de imprimir o guardar como PDF";
+                      reasonDesc = "El sistema bloquea la exportación de este panel. La nota final ya fue guardada de forma permanente. Consulta con tu docente si necesitas un reporte oficial.";
+                      break;
+                    case "devtools":
+                    case "viewsource":
+                      reasonTitle = "Intento de inspección del código";
+                      reasonDesc = "Se detectó F12 / Ctrl+Shift+I / Ctrl+U u otro acceso a herramientas de desarrollador. Como medida de protección, el detalle por preguntas ya no estará visible en esta página.";
+                      break;
+                  }
+                  return (
+                    <div className="rounded-3xl border border-zinc-200 bg-white">
+                      <div className="flex flex-col items-start gap-4 px-5 py-6 sm:flex-row sm:items-center">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+                          <LockKeyhole className="h-7 w-7" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-base font-semibold text-zinc-900">{reasonTitle}</p>
+                          <p className="mt-1 text-sm leading-relaxed text-zinc-700">{reasonDesc}</p>
+                          <p className="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-900">
+                            Tu calificación de <strong>{result.score5.toFixed(2)}</strong> ya fue registrada. Si requieres revisión académica, contacta directamente al docente encargado.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
 
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-2xl border border-zinc-200 bg-white p-4">
