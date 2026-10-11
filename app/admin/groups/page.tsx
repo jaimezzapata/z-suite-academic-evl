@@ -28,33 +28,7 @@ import {
 } from "lucide-react";
 import { firebaseAuth, firestore } from "@/lib/firebase/client";
 import { useFeedback } from "@/app/feedback-provider";
-
-type CatalogItem = { id: string; name: string };
-
-type ChapterDraft = {
-  title: string;
-  markdown: string;
-};
-
-type BookletRow = {
-  id: string;
-  title: string;
-  slug: string;
-  accessCode: string;
-  institution: string;
-  siteName: string;
-  shiftName: string;
-  groupName: string;
-  subjectName: string;
-  chaptersCount: number;
-  active: boolean;
-};
-
-type ChapterRow = {
-  id: string;
-  index: number;
-  title: string;
-};
+import type { CatalogItem, ChapterDraft, BookletRow, ChapterRow } from "@/types";
 
 function toCatalogItem(id: string, data: Record<string, unknown>): CatalogItem {
   const name = typeof data.name === "string" && data.name.trim() ? data.name : id;

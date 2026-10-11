@@ -46,36 +46,7 @@ import {
   type MultipleChoiceBreakdown,
 } from "@/lib/exam-grading";
 
-type PublishedExam = {
-  id: string;
-  templateId: string;
-  name: string;
-  accessCode: string;
-  status: string;
-  questionCount: number;
-  timeLimitMinutes: number;
-  documentationMarkdown: string;
-  fraudEnabled: boolean;
-};
-
-type SnapshotQuestion = {
-  id: string;
-  questionId: string;
-  order: number;
-  type: string;
-  statement: string;
-  points: number;
-  options?: Array<{ id: string; text: string; isCorrect?: boolean }>;
-  partialCredit?: boolean;
-  answerRules?: {
-    maxWords?: number;
-    keywords?: Array<{ term: string; weight: number }>;
-    passThreshold?: number;
-  };
-  puzzle?: Record<string, unknown>;
-};
-
-type Step = "code" | "student" | "rules" | "exam" | "result";
+import type { PublishedExam, SnapshotQuestion, ExamStep as Step } from "@/types";
 
 const RESUME_KEY = "zse:examResume";
 const ATTEMPT_STATE_PREFIX = "zse:attemptState:";

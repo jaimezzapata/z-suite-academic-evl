@@ -58,146 +58,17 @@ import {
   getWeeklySessionCountFromSource,
 } from "@/lib/teaching-load-sessions";
 
-type CatalogItem = { id: string; name: string };
-
-type TeachingLoadRow = {
-  id: string;
-  institution: "CESDE" | "SENA" | string;
-  cesdeGroupType: "REGULAR" | "EMPRESARIAL" | string;
-  period: string;
-  subjectId: string;
-  subjectName: string;
-  audienceId: string;
-  audienceName: string;
-  audienceType: "group" | "ficha" | string;
-  siteId: string;
-  siteName: string;
-  shiftId: string;
-  shiftName: string;
-  startDate: string;
-  endDate: string;
-  startTime: string;
-  endTime: string;
-  day2StartTime: string;
-  day2EndTime: string;
-  classroom: string;
-  durationMinutes: number;
-  academicHours: number;
-  day2DurationMinutes: number;
-  day2AcademicHours: number;
-  weeklyAcademicHours: number;
-  dayOfWeek1: string;
-  dayOfWeek2: string;
-  driveWorkspaceId: string;
-  driveStatus: string;
-  driveErrorMessage: string;
-  drivePublicFolderUrl: string;
-  active: boolean;
-};
-
-type TeachingLoadForm = {
-  institution: "CESDE" | "SENA";
-  cesdeGroupType: "REGULAR" | "EMPRESARIAL";
-  period: string;
-  subjectId: string;
-  audienceId: string;
-  siteId: string;
-  shiftId: string;
-  startDate: string;
-  endDate: string;
-  dayOfWeek1: string;
-  dayOfWeek2: string;
-  startTime: string;
-  endTime: string;
-  day2StartTime: string;
-  day2EndTime: string;
-  classroom: string;
-};
-
-type WorkloadFilters = {
-  subjectId: string;
-  audienceId: string;
-  siteId: string;
-  shiftId: string;
-  classroom: string;
-  dateFrom: string;
-  dateTo: string;
-};
-
-type PayrollStatementItem = {
-  loadId: string;
-  subjectId: string;
-  subjectName: string;
-  audienceId: string;
-  audienceName: string;
-  audienceType: string;
-  siteId: string;
-  siteName: string;
-  shiftId: string;
-  shiftName: string;
-  period: string;
-  classroom: string;
-  date: string;
-  dayName: string;
-  startTime: string;
-  endTime: string;
-  academicHours: number;
-  sessionDayOfWeek: string;
-  hourlyRate: number;
-  estimatedValue: number;
-  cesdeGroupType: string;
-};
-
-type PayrollStatementRow = {
-  id: string;
-  rangeStart: string;
-  rangeEnd: string;
-  hourlyRate: number;
-  totalHours: number;
-  totalValue: number;
-  itemCount: number;
-  items: PayrollStatementItem[];
-  createdByEmail: string;
-  createdByName: string;
-  createdAtLabel: string;
-};
-
-type WorkloadFocusState = {
-  institution?: "CESDE" | "SENA";
-  startDate?: string;
-};
-
-type CalendarEventItem = {
-  id: string;
-  row: TeachingLoadRow;
-  dayIndex: number;
-  top: string;
-  height: string;
-  tone: string;
-  subjectName: string;
-  audienceName: string;
-  classroom: string;
-  timeRange: string;
-  hoursLabel: string;
-  academicHours: number;
-  dateRange: string;
-  shortDateRange: string;
-  slot: 1 | 2;
-  dateKey: string;
-  startMinutes: number;
-  endMinutes: number;
-  durationMinutes: number;
-};
-
-type DragCalendarEventState = {
-  eventId: string;
-  rowId: string;
-  slot: 1 | 2;
-  dateKey: string;
-  startMinutes: number;
-  endMinutes: number;
-  durationMinutes: number;
-};
+import type {
+  CatalogItem,
+  TeachingLoadRow,
+  TeachingLoadForm,
+  WorkloadFilters,
+  PayrollStatementItem,
+  PayrollStatementRow,
+  WorkloadFocusState,
+  CalendarEventItem,
+  DragCalendarEventState,
+} from "@/types";
 
 const EMPTY_FORM: TeachingLoadForm = {
   institution: "CESDE",

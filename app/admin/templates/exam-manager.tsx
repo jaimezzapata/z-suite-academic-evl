@@ -31,36 +31,79 @@ import {
   Trash2,
   SendHorizontal,
   KeyRound,
+  Eye,
+  RefreshCw,
+  ArrowLeftRight,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+  AlertCircle,
+  Search,
+  BookOpen,
+  Clock,
+  Layers,
+  FileText,
 } from "lucide-react";
+import { MarkdownViewer } from "@/app/ui/markdown-viewer";
 import { IconButton } from "@/app/admin/ui/icon-button";
 import { useFeedback } from "@/app/feedback-provider";
 import { reportFormError, reportFormSuccess } from "@/lib/form-feedback";
 
-type CatalogItem = {
-  id: string;
-  name: string;
-};
+import type { CatalogItem, ExamTemplateRow, PublishedRef, PreviewQuestion } from "@/types";
 
-type ExamTemplateRow = {
-  id: string;
-  name: string;
-  institution: "CESDE" | "SENA";
-  subjectId: string;
-  groupId: string;
-  momentId: string;
-  siteId: string;
-  shiftId: string;
-  questionCount: number;
-  timeLimitMinutes: number;
-  active: boolean;
-  fraudEnabled: boolean;
-  documentationMarkdown: string;
-};
+function normalizeStatementMarkdown(statement: string) {
+  const raw = typeof statement === "string" ? statement : "";
+  if (!raw.includes("```")) return raw;
+  return raw
+    .replace(/```(\w+)[ \t]+/g, "```$1\n")
+    .replace(/([^\n])```/g, "$1\n```");
+}
 
-type PublishedRef = {
-  accessCode: string;
-  status: string;
-};
+function getQuestionTypeLabel(type?: string) {
+  switch (type) {
+    case "single_choice":
+      return "Selección única";
+    case "multiple_choice":
+      return "Selección múltiple";
+    case "puzzle_order":
+      return "Ordenar";
+    case "puzzle_match":
+      return "Emparejar";
+    case "puzzle_blank":
+      return "Completar espacios";
+    case "open_text":
+      return "Texto libre";
+    default:
+      return type || "Pregunta";
+  }
+}
+
+function getDifficultyBadge(diff?: string) {
+  switch (diff?.toLowerCase()) {
+    case "easy":
+    case "fácil":
+    case "facil":
+      return { label: "Fácil", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+    case "medium":
+    case "media":
+      return { label: "Media", cls: "bg-amber-50 text-amber-700 border-amber-200" };
+    case "hard":
+    case "difícil":
+    case "dificil":
+      return { label: "Difícil", cls: "bg-rose-50 text-rose-700 border-rose-200" };
+    default:
+      return { label: diff || "General", cls: "bg-zinc-50 text-zinc-700 border-zinc-200" };
+  }
+}
+
+function momentRank(id: unknown) {
+  const s = typeof id === "string" ? id.trim().toLowerCase() : "";
+  const m = /^m(\d+)$/.exec(s);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function toCatalogItem(id: string, data: Record<string, unknown>): CatalogItem {
   const name = typeof data.name === "string" && data.name.trim() ? data.name : id;
@@ -195,6 +238,18 @@ export function ExamManager() {
   const [publishing, setPublishing] = useState(false);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
   const [publishedByTemplate, setPublishedByTemplate] = useState<Record<string, PublishedRef>>({});
+
+  // Preview & exam adjustments state
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [eligiblePool, setEligiblePool] = useState<PreviewQuestion[]>([]);
+  const [selectedQuestions, setSelectedQuestions] = useState<PreviewQuestion[]>([]);
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+  const [previewViewMode, setPreviewViewMode] = useState<"single" | "all">("single");
+  const [manualSwapIndex, setManualSwapIndex] = useState<number | null>(null);
+  const [swapSearchTerm, setSwapSearchTerm] = useState("");
+  const [swapDifficultyFilter, setSwapDifficultyFilter] = useState("all");
+  const [showDocsPreview, setShowDocsPreview] = useState(false);
 
   const namesById = useMemo(() => {
     const m = new Map<string, string>();
@@ -469,54 +524,53 @@ export function ExamManager() {
     throw new Error("No fue posible generar un codigo unico.");
   }
 
-  function openPublish(row: ExamTemplateRow) {
+  async function openPublish(row: ExamTemplateRow) {
     setPublishTarget(row);
     setPublishMessage(null);
-    setPublishOpen(true);
-  }
-
-  async function publishExam() {
-    if (!publishTarget) return;
-    setPublishing(true);
     setError(null);
-    setPublishMessage(null);
+    setPreviewError(null);
+    setPublishOpen(true);
+    setPreviewLoading(true);
+    setSelectedQuestions([]);
+    setEligiblePool([]);
+    setActiveQuestionIndex(0);
+    setPreviewViewMode("single");
+    setManualSwapIndex(null);
+    setSwapSearchTerm("");
+    setSwapDifficultyFilter("all");
+    setShowDocsPreview(false);
 
     try {
-      function momentRank(id: unknown) {
-        const s = typeof id === "string" ? id.trim().toLowerCase() : "";
-        const m = /^m(\d+)$/.exec(s);
-        if (!m) return null;
-        const n = Number(m[1]);
-        return Number.isFinite(n) && n > 0 ? n : null;
-      }
-
-      const publishSubjectName = namesById.get(`subjects:${publishTarget.subjectId}`) ?? publishTarget.subjectId;
+      const publishSubjectName = namesById.get(`subjects:${row.subjectId}`) ?? row.subjectId;
       const questionSnap = await getDocs(
         query(
           collection(firestore, "questions"),
-          where("subjectId", "==", publishTarget.subjectId),
+          where("subjectId", "==", row.subjectId),
           where("status", "==", "published"),
           limit(1200),
         ),
       );
 
-      const candidates = questionSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      const candidates = questionSnap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Record<string, unknown>),
+      })) as PreviewQuestion[];
+
       if (candidates.length === 0) {
-        showError(
-          `No se encontraron preguntas publicadas para la materia seleccionada (${publishSubjectName}). ID esperado: ${publishTarget.subjectId}. Verifica que las preguntas importadas usen exactamente ese subjectId y que el catálogo de materias sea la fuente de verdad.`,
+        setPreviewError(
+          `No se encontraron preguntas publicadas para la materia seleccionada (${publishSubjectName}). ID esperado: ${row.subjectId}. Verifica que las preguntas importadas usen exactamente ese subjectId y que el catálogo de materias sea la fuente de verdad.`,
         );
         return;
       }
 
-      const examRank = momentRank(publishTarget.momentId);
+      const examRank = momentRank(row.momentId);
       const eligible = candidates.filter((q) => {
-        const row = q as Record<string, unknown>;
-        const momentIds = Array.isArray(row.momentIds)
-          ? (row.momentIds as unknown[])
-          : typeof row.momentIds === "string"
-            ? [row.momentIds]
-            : typeof row.momentId === "string"
-              ? [row.momentId]
+        const momentIds = Array.isArray(q.momentIds)
+          ? (q.momentIds as unknown[])
+          : typeof q.momentIds === "string"
+            ? [q.momentIds]
+            : typeof q.momentId === "string"
+              ? [q.momentId]
               : [];
 
         if (momentIds.length === 0) {
@@ -524,7 +578,7 @@ export function ExamManager() {
         }
 
         if (examRank === null) {
-          return momentIds.includes(publishTarget.momentId);
+          return momentIds.includes(row.momentId);
         }
 
         return momentIds.some((m) => {
@@ -533,14 +587,94 @@ export function ExamManager() {
         });
       });
 
-      if (eligible.length < publishTarget.questionCount) {
-        showError(
-          `No hay suficientes preguntas para publicar para este examen. En materia: ${candidates.length}, en momento (regla Mx): ${eligible.length}. Requeridas: ${publishTarget.questionCount}.`,
+      if (eligible.length < row.questionCount) {
+        setPreviewError(
+          `No hay suficientes preguntas para publicar para este examen. En materia: ${candidates.length}, en momento (regla Mx): ${eligible.length}. Requeridas: ${row.questionCount}.`,
         );
+        setEligiblePool(eligible);
+        setSelectedQuestions(eligible);
         return;
       }
 
-      const selected = shuffleArray(eligible).slice(0, publishTarget.questionCount);
+      setEligiblePool(eligible);
+      const selected = shuffleArray(eligible).slice(0, row.questionCount);
+      setSelectedQuestions(selected);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error al cargar las preguntas para la vista previa.";
+      setPreviewError(msg);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function reShuffleAll() {
+    if (!publishTarget || eligiblePool.length < publishTarget.questionCount) return;
+    const next = shuffleArray(eligiblePool).slice(0, publishTarget.questionCount);
+    setSelectedQuestions(next);
+    setActiveQuestionIndex(0);
+    feedback.success("Preguntas re-mezcladas aleatoriamente del banco.");
+  }
+
+  function handleQuickSwap(index: number) {
+    const currentSelectedIds = new Set(selectedQuestions.map((q) => q.id));
+    const availableUnused = eligiblePool.filter((q) => !currentSelectedIds.has(q.id));
+
+    if (availableUnused.length === 0) {
+      feedback.warning("No hay más preguntas disponibles en el banco para reemplazar.");
+      return;
+    }
+
+    const randomNew = availableUnused[Math.floor(Math.random() * availableUnused.length)];
+    const updated = [...selectedQuestions];
+    updated[index] = randomNew;
+    setSelectedQuestions(updated);
+    feedback.success(`Pregunta #${index + 1} reemplazada por otra del banco.`);
+  }
+
+  function handleSelectReplacement(replacement: PreviewQuestion) {
+    if (manualSwapIndex === null) return;
+    const updated = [...selectedQuestions];
+    updated[manualSwapIndex] = replacement;
+    setSelectedQuestions(updated);
+    feedback.success(`Pregunta #${manualSwapIndex + 1} actualizada con la pregunta seleccionada.`);
+    setManualSwapIndex(null);
+    setSwapSearchTerm("");
+  }
+
+  const unusedQuestions = useMemo(() => {
+    if (manualSwapIndex === null) return [];
+    const selectedIds = new Set(selectedQuestions.map((q) => q.id));
+    return eligiblePool.filter((q) => !selectedIds.has(q.id));
+  }, [eligiblePool, selectedQuestions, manualSwapIndex]);
+
+  const filteredUnusedQuestions = useMemo(() => {
+    let list = unusedQuestions;
+    if (swapDifficultyFilter !== "all") {
+      list = list.filter((q) => (q.difficulty || "").toLowerCase() === swapDifficultyFilter.toLowerCase());
+    }
+    if (swapSearchTerm.trim()) {
+      const term = swapSearchTerm.toLowerCase();
+      list = list.filter((q) => (q.statement || "").toLowerCase().includes(term));
+    }
+    return list;
+  }, [unusedQuestions, swapDifficultyFilter, swapSearchTerm]);
+
+  const remainingUnusedCount = useMemo(() => {
+    const selectedIds = new Set(selectedQuestions.map((q) => q.id));
+    return eligiblePool.filter((q) => !selectedIds.has(q.id)).length;
+  }, [eligiblePool, selectedQuestions]);
+
+  async function publishExam() {
+    if (!publishTarget) return;
+    if (selectedQuestions.length === 0) {
+      showError("No hay preguntas seleccionadas para publicar.");
+      return;
+    }
+    setPublishing(true);
+    setError(null);
+    setPublishMessage(null);
+
+    try {
       const accessCode = await generateUniqueAccessCode();
 
       const publishedRef = await addDoc(collection(firestore, "publishedExams"), {
@@ -553,7 +687,7 @@ export function ExamManager() {
         momentId: publishTarget.momentId,
         siteId: publishTarget.siteId,
         shiftId: publishTarget.shiftId,
-        questionCount: publishTarget.questionCount,
+        questionCount: selectedQuestions.length,
         timeLimitMinutes: publishTarget.timeLimitMinutes || 60,
         documentationMarkdown: publishTarget.documentationMarkdown || "",
         fraudEnabled: publishTarget.fraudEnabled,
@@ -565,7 +699,7 @@ export function ExamManager() {
       });
 
       const batch = writeBatch(firestore);
-      selected.forEach((q, index) => {
+      selectedQuestions.forEach((q, index) => {
         const qRef = doc(firestore, "publishedExams", publishedRef.id, "questions", q.id);
         batch.set(qRef, {
           ...q,
@@ -1166,9 +1300,17 @@ export function ExamManager() {
                           <Power className="h-4 w-4" />
                         </ActionIconButton>
                         <ActionIconButton
+                          title="Vista previa"
+                          tone="neutral"
+                          onClick={() => void openPublish(row)}
+                          disabled={disabled}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </ActionIconButton>
+                        <ActionIconButton
                           title="Publicar"
                           tone="primary"
-                          onClick={() => openPublish(row)}
+                          onClick={() => void openPublish(row)}
                           disabled={disabled || !row.active}
                         >
                           <SendHorizontal className="h-4 w-4" />
@@ -1283,9 +1425,17 @@ export function ExamManager() {
                               <Power className="h-4 w-4" />
                             </ActionIconButton>
                             <ActionIconButton
+                              title="Vista previa"
+                              tone="neutral"
+                              onClick={() => void openPublish(row)}
+                              disabled={disabled}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </ActionIconButton>
+                            <ActionIconButton
                               title="Publicar"
                               tone="primary"
-                              onClick={() => openPublish(row)}
+                              onClick={() => void openPublish(row)}
                               disabled={disabled || !row.active}
                             >
                               <SendHorizontal className="h-4 w-4" />
@@ -1853,57 +2003,596 @@ export function ExamManager() {
       ) : null}
 
       {publishOpen && publishTarget ? (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
           <button
             type="button"
             onClick={() => setPublishOpen(false)}
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/60 backdrop-blur-xs"
             aria-label="Cerrar"
           />
-          <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-xl rounded-t-3xl bg-white p-4 shadow-2xl sm:inset-y-10 sm:bottom-auto sm:rounded-3xl sm:p-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2 className="text-lg font-semibold tracking-tight text-zinc-950">Publicar examen</h2>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Se seleccionaran preguntas en masa y se creara un codigo de acceso.
-                </p>
+          <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col rounded-3xl border border-zinc-200 bg-white shadow-2xl overflow-hidden">
+            {/* Header del Modal */}
+            <div className="border-b border-zinc-100 bg-zinc-50/70 p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-2.5 py-0.5 text-xs font-semibold text-white">
+                      <Eye className="h-3.5 w-3.5" />
+                      Vista Previa de Examen
+                    </span>
+                    <span className="text-xs text-zinc-500 font-medium">
+                      {publishTarget.institution}
+                    </span>
+                  </div>
+                  <h2 className="mt-1 text-lg font-bold tracking-tight text-zinc-950 sm:text-xl truncate">
+                    {publishTarget.name}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-zinc-600">
+                    Revisa las preguntas que integrarán el examen, cámbialas si lo requieres y confirma la publicación.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <IconButton
+                    onClick={() => setPublishOpen(false)}
+                    className="h-9 w-9 shrink-0"
+                    aria-label="Cerrar"
+                    title="Cerrar"
+                  >
+                    <X className="h-4 w-4" />
+                  </IconButton>
+                </div>
               </div>
-              <IconButton
-                onClick={() => setPublishOpen(false)}
-                className="h-9 w-9"
-                aria-label="Cerrar"
-                title="Cerrar"
-              >
-                <X className="h-4 w-4" />
-              </IconButton>
+
+              {/* Badges de resumen rápido */}
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-zinc-700">
+                  <BookOpen className="h-3.5 w-3.5 text-zinc-500" />
+                  <span className="font-medium text-zinc-900">
+                    {namesById.get(`subjects:${publishTarget.subjectId}`) ?? publishTarget.subjectId}
+                  </span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-zinc-700">
+                  <Clock className="h-3.5 w-3.5 text-zinc-500" />
+                  <span>{publishTarget.timeLimitMinutes || 60} minutos</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-zinc-700">
+                  <Layers className="h-3.5 w-3.5 text-zinc-500" />
+                  <span>{selectedQuestions.length} de {publishTarget.questionCount} preguntas</span>
+                </div>
+                {eligiblePool.length > 0 ? (
+                  <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-800 font-medium">
+                    <span>{remainingUnusedCount} en reserva en banco</span>
+                  </div>
+                ) : null}
+
+                {eligiblePool.length >= publishTarget.questionCount && !previewLoading ? (
+                  <button
+                    type="button"
+                    onClick={reShuffleAll}
+                    disabled={publishing}
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-800 shadow-2xs hover:bg-zinc-100 transition disabled:opacity-50"
+                    title="Generar una nueva combinación aleatoria con preguntas del banco"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                    Re-mezclar todas
+                  </button>
+                ) : null}
+              </div>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-700">
-              <p className="font-semibold text-zinc-900">{publishTarget.name}</p>
-              <p className="mt-1">Preguntas a seleccionar: {publishTarget.questionCount}</p>
-              <p>Tiempo limite: {publishTarget.timeLimitMinutes || 60} minutos</p>
+            {/* Contenido principal con scroll */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+              {previewLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="h-9 w-9 animate-spin rounded-full border-3 border-zinc-900 border-t-transparent" />
+                  <p className="mt-4 text-sm font-semibold text-zinc-900">
+                    Cargando preguntas elegibles del banco...
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Filtrando por materia y momento académico correspondiente.
+                  </p>
+                </div>
+              ) : previewError ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 shrink-0 text-rose-600 mt-0.5" />
+                    <div>
+                      <h3 className="font-semibold text-rose-950">Atención al generar la vista previa</h3>
+                      <p className="mt-1 text-rose-800 text-xs sm:text-sm leading-relaxed">{previewError}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedQuestions.length === 0 ? (
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-8 text-center text-sm text-zinc-500">
+                  No hay preguntas seleccionadas para previsualizar.
+                </div>
+              ) : (
+                <>
+                  {/* Selector y modo de vista */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-2.5">
+                    {/* Botones de navegación 1..N */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full">
+                      {selectedQuestions.map((_, idx) => {
+                        const isActive = previewViewMode === "single" && activeQuestionIndex === idx;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setActiveQuestionIndex(idx);
+                              setPreviewViewMode("single");
+                            }}
+                            className={`flex h-7 min-w-7 items-center justify-center rounded-lg px-2 text-xs font-semibold transition ${
+                              isActive
+                                ? "bg-zinc-900 text-white shadow-xs"
+                                : "bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-100"
+                            }`}
+                          >
+                            {idx + 1}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Switcher de vista: Individual vs Lista Completa */}
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-zinc-200 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewViewMode("single")}
+                        className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                          previewViewMode === "single"
+                            ? "bg-zinc-900 text-white shadow-2xs"
+                            : "text-zinc-600 hover:text-zinc-900"
+                        }`}
+                      >
+                        Una a una
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewViewMode("all")}
+                        className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                          previewViewMode === "all"
+                            ? "bg-zinc-900 text-white shadow-2xs"
+                            : "text-zinc-600 hover:text-zinc-900"
+                        }`}
+                      >
+                        Ver todas ({selectedQuestions.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Renderizado de preguntas */}
+                  {previewViewMode === "single" ? (
+                    (() => {
+                      const q = selectedQuestions[activeQuestionIndex];
+                      if (!q) return null;
+                      const diffBadge = getDifficultyBadge(q.difficulty);
+
+                      return (
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-4 sm:p-5 shadow-2xs">
+                          {/* Encabezado de la pregunta */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 pb-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center rounded-lg bg-zinc-100 px-2.5 py-1 text-xs font-bold text-zinc-900">
+                                Pregunta {activeQuestionIndex + 1} de {selectedQuestions.length}
+                              </span>
+                              <span className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                                {getQuestionTypeLabel(q.type)}
+                              </span>
+                              <span
+                                className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-medium ${diffBadge.cls}`}
+                              >
+                                {diffBadge.label}
+                              </span>
+                              <span className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                                {q.points ?? 1} pt{((q.points ?? 1) !== 1 ? "s" : "")}
+                              </span>
+                            </div>
+
+                            {/* Acciones de reemplazo */}
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickSwap(activeQuestionIndex)}
+                                disabled={remainingUnusedCount === 0 || publishing}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 transition disabled:opacity-40"
+                                title="Reemplazar por otra pregunta aleatoria del banco"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5 text-zinc-500" />
+                                Cambiar al azar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setManualSwapIndex(activeQuestionIndex);
+                                  setSwapSearchTerm("");
+                                  setSwapDifficultyFilter("all");
+                                }}
+                                disabled={remainingUnusedCount === 0 || publishing}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-900 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-zinc-800 transition disabled:opacity-40"
+                                title="Seleccionar pregunta específica del banco de preguntas"
+                              >
+                                <ArrowLeftRight className="h-3.5 w-3.5" />
+                                Elegir del banco...
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Enunciado de la pregunta con MarkdownViewer */}
+                          <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+                              Enunciado:
+                            </p>
+                            <MarkdownViewer
+                              markdown={normalizeStatementMarkdown(q.statement || "Sin enunciado")}
+                              className="prose-sm max-w-none text-zinc-900 leading-relaxed"
+                            />
+                          </div>
+
+                          {/* Opciones de respuesta */}
+                          {Array.isArray(q.options) && q.options.length > 0 ? (
+                            <div className="mt-4 space-y-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                                Opciones de respuesta (la respuesta correcta está destacada):
+                              </p>
+                              <div className="grid gap-2">
+                                {q.options.map((opt, optIdx) => {
+                                  const letter = String.fromCharCode(65 + optIdx);
+                                  const isCorrect = Boolean(opt.isCorrect);
+                                  return (
+                                    <div
+                                      key={opt.id || optIdx}
+                                      className={`flex items-start gap-3 rounded-xl border p-3 text-xs sm:text-sm transition ${
+                                        isCorrect
+                                          ? "border-emerald-300 bg-emerald-50/70 text-emerald-950 font-medium ring-1 ring-emerald-300/60"
+                                          : "border-zinc-200 bg-white text-zinc-700"
+                                      }`}
+                                    >
+                                      <span
+                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                                          isCorrect
+                                            ? "bg-emerald-600 text-white"
+                                            : "bg-zinc-100 text-zinc-700 border border-zinc-200"
+                                        }`}
+                                      >
+                                        {letter}
+                                      </span>
+                                      <div className="flex-1 min-w-0 pt-0.5 leading-snug">
+                                        <MarkdownViewer markdown={opt.text} className="prose-sm max-w-none" />
+                                      </div>
+                                      {isCorrect ? (
+                                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                          Correcta
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {/* Puzzles u otros tipos si aplican */}
+                          {q.type === "puzzle_order" && q.puzzle ? (
+                            <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-700">
+                              <p className="font-semibold text-zinc-900 mb-2">Orden correcto de elementos:</p>
+                              <div className="space-y-1.5">
+                                {(((q.puzzle.items as Array<Record<string, unknown>>) ?? [])).map((item, iIdx) => (
+                                  <div key={iIdx} className="flex items-center gap-2 rounded-lg bg-white border border-zinc-200 p-2">
+                                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-zinc-800 text-[11px] font-bold text-white">
+                                      {iIdx + 1}
+                                    </span>
+                                    <span>{String(item.text ?? item.content ?? "")}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {/* Navegación anterior / siguiente */}
+                          <div className="mt-5 flex items-center justify-between border-t border-zinc-100 pt-3">
+                            <button
+                              type="button"
+                              onClick={() => setActiveQuestionIndex((prev) => Math.max(0, prev - 1))}
+                              disabled={activeQuestionIndex === 0}
+                              className="inline-flex items-center gap-1 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition disabled:opacity-40"
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                              Anterior
+                            </button>
+                            <span className="text-xs text-zinc-500 font-medium">
+                              {activeQuestionIndex + 1} / {selectedQuestions.length}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveQuestionIndex((prev) =>
+                                  Math.min(selectedQuestions.length - 1, prev + 1),
+                                )
+                              }
+                              disabled={activeQuestionIndex === selectedQuestions.length - 1}
+                              className="inline-flex items-center gap-1 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition disabled:opacity-40"
+                            >
+                              Siguiente
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    /* Vista completa de todas las preguntas */
+                    <div className="space-y-4">
+                      {selectedQuestions.map((q, idx) => {
+                        const diffBadge = getDifficultyBadge(q.difficulty);
+                        return (
+                          <div key={q.id || idx} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xs">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 pb-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center rounded-lg bg-zinc-100 px-2.5 py-1 text-xs font-bold text-zinc-900">
+                                  Pregunta {idx + 1}
+                                </span>
+                                <span className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                                  {getQuestionTypeLabel(q.type)}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-medium ${diffBadge.cls}`}
+                                >
+                                  {diffBadge.label}
+                                </span>
+                                <span className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                                  {q.points ?? 1} pt{((q.points ?? 1) !== 1 ? "s" : "")}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickSwap(idx)}
+                                  disabled={remainingUnusedCount === 0 || publishing}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 transition disabled:opacity-40"
+                                  title="Reemplazar por otra al azar"
+                                >
+                                  <RefreshCw className="h-3 w-3 text-zinc-500" />
+                                  Al azar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setManualSwapIndex(idx);
+                                    setSwapSearchTerm("");
+                                    setSwapDifficultyFilter("all");
+                                  }}
+                                  disabled={remainingUnusedCount === 0 || publishing}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-900 bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-white shadow-2xs hover:bg-zinc-800 transition disabled:opacity-40"
+                                  title="Elegir del banco..."
+                                >
+                                  <ArrowLeftRight className="h-3 w-3" />
+                                  Elegir...
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50/50 p-3">
+                              <MarkdownViewer
+                                markdown={normalizeStatementMarkdown(q.statement || "Sin enunciado")}
+                                className="prose-sm max-w-none text-zinc-900 leading-relaxed"
+                              />
+                            </div>
+
+                            {Array.isArray(q.options) && q.options.length > 0 ? (
+                              <div className="mt-3 space-y-1.5">
+                                {q.options.map((opt, optIdx) => {
+                                  const letter = String.fromCharCode(65 + optIdx);
+                                  const isCorrect = Boolean(opt.isCorrect);
+                                  return (
+                                    <div
+                                      key={opt.id || optIdx}
+                                      className={`flex items-start gap-2.5 rounded-xl border p-2.5 text-xs transition ${
+                                        isCorrect
+                                          ? "border-emerald-300 bg-emerald-50/70 text-emerald-950 font-medium"
+                                          : "border-zinc-200 bg-white text-zinc-700"
+                                      }`}
+                                    >
+                                      <span
+                                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] font-bold ${
+                                          isCorrect
+                                            ? "bg-emerald-600 text-white"
+                                            : "bg-zinc-100 text-zinc-700 border border-zinc-200"
+                                        }`}
+                                      >
+                                        {letter}
+                                      </span>
+                                      <span className="flex-1 min-w-0 pt-0.5">{opt.text}</span>
+                                      {isCorrect ? (
+                                        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-emerald-800">
+                                          <CheckCircle2 className="h-3 w-3" />
+                                          Correcta
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Documentación / Temario adjunto si existe */}
+                  {publishTarget.documentationMarkdown ? (
+                    <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-zinc-600" />
+                          <span className="text-xs font-semibold text-zinc-900">
+                            Documentación / Guía adjunta al examen
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowDocsPreview(!showDocsPreview)}
+                          className="text-xs font-semibold text-zinc-700 hover:text-zinc-950 underline"
+                        >
+                          {showDocsPreview ? "Ocultar" : "Mostrar documento"}
+                        </button>
+                      </div>
+                      {showDocsPreview ? (
+                        <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 max-h-60 overflow-y-auto">
+                          <MarkdownViewer
+                            markdown={publishTarget.documentationMarkdown}
+                            className="prose-sm max-w-none text-zinc-800"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <IconButton
-                onClick={() => setPublishOpen(false)}
-                className="h-10 w-10"
-                aria-label="Cancelar"
-                title="Cancelar"
-                disabled={publishing}
-              >
-                <X className="h-4 w-4" />
-              </IconButton>
-              <IconButton
-                variant="primary"
-                onClick={publishExam}
-                className="h-10 w-10"
-                aria-label="Publicar"
-                title={publishing ? "Publicando..." : "Publicar"}
-                disabled={publishing}
-              >
-                <SendHorizontal className="h-4 w-4" />
-              </IconButton>
+            {/* Selector manual de reemplazo (Overlay modal) */}
+            {manualSwapIndex !== null ? (
+              <div className="absolute inset-0 z-20 flex flex-col bg-white p-4 sm:p-5">
+                <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-zinc-950">
+                      Reemplazar Pregunta #{manualSwapIndex + 1}
+                    </h3>
+                    <p className="text-xs text-zinc-500">
+                      Selecciona una pregunta disponible del banco para esta materia y momento académico.
+                    </p>
+                  </div>
+                  <IconButton
+                    onClick={() => setManualSwapIndex(null)}
+                    className="h-8 w-8"
+                    aria-label="Cerrar selector"
+                  >
+                    <X className="h-4 w-4" />
+                  </IconButton>
+                </div>
+
+                {/* Filtro y buscador */}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
+                    <input
+                      type="text"
+                      value={swapSearchTerm}
+                      onChange={(e) => setSwapSearchTerm(e.target.value)}
+                      placeholder="Buscar por texto del enunciado..."
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-9 pr-3 py-2 text-xs outline-none focus:border-zinc-400 focus:bg-white transition"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 text-xs">
+                    {(["all", "easy", "medium", "hard"] as const).map((diff) => (
+                      <button
+                        key={diff}
+                        type="button"
+                        onClick={() => setSwapDifficultyFilter(diff)}
+                        className={`px-2.5 py-1.5 rounded-lg font-medium transition ${
+                          swapDifficultyFilter === diff
+                            ? "bg-zinc-900 text-white"
+                            : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                        }`}
+                      >
+                        {diff === "all" ? "Todas" : diff === "easy" ? "Fácil" : diff === "medium" ? "Media" : "Difícil"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Lista de preguntas disponibles */}
+                <div className="mt-3 flex-1 overflow-y-auto space-y-2.5 pr-1">
+                  {filteredUnusedQuestions.length === 0 ? (
+                    <div className="py-12 text-center text-xs text-zinc-500">
+                      No se encontraron preguntas disponibles con los filtros actuales.
+                    </div>
+                  ) : (
+                    filteredUnusedQuestions.map((candidate) => {
+                      const diffBadge = getDifficultyBadge(candidate.difficulty);
+                      return (
+                        <div
+                          key={candidate.id}
+                          className="flex items-start justify-between gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/50 p-3.5 hover:bg-zinc-50 hover:border-zinc-300 transition"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                              <span className="rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700">
+                                {getQuestionTypeLabel(candidate.type)}
+                              </span>
+                              <span
+                                className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${diffBadge.cls}`}
+                              >
+                                {diffBadge.label}
+                              </span>
+                              <span className="rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700">
+                                {candidate.points ?? 1} pt(s)
+                              </span>
+                            </div>
+                            <p className="line-clamp-2 text-xs text-zinc-800 leading-relaxed">
+                              {candidate.statement || "Sin enunciado"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectReplacement(candidate)}
+                            className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-zinc-800 transition"
+                          >
+                            Seleccionar
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="mt-3 border-t border-zinc-100 pt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setManualSwapIndex(null)}
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Footer del Modal */}
+            <div className="border-t border-zinc-200 bg-zinc-50/70 p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-zinc-500">
+                {selectedQuestions.length > 0 ? (
+                  <span>
+                    Total: <strong className="text-zinc-900 font-semibold">{selectedQuestions.length} preguntas</strong> listas para publicar.
+                  </span>
+                ) : (
+                  <span>Configuración de examen</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPublishOpen(false)}
+                  disabled={publishing}
+                  className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 shadow-2xs hover:bg-zinc-100 transition disabled:opacity-50"
+                >
+                  Cerrar
+                </button>
+                <button
+                  type="button"
+                  onClick={publishExam}
+                  disabled={publishing || previewLoading || selectedQuestions.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-zinc-800 transition disabled:opacity-50"
+                >
+                  <SendHorizontal className="h-4 w-4" />
+                  {publishing ? "Publicando examen..." : "Confirmar y Publicar Examen"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

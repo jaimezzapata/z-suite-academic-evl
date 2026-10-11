@@ -32,19 +32,7 @@ import {
 import { IconButton } from "@/app/admin/ui/icon-button";
 import { useFeedback } from "@/app/feedback-provider";
 import { reportFormError } from "@/lib/form-feedback";
-
-type Row = {
-  id: string;
-  name: string;
-  active: boolean;
-};
-
-type FichaRow = {
-  id: string;
-  number: string;
-  trimesterId: string;
-  active: boolean;
-};
+import type { CatalogRow as Row, FichaRow } from "@/types";
 
 function ModalShell({
   title,

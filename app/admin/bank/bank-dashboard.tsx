@@ -21,74 +21,15 @@ import { collection, deleteDoc, doc, getCountFromServer, getDoc, getDocs, limit,
 import { firebaseAuth, firestore } from "@/lib/firebase/client";
 import { MinimalPagination } from "@/app/admin/ui/minimal-pagination";
 
-type Stat = { label: string; value: number };
-type CatalogItem = { id: string; name: string };
-
-type BankData = {
-  counts: {
-    total: number;
-    published: number;
-    draft: number;
-    archived: number;
-  };
-  byType: Stat[];
-  byDifficulty: Stat[];
-  topSubjects: { label: string; value: number }[];
-  topGroups: { label: string; value: number }[];
-  topMoments: { label: string; value: number }[];
-  quality: {
-    missingStatus: number;
-    missingPoints: number;
-    missingGroups: number;
-    missingMoments: number;
-  };
-  preview: {
-    id: string;
-    statement: string;
-    status: string;
-    type: string;
-    difficulty: string;
-    points: number | null;
-    subjectId: string;
-  }[];
-};
-
-type QuestionOption = { id: string; text: string; isCorrect?: boolean };
-type AnswerRules = {
-  maxWords?: number;
-  passThreshold?: number;
-  keywords?: Array<{ term: string; weight: number }>;
-};
-
-type QuestionTableRow = {
-  id: string;
-  statement: string;
-  status: string;
-  type: string;
-  difficulty: string;
-  points: number | null;
-  subjectId: string;
-  groupIds: string[];
-  momentIds: string[];
-  updatedAt: Date | null;
-};
-
-type EditQuestion = {
-  id: string;
-  type: string;
-  statement: string;
-  points: number;
-  difficulty: string;
-  status: string;
-  subjectId: string;
-  groupIds: string[];
-  momentIds: string[];
-  tags: string[];
-  options: QuestionOption[];
-  partialCredit: boolean;
-  answerRules: AnswerRules;
-  puzzleText: string;
-};
+import type {
+  StatItem as Stat,
+  CatalogItem,
+  BankDashboardStats as BankData,
+  QuestionOption,
+  AnswerRules,
+  QuestionTableRow,
+  EditQuestion,
+} from "@/types";
 
 function safeToString(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;

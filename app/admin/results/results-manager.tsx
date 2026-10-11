@@ -11,40 +11,7 @@ import {
   type GradingQuestion,
 } from "@/lib/exam-grading";
 
-type SnapshotQuestion = {
-  id: string;
-  questionId: string;
-  order: number;
-  type: string;
-  statement: string;
-  points: number;
-  options?: Array<{ id: string; text: string; isCorrect?: boolean }>;
-  partialCredit?: boolean;
-  answerRules?: {
-    maxWords?: number;
-    keywords?: Array<{ term: string; weight: number }>;
-    passThreshold?: number;
-  };
-  puzzle?: Record<string, unknown>;
-};
-
-type ResultRow = {
-  id: string;
-  examName: string;
-  examCode: string;
-  studentFullName: string;
-  documentId: string;
-  email: string;
-  status: string;
-  grade0to5: number;
-  grade0to50: number;
-  submittedAt: Date | null;
-  fraudTabSwitches: number;
-  fraudClipboardAttempts: number;
-  fraudTotal: number;
-  wrongCount: number;
-  wrongDetails: string[];
-};
+import type { SnapshotQuestion, ResultRow } from "@/types";
 
 function toString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
