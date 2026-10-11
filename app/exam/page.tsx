@@ -663,20 +663,55 @@ export default function ExamPublicPage() {
                 setAttemptStartMs(startMs);
                 setEndAtMs(ends);
                 setRemainingMs(ends - Date.now());
-                setCurrentQuestionIndex(toNumber(attempt.currentQuestionIndex, 0));
 
-                const ord = Array.isArray(attempt.questionOrder)
-                  ? (attempt.questionOrder as unknown[])
-                      .map((x) => (typeof x === "string" ? x : ""))
-                      .filter(Boolean)
-                  : [];
+                // Recuperar estado guardado localmente para preservar respuestas intactas sin saturar Firestore
+                let localAns: Record<string, unknown> | null = null;
+                let localIndex = toNumber(attempt.currentQuestionIndex, 0);
+                let localOrder: string[] = [];
+                let localTab = toNumber(attempt.fraudTabSwitches, 0);
+                let localClip = toNumber(attempt.fraudClipboardAttempts, 0);
+
+                try {
+                  const rawAttempt = localStorage.getItem(`${ATTEMPT_STATE_PREFIX}${resumeAttemptId}`);
+                  if (rawAttempt) {
+                    const parsed = JSON.parse(rawAttempt) as Record<string, unknown>;
+                    if (parsed.answers && typeof parsed.answers === "object") {
+                      localAns = parsed.answers as Record<string, unknown>;
+                    }
+                    if (typeof parsed.currentQuestionIndex === "number") {
+                      localIndex = parsed.currentQuestionIndex;
+                    }
+                    if (Array.isArray(parsed.questionOrder)) {
+                      localOrder = (parsed.questionOrder as unknown[])
+                        .map((x) => (typeof x === "string" ? x : ""))
+                        .filter(Boolean);
+                    }
+                    localTab = Math.max(localTab, toNumber(parsed.fraudTabSwitches, 0));
+                    localClip = Math.max(localClip, toNumber(parsed.fraudClipboardAttempts, 0));
+                  }
+                } catch {}
+
+                setCurrentQuestionIndex(localIndex);
+
+                const ord =
+                  localOrder.length > 0
+                    ? localOrder
+                    : Array.isArray(attempt.questionOrder)
+                      ? (attempt.questionOrder as unknown[])
+                          .map((x) => (typeof x === "string" ? x : ""))
+                          .filter(Boolean)
+                      : [];
                 setQuestionOrder(ord);
 
-                const ans = attempt.answers;
-                if (ans && typeof ans === "object") setAnswers(ans as Record<string, unknown>);
+                const ans =
+                  localAns ||
+                  (attempt.answers && typeof attempt.answers === "object"
+                    ? (attempt.answers as Record<string, unknown>)
+                    : {});
+                setAnswers(ans);
 
-                const fraudTab = toNumber(attempt.fraudTabSwitches, 0);
-                const fraudClip = toNumber(attempt.fraudClipboardAttempts, 0);
+                const fraudTab = localTab;
+                const fraudClip = localClip;
                 setFraudTabSwitches(fraudTab);
                 setFraudClipboardAttempts(fraudClip);
                 fraudCountsRef.current = { tab: fraudTab, clip: fraudClip };
@@ -1071,7 +1106,7 @@ export default function ExamPublicPage() {
   useEffect(() => {
     if (!attemptId || step !== "exam" || submitted) return;
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = window.setTimeout(async () => {
+    autosaveTimerRef.current = window.setTimeout(() => {
       try {
         const saveFraudEnabled = exam?.fraudEnabled !== false;
         const nextFraudTab = saveFraudEnabled ? fraudTabSwitches : 0;
@@ -1103,16 +1138,8 @@ export default function ExamPublicPage() {
             }),
           );
         } catch {}
-        await updateDoc(doc(firestore, "attempts", attemptId), {
-          answers,
-          currentQuestionIndex,
-          questionOrder,
-          fraudTabSwitches: nextFraudTab,
-          fraudClipboardAttempts: nextFraudClip,
-          updatedAt: serverTimestamp(),
-        });
       } catch {}
-    }, 3000);
+    }, 1000);
     return () => {
       if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
@@ -1495,22 +1522,19 @@ export default function ExamPublicPage() {
     if (step !== "exam" || !attemptId || submitted || exam?.fraudEnabled === false) return;
     const id = attemptId;
 
-    async function syncFraud(nextTab: number, nextClip: number, force = false) {
+    function syncFraud(nextTab: number, nextClip: number, _force = false) {
       const now = Date.now();
-      if (!force && now - fraudRuntimeRef.current.lastSyncAt < 1500) return;
       fraudRuntimeRef.current.lastSyncAt = now;
-      const total = nextTab + nextClip;
-      const penalty = Number((countPenalizableFraudEvents(total, FRAUD_GRACE_EVENTS) * FRAUD_PENALTY_PER_EVENT_0TO5).toFixed(2));
       try {
-        await updateDoc(doc(firestore, "attempts", id), {
-          fraudTabSwitches: nextTab,
-          fraudClipboardAttempts: nextClip,
-          fraudPenalty0to5: penalty,
-          updatedAt: serverTimestamp(),
-        });
-      } catch {
-        return;
-      }
+        const rawAttempt = localStorage.getItem(`${ATTEMPT_STATE_PREFIX}${id}`);
+        if (rawAttempt) {
+          const parsed = JSON.parse(rawAttempt) as Record<string, unknown>;
+          parsed.fraudTabSwitches = nextTab;
+          parsed.fraudClipboardAttempts = nextClip;
+          parsed.updatedAtMs = now;
+          localStorage.setItem(`${ATTEMPT_STATE_PREFIX}${id}`, JSON.stringify(parsed));
+        }
+      } catch {}
     }
 
     function applyTabSwitch() {
