@@ -1,17 +1,27 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light;
-  --background: #f6f7fb;
+  --background: #f8fafc;
   --foreground: #0f172a;
   --surface: #ffffff;
   --card: #ffffff;
   --muted: #f1f5f9;
-  --border: #e6e8f0;
-  --primary: #6d5ef6;
+  --border: #e2e8f0;
+  --primary: #6366f1;
   --primary-foreground: #ffffff;
   --danger: #ef4444;
   --danger-foreground: #ffffff;
+  --success: #10b981;
+  --success-foreground: #ffffff;
+  --warning: #f59e0b;
+  --warning-foreground: #ffffff;
+  --cesde: #0284c7;
+  --cesde-foreground: #ffffff;
+  --sena: #16a34a;
+  --sena-foreground: #ffffff;
 }
 
 @theme inline {
@@ -25,6 +35,14 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-danger: var(--danger);
   --color-danger-foreground: var(--danger-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-cesde: var(--cesde);
+  --color-cesde-foreground: var(--cesde-foreground);
+  --color-sena: var(--sena);
+  --color-sena-foreground: var(--sena-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

@@ -1,62 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import type { GeminiModelVariant } from "@/lib/ai/types";
+import { generateWithGemini } from "@/lib/ai/gemini-client";
 
-type GeminiModelVariant = "flash" | "pro";
-
-function toString(value: unknown, fallback = "") {
+function toString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
-function normalizeGeminiModelId(nameOrId: string) {
-  const value = nameOrId.trim();
-  return value.startsWith("models/") ? value.slice("models/".length) : value;
-}
-
-function isNotFoundModelError(message: string) {
-  const msg = message.toLowerCase();
-  return msg.includes("is not found") || msg.includes("not supported for generatecontent");
-}
-
-function isQuotaExceededError(message: string) {
-  const msg = message.toLowerCase();
-  return msg.includes("quota exceeded") || msg.includes("exceeded your current quota") || msg.includes("rate limit");
-}
-
-async function listGeminiModels(apiKey: string, baseUrl: string) {
-  const res = await fetch(`${baseUrl}/models`, {
-    method: "GET",
-    headers: { "x-goog-api-key": apiKey },
-  });
-  const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!res.ok) {
-    const errMessage =
-      toString((data?.error as Record<string, unknown> | null)?.message, "") ||
-      toString(data?.error, "") ||
-      "No fue posible listar modelos de Gemini.";
-    return { ok: false as const, status: res.status, error: errMessage };
-  }
-  const models = (data?.models as Array<Record<string, unknown>> | undefined) ?? [];
-  const normalized = models
-    .map((m) => {
-      const name = toString(m.name, "");
-      const methods = (m.supportedGenerationMethods as string[] | undefined) ?? [];
-      return { id: name ? normalizeGeminiModelId(name) : "", methods };
-    })
-    .filter((m) => m.id && m.methods.includes("generateContent"));
-  return { ok: true as const, models: normalized };
-}
-
-function pickGeminiModelId(
-  models: Array<{ id: string; methods: string[] }>,
-  variant: GeminiModelVariant,
-  fallbackId: string,
-) {
-  const wanted = variant === "pro" ? "pro" : "flash";
-  const preferred = models.find((m) => m.id.toLowerCase().includes(wanted));
-  return normalizeGeminiModelId(preferred?.id || fallbackId);
-}
-
-function requiredEnv(name: string) {
+function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value || !value.trim()) throw new Error(`Falta ${name}.`);
   return value.trim();
@@ -171,127 +122,6 @@ function buildPrompts({
   return { systemPrompt, userPrompt };
 }
 
-async function generateWithGemini(systemPrompt: string, userPrompt: string, modelVariant: GeminiModelVariant) {
-  const apiKey = requiredEnv("AI_GEMINI_API_KEY");
-  const modelFlash =
-    process.env.AI_GEMINI_MODEL_FLASH?.trim() || process.env.AI_GEMINI_MODEL?.trim() || "gemini-2.5-flash";
-  const modelPro = process.env.AI_GEMINI_MODEL_PRO?.trim() || "gemini-2.5-pro";
-  const initialModel = normalizeGeminiModelId(modelVariant === "pro" ? modelPro : modelFlash);
-  const flashModelId = normalizeGeminiModelId(modelFlash);
-  const baseUrl = (process.env.AI_GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
-
-  async function requestWithModel(modelId: string) {
-    const url = `${baseUrl}/models/${encodeURIComponent(modelId)}:generateContent`;
-    return fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.4,
-        },
-      }),
-    });
-  }
-
-  const response = await requestWithModel(initialModel);
-
-  const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!response.ok) {
-    const errMessage =
-      toString((data?.error as Record<string, unknown> | null)?.message, "") ||
-      toString(data?.error, "") ||
-      "No fue posible generar el README con Gemini.";
-    if (modelVariant === "pro" && (response.status === 429 || response.status === 403 || isQuotaExceededError(errMessage))) {
-      const retry = await requestWithModel(flashModelId);
-      const retryData = (await retry.json().catch(() => null)) as Record<string, unknown> | null;
-      if (retry.ok) {
-        const candidates = (retryData?.candidates as Array<Record<string, unknown>> | undefined) ?? [];
-        const first = candidates[0] ?? {};
-        const content = (first.content as Record<string, unknown> | undefined) ?? {};
-        const parts = (content.parts as Array<Record<string, unknown>> | undefined) ?? [];
-        const markdown = parts.map((p) => toString(p.text, "")).join("\n").trim();
-        if (!markdown) return { ok: false as const, status: 502, error: "Gemini no devolvió contenido." };
-        return { ok: true as const, markdown, modelUsed: flashModelId };
-      }
-      const retryErr =
-        toString((retryData?.error as Record<string, unknown> | null)?.message, "") ||
-        toString(retryData?.error, "") ||
-        "No fue posible generar el README con Gemini.";
-      return {
-        ok: false as const,
-        status: response.status,
-        error: `Gemini PRO no está disponible por cuota/plan. Detalle: ${errMessage}. También falló Flash: ${retryErr}`,
-      };
-    }
-    if (response.status === 404 || isNotFoundModelError(errMessage)) {
-      const listed = await listGeminiModels(apiKey, baseUrl);
-      if (!listed.ok) {
-        return {
-          ok: false as const,
-          status: response.status,
-          error:
-            `${errMessage} ` +
-            `Además falló el listado de modelos (status ${listed.status}). ` +
-            `Verifica que la API Key sea de Google AI Studio (Gemini API) y que la Gemini API esté habilitada. ` +
-            `Detalle listado: ${listed.error}`,
-        };
-      }
-      if (listed.models.length === 0) {
-        return {
-          ok: false as const,
-          status: response.status,
-          error: `${errMessage} No se encontraron modelos compatibles con generateContent para esta API Key.`,
-        };
-      }
-
-      const fallbackModel = pickGeminiModelId(listed.models, modelVariant, initialModel);
-      const retry = await requestWithModel(fallbackModel);
-      const retryData = (await retry.json().catch(() => null)) as Record<string, unknown> | null;
-      if (!retry.ok) {
-        const retryErr =
-          toString((retryData?.error as Record<string, unknown> | null)?.message, "") ||
-          toString(retryData?.error, "") ||
-          "No fue posible generar el README con Gemini.";
-        const examples = listed.models
-          .slice(0, 8)
-          .map((m) => m.id)
-          .join(", ");
-        return {
-          ok: false as const,
-          status: retry.status,
-          error:
-            `${retryErr} ` +
-            `Modelos detectados (ejemplos): ${examples}. ` +
-            `Configura AI_GEMINI_MODEL_${modelVariant === "pro" ? "PRO" : "FLASH"} con uno de esos IDs.`,
-        };
-      }
-      const candidates = (retryData?.candidates as Array<Record<string, unknown>> | undefined) ?? [];
-      const first = candidates[0] ?? {};
-      const content = (first.content as Record<string, unknown> | undefined) ?? {};
-      const parts = (content.parts as Array<Record<string, unknown>> | undefined) ?? [];
-      const markdown = parts.map((p) => toString(p.text, "")).join("\n").trim();
-      if (!markdown) return { ok: false as const, status: 502, error: "Gemini no devolvió contenido." };
-      return { ok: true as const, markdown, modelUsed: fallbackModel };
-    }
-
-    return { ok: false as const, status: response.status, error: errMessage };
-  }
-
-  const candidates = (data?.candidates as Array<Record<string, unknown>> | undefined) ?? [];
-  const first = candidates[0] ?? {};
-  const content = (first.content as Record<string, unknown> | undefined) ?? {};
-  const parts = (content.parts as Array<Record<string, unknown>> | undefined) ?? [];
-  const markdown = parts.map((p) => toString(p.text, "")).join("\n").trim();
-  if (!markdown) return { ok: false as const, status: 502, error: "Gemini no devolvió contenido." };
-  return { ok: true as const, markdown, modelUsed: initialModel };
-}
-
 export async function POST(req: Request) {
   const access = await assertAdmin(req);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
@@ -361,15 +191,32 @@ export async function POST(req: Request) {
     batchMetadata,
   });
 
+  const apiKey = requiredEnv("AI_GEMINI_API_KEY");
+  const baseUrl = (process.env.AI_GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
+  const modelFlash = process.env.AI_GEMINI_MODEL_FLASH?.trim() || process.env.AI_GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const modelPro = process.env.AI_GEMINI_MODEL_PRO?.trim() || "gemini-2.5-pro";
+
   try {
-    const result = await generateWithGemini(systemPrompt, userPrompt, geminiVariant);
+    const result = await generateWithGemini({
+      apiKey,
+      baseUrl,
+      modelVariant: geminiVariant,
+      modelFlash,
+      modelPro,
+      prompt: `${systemPrompt}\n\n${userPrompt}`,
+      temperature: 0.4,
+    });
 
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
+    if (!result.text) {
+      return NextResponse.json({ error: "Gemini no devolvió contenido." }, { status: 502 });
+    }
+
     return NextResponse.json(
-      { ok: true, provider: "gemini", modelUsed: result.modelUsed, markdown: result.markdown },
+      { ok: true, provider: "gemini", modelUsed: result.modelUsed, markdown: result.text },
       { status: 200 },
     );
   } catch (err) {

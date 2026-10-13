@@ -20,27 +20,3 @@ export type FichaRow = {
   active: boolean;
 };
 
-export type ChapterDraft = {
-  title: string;
-  markdown: string;
-};
-
-export type BookletRow = {
-  id: string;
-  title: string;
-  slug: string;
-  accessCode: string;
-  institution: string;
-  siteName: string;
-  shiftName: string;
-  groupName: string;
-  subjectName: string;
-  chaptersCount: number;
-  active: boolean;
-};
-
-export type ChapterRow = {
-  id: string;
-  index: number;
-  title: string;
-};
